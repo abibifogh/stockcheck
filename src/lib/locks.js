@@ -1,4 +1,4 @@
-import { HttpError } from './http.js';
+import { HttpError, isMissingTable } from './http.js';
 
 /**
  * Closed periods.
@@ -10,8 +10,16 @@ import { HttpError } from './http.js';
  */
 
 export async function locksFor(db) {
-  const rows = await db.prepare('SELECT * FROM period_locks ORDER BY from_day').all();
-  return rows.results ?? [];
+  try {
+    const rows = await db.prepare('SELECT * FROM period_locks ORDER BY from_day').all();
+    return rows.results ?? [];
+  } catch (err) {
+    // No locks table yet means no periods have ever been closed. Treating that
+    // as "nothing is locked" keeps the kitchen working when new code lands
+    // before the database changes do.
+    if (isMissingTable(err)) return [];
+    throw err;
+  }
 }
 
 /** The lock covering a day, or null. */

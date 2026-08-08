@@ -9,6 +9,7 @@
 // recovery route (see `recoveryUser`), so an admin who forgets their PIN or
 // deactivates the last account can always get back in.
 
+import { isMissingTable } from './http.js';
 import { effectivePermissions } from './permissions.js';
 
 const COOKIE = 'bf_session';
@@ -115,11 +116,21 @@ function recoveryUser() {
 export async function userForPin(db, pin, env) {
   if (!pin) return null;
 
-  const pepper = await getPepper(db);
-  const hash = await hashPin(pin, pepper);
-  const row = await db.prepare(
-    'SELECT id, name, role, permissions, active FROM users WHERE pin_hash = ?',
-  ).bind(hash).first();
+  // A missing users table means the database changes have not been applied yet.
+  // The setup PINs still have to work in that state, or there is no way to
+  // reach the screen that explains the problem.
+  let row = null;
+  let usersTableExists = true;
+  try {
+    const pepper = await getPepper(db);
+    const hash = await hashPin(pin, pepper);
+    row = await db.prepare(
+      'SELECT id, name, role, permissions, active FROM users WHERE pin_hash = ?',
+    ).bind(hash).first();
+  } catch (err) {
+    if (!isMissingTable(err)) throw err;
+    usersTableExists = false;
+  }
 
   if (row) return row.active ? row : null;
 
@@ -128,8 +139,12 @@ export async function userForPin(db, pin, env) {
 
   // Before anybody has been added, the original cook PIN still opens the entry
   // screen so a fresh installation is usable immediately.
-  const anyUsers = await db.prepare('SELECT COUNT(*) AS n FROM users WHERE active = 1').first();
-  if (!anyUsers?.n && env.COOK_PIN && await constantTimeEqual(pin, env.COOK_PIN)) {
+  let anyUsers = 0;
+  if (usersTableExists) {
+    const counted = await db.prepare('SELECT COUNT(*) AS n FROM users WHERE active = 1').first();
+    anyUsers = counted?.n ?? 0;
+  }
+  if (!anyUsers && env.COOK_PIN && await constantTimeEqual(pin, env.COOK_PIN)) {
     return { id: 0, name: 'Kitchen', role: 'cook', permissions: null, active: 1, isRecovery: true };
   }
 
@@ -158,9 +173,15 @@ export async function getSession(request, env, db) {
   // Re-reading means deactivating someone, changing their role or narrowing
   // what they can see takes effect on their very next request rather than
   // whenever their cookie happens to expire.
-  const user = await db.prepare(
-    'SELECT id, name, role, permissions, active FROM users WHERE id = ?',
-  ).bind(payload.uid).first();
+  let user = null;
+  try {
+    user = await db.prepare(
+      'SELECT id, name, role, permissions, active FROM users WHERE id = ?',
+    ).bind(payload.uid).first();
+  } catch (err) {
+    if (!isMissingTable(err)) throw err;
+    return null; // schema not applied yet — force a fresh sign-in
+  }
 
   if (!user || !user.active) return null;
   return { user, permissions: effectivePermissions(user) };

@@ -4,7 +4,7 @@ import {
 } from './lib/auth.js';
 import { effectivePermissions } from './lib/permissions.js';
 import {
-  HttpError, badRequest, forbidden, json, readJson, str, unauthorized,
+  HttpError, badRequest, forbidden, isMissingTable, json, readJson, str, unauthorized,
 } from './lib/http.js';
 import { deleteDay, getDay, listDays, saveDay } from './routes/day.js';
 import * as revisions from './routes/revisions.js';
@@ -118,6 +118,14 @@ export default {
     } catch (err) {
       if (err instanceof HttpError) {
         return json({ error: err.message, detail: err.detail ?? null }, { status: err.status });
+      }
+      if (isMissingTable(err)) {
+        return json({
+          error: 'This site has been updated but its database has not. '
+            + 'Run the latest database changes — see “Create the tables” in the setup guide — '
+            + 'and this will start working. Nothing has been lost.',
+          detail: { missingSchema: true },
+        }, { status: 503 });
       }
       console.error('Unhandled error', err);
       return json({ error: 'Something went wrong on the server' }, { status: 500 });

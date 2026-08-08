@@ -1,4 +1,4 @@
-import { badRequest, bool, int, json, notFound, num, readJson, str } from '../lib/http.js';
+import { badRequest, bool, int, isMissingTable, json, notFound, num, readJson, str } from '../lib/http.js';
 import { assertDayWritable } from '../lib/locks.js';
 import { isDay } from '../util/dates.js';
 
@@ -18,7 +18,11 @@ export async function bootstrap(ctx) {
        ORDER BY c.sort_order, c.name, i.sort_order, i.name`,
     ).all(),
     db.prepare('SELECT key, value FROM settings').all(),
-    db.prepare('SELECT * FROM suppliers WHERE active = 1 ORDER BY sort_order, name').all(),
+    db.prepare('SELECT * FROM suppliers WHERE active = 1 ORDER BY sort_order, name').all()
+      .catch((err) => {
+        if (isMissingTable(err)) return { results: [] };
+        throw err;
+      }),
   ]);
 
   const settingsMap = Object.fromEntries(

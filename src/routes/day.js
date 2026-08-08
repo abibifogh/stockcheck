@@ -1,4 +1,4 @@
-import { HttpError, badRequest, bool, int, json, num, readJson, str } from '../lib/http.js';
+import { HttpError, badRequest, bool, int, isMissingTable, json, num, readJson, str } from '../lib/http.js';
 import { entryHints, loadDataset } from '../lib/analytics.js';
 import { notifyDaySubmitted } from '../lib/email.js';
 import { assertDayWritable, lockCovering, locksFor } from '../lib/locks.js';
@@ -18,7 +18,11 @@ export async function getDay(ctx, day) {
     db.prepare('SELECT ingredient_id, qty FROM usage WHERE day = ?').bind(day).all(),
     locksFor(db),
     db.prepare("SELECT id, submitted_by, submitted_at FROM day_revisions WHERE day = ? AND status = 'pending' ORDER BY id DESC LIMIT 1")
-      .bind(day).first(),
+      .bind(day).first()
+      .catch((err) => {
+        if (isMissingTable(err)) return null;
+        throw err;
+      }),
   ]);
 
   const ds = await loadDataset(db);
@@ -132,10 +136,22 @@ export async function saveDay(ctx, day) {
   }
 
   // ---- re-submission goes to review rather than straight through ----------
-  const needsApproval = submit
+  let needsApproval = submit
     && alreadySubmitted
     && settings.require_resubmit_approval !== '0'
     && !ctx.session.permissions.includes('approvals');
+
+  // Without the revisions table there is nowhere to park a proposal. Falling
+  // back to a direct save loses the review step, but losing a recorded morning
+  // would be worse, and the missing table is itself reported elsewhere.
+  if (needsApproval) {
+    try {
+      await db.prepare("SELECT 1 FROM day_revisions LIMIT 1").first();
+    } catch (err) {
+      if (!isMissingTable(err)) throw err;
+      needsApproval = false;
+    }
+  }
 
   if (needsApproval) {
     const currentUsage = await db.prepare('SELECT ingredient_id, qty FROM usage WHERE day = ?')
