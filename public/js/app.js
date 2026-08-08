@@ -9,28 +9,38 @@ import { renderMonthly } from './views/monthly.js';
 import { renderStock } from './views/stock.js';
 import { renderPurchases } from './views/purchases.js';
 import { renderSetup } from './views/setup.js';
+import { renderAdmin } from './views/admin.js';
+import { renderApprovals } from './views/approvals.js';
 
 export const state = {
   role: null,
+  name: null,
+  permissions: [],
   settings: {},
-  catalog: null, // { categories, ingredients, units }
+  catalog: null, // { categories, ingredients, suppliers, units }
 };
 
 const ROUTES = [
-  { path: 'entry', label: 'Daily entry', role: 'cook', render: renderEntry },
-  { path: 'overview', label: 'Overview', role: 'manager', render: renderOverview },
-  { path: 'daily', label: 'Day', role: 'manager', render: renderDaily },
-  { path: 'weekly', label: 'Week', role: 'manager', render: renderWeekly },
-  { path: 'monthly', label: 'Month', role: 'manager', render: renderMonthly },
-  { path: 'stock', label: 'Stock', role: 'manager', render: renderStock },
-  { path: 'purchases', label: 'Purchases', role: 'manager', render: renderPurchases },
-  { path: 'setup', label: 'Setup', role: 'manager', render: renderSetup },
+  { path: 'entry', label: 'Daily entry', permission: 'entry', render: renderEntry },
+  { path: 'overview', label: 'Overview', permission: 'reports', render: renderOverview },
+  { path: 'daily', label: 'Day', permission: 'reports', render: renderDaily },
+  { path: 'weekly', label: 'Week', permission: 'reports', render: renderWeekly },
+  { path: 'monthly', label: 'Month', permission: 'reports', render: renderMonthly },
+  { path: 'approvals', label: 'Approvals', permission: 'approvals', render: renderApprovals },
+  { path: 'stock', label: 'Stock', permission: 'stock', render: renderStock },
+  { path: 'purchases', label: 'Purchases', permission: 'purchases', render: renderPurchases },
+  { path: 'setup', label: 'Setup', permission: 'setup', render: renderSetup },
+  { path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin },
 ];
 
 const root = document.getElementById('app');
 
+export function can(permission) {
+  return !permission || state.permissions.includes(permission);
+}
+
 function allowed(route) {
-  return route.role === 'cook' || state.role === 'manager';
+  return can(route.permission);
 }
 
 function currentRoute() {
@@ -38,8 +48,10 @@ function currentRoute() {
   return ROUTES.find((r) => r.path === hash && allowed(r));
 }
 
+/** Land people on the most useful screen they are actually allowed to open. */
 function defaultRoute() {
-  return state.role === 'manager' ? 'overview' : 'entry';
+  const preferred = ['overview', 'entry', 'stock', 'purchases', 'setup', 'admin'];
+  return preferred.find((path) => allowed(ROUTES.find((r) => r.path === path))) ?? 'entry';
 }
 
 /** Query params live after the route: #/daily?day=2026-08-08 */
@@ -65,6 +77,9 @@ export async function ensureCatalog(force = false) {
     setCurrency(data.settings.currency);
     state.catalog = data;
     state.settings = data.settings;
+    state.permissions = data.permissions ?? state.permissions;
+    state.role = data.user?.role ?? state.role;
+    state.name = data.user?.name ?? state.name;
   }
   return state.catalog;
 }
@@ -81,7 +96,7 @@ function shell(content) {
         h('span.brand-mark', '🍳'),
         h('div',
           state.settings.property_name || 'Breakfast Control',
-          h('span.brand-sub', state.role === 'manager' ? 'Manager' : 'Kitchen'),
+          h('span.brand-sub', state.name ? `${state.name} · ${roleLabel(state.role)}` : roleLabel(state.role)),
         ),
       ),
       h('div.topbar-spacer'),
@@ -93,8 +108,7 @@ function shell(content) {
       h('button.btn-ghost.btn-sm', {
         onclick: async () => {
           await api.logout().catch(() => {});
-          state.role = null;
-          state.catalog = null;
+          resetSession();
           render();
         },
       }, 'Sign out'),
@@ -115,8 +129,10 @@ export async function render() {
   root.classList.remove('app-loading');
 
   if (!state.role) {
-    mount(root, renderLogin(async (role) => {
+    mount(root, renderLogin(async ({ role, name, permissions }) => {
       state.role = role;
+      state.name = name;
+      state.permissions = permissions ?? [];
       state.catalog = null;
       if (!location.hash || !currentRoute()) navigate(defaultRoute());
       await render();
@@ -157,9 +173,20 @@ async function syncPending() {
   } catch { /* still offline; the queue keeps waiting */ }
 }
 
-setUnauthorizedHandler(() => {
+function resetSession() {
   state.role = null;
+  state.name = null;
+  state.permissions = [];
   state.catalog = null;
+}
+
+const ROLE_LABELS = { cook: 'Kitchen', manager: 'Manager', admin: 'Administrator' };
+function roleLabel(role) {
+  return ROLE_LABELS[role] || 'Signed in';
+}
+
+setUnauthorizedHandler(() => {
+  resetSession();
   render();
 });
 
@@ -174,6 +201,8 @@ window.addEventListener('online', syncPending);
     const me = await api.me();
     if (me.authenticated) {
       state.role = me.role;
+      state.name = me.name;
+      state.permissions = me.permissions || [];
       state.settings = me.settings || {};
       setCurrency(me.settings?.currency);
     }

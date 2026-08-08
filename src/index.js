@@ -1,50 +1,92 @@
 import {
-  clearCookie, createToken, getSession, hasRole, roleForPin,
-  sessionCookie, throttleCheck, throttleFail, throttleReset, tokenTtl,
+  clearCookie, createToken, getSession, sessionCookie,
+  throttleCheck, throttleFail, throttleReset, tokenTtl, userForPin,
 } from './lib/auth.js';
+import { effectivePermissions } from './lib/permissions.js';
 import {
   HttpError, badRequest, forbidden, json, readJson, str, unauthorized,
 } from './lib/http.js';
-import { getDay, listDays, saveDay } from './routes/day.js';
+import { deleteDay, getDay, listDays, saveDay } from './routes/day.js';
+import * as revisions from './routes/revisions.js';
+import * as importing from './routes/importing.js';
 import * as catalog from './routes/catalog.js';
 import * as insights from './routes/insights.js';
+import * as admin from './routes/admin.js';
 
 /**
- * Route table. Each entry is [method, pattern, role, handler]; `:id` and
- * `:day` capture a single path segment and are passed to the handler in order.
- * `null` role means the endpoint is public.
+ * Route table: [method, pattern, permission, handler].
+ *
+ * The permission is the gate. Hiding a menu item is a courtesy to the person
+ * using the app; this table is what actually stops a cook reading the cost
+ * reports. `null` means the endpoint is open to anyone signed in, and routes
+ * listed before the auth check are public.
  */
 const ROUTES = [
-  ['POST', '/api/auth/login', null, login],
-  ['POST', '/api/auth/logout', null, logout],
-  ['GET', '/api/auth/me', null, me],
+  ['POST', '/api/auth/login', 'public', login],
+  ['POST', '/api/auth/logout', 'public', logout],
+  ['GET', '/api/auth/me', 'public', me],
 
-  ['GET', '/api/bootstrap', 'cook', catalog.bootstrap],
-  ['GET', '/api/days', 'cook', listDays],
-  ['GET', '/api/days/:day', 'cook', getDay],
-  ['PUT', '/api/days/:day', 'cook', saveDay],
+  ['GET', '/api/bootstrap', null, catalog.bootstrap],
 
-  ['GET', '/api/insights/overview', 'manager', insights.overview],
-  ['GET', '/api/insights/daily', 'manager', insights.daily],
-  ['GET', '/api/insights/weekly', 'manager', insights.weekly],
-  ['GET', '/api/insights/monthly', 'manager', insights.monthly],
-  ['GET', '/api/insights/stock', 'manager', insights.stock],
-  ['GET', '/api/export', 'manager', insights.exportCsv],
+  ['GET', '/api/days', 'entry', listDays],
+  ['GET', '/api/days/:day', 'entry', getDay],
+  ['PUT', '/api/days/:day', 'entry', saveDay],
+  ['DELETE', '/api/days/:day', 'users', deleteDay],
 
-  ['POST', '/api/categories', 'manager', catalog.createCategory],
-  ['PUT', '/api/categories/:id', 'manager', catalog.updateCategory],
-  ['DELETE', '/api/categories/:id', 'manager', catalog.deleteCategory],
+  ['GET', '/api/revisions', 'approvals', revisions.listRevisions],
+  ['GET', '/api/revisions/pending-count', null, revisions.pendingCount],
+  ['POST', '/api/revisions/:id/review', 'approvals', revisions.reviewRevision],
 
-  ['POST', '/api/ingredients', 'manager', catalog.createIngredient],
-  ['PUT', '/api/ingredients/:id', 'manager', catalog.updateIngredient],
-  ['DELETE', '/api/ingredients/:id', 'manager', catalog.deleteIngredient],
+  ['GET', '/api/import/template', 'entry', importing.importTemplate],
+  ['POST', '/api/import/days', 'users', importing.importDays],
 
-  ['GET', '/api/purchases', 'manager', catalog.listPurchases],
-  ['POST', '/api/purchases', 'manager', catalog.createPurchase],
-  ['DELETE', '/api/purchases/:id', 'manager', catalog.deletePurchase],
+  ['GET', '/api/insights/overview', 'reports', insights.overview],
+  ['GET', '/api/insights/daily', 'reports', insights.daily],
+  ['GET', '/api/insights/weekly', 'reports', insights.weekly],
+  ['GET', '/api/insights/monthly', 'reports', insights.monthly],
+  ['GET', '/api/export', 'reports', insights.exportCsv],
 
-  ['POST', '/api/stock-counts', 'manager', catalog.createStockCount],
-  ['PUT', '/api/settings', 'manager', catalog.updateSettings],
+  ['GET', '/api/insights/stock', 'stock', insights.stock],
+  ['POST', '/api/stock-counts', 'stock', catalog.createStockCount],
+
+  ['GET', '/api/purchases', 'purchases', catalog.listPurchases],
+  ['GET', '/api/purchases/last-costs', 'purchases', catalog.getLastCosts],
+  ['POST', '/api/purchases', 'purchases', catalog.createPurchase],
+  ['POST', '/api/deliveries', 'purchases', catalog.createDelivery],
+  ['DELETE', '/api/purchases/:id', 'purchases', catalog.deletePurchase],
+
+  ['POST', '/api/categories', 'setup', catalog.createCategory],
+  ['PUT', '/api/categories/:id', 'setup', catalog.updateCategory],
+  ['DELETE', '/api/categories/:id', 'setup', catalog.deleteCategory],
+
+  ['POST', '/api/ingredients', 'setup', catalog.createIngredient],
+  ['PUT', '/api/ingredients/:id', 'setup', catalog.updateIngredient],
+  ['DELETE', '/api/ingredients/:id', 'setup', catalog.deleteIngredient],
+
+  ['GET', '/api/suppliers', 'purchases', catalog.listSuppliers],
+  ['POST', '/api/suppliers', 'setup', catalog.createSupplier],
+  ['PUT', '/api/suppliers/:id', 'setup', catalog.updateSupplier],
+  ['DELETE', '/api/suppliers/:id', 'setup', catalog.deleteSupplier],
+
+  ['PUT', '/api/settings', 'setup', catalog.updateSettings],
+
+  ['GET', '/api/users', 'users', admin.listUsers],
+  ['POST', '/api/users', 'users', admin.createUser],
+  ['PUT', '/api/users/:id', 'users', admin.updateUser],
+  ['DELETE', '/api/users/:id', 'users', admin.deleteUser],
+
+  ['GET', '/api/notifications', 'users', admin.getNotifications],
+  ['PUT', '/api/notifications', 'users', admin.updateNotifications],
+  ['POST', '/api/notifications/test', 'users', admin.testNotification],
+
+  ['GET', '/api/data/summary', 'users', admin.dataSummary],
+  ['POST', '/api/data/erase', 'users', admin.eraseData],
+
+  ['GET', '/api/locks', null, admin.listLocks],
+  ['POST', '/api/locks', 'users', admin.createLock],
+  ['DELETE', '/api/locks/:id', 'users', admin.deleteLock],
+
+  ['GET', '/api/audit', 'users', admin.auditTrail],
 ];
 
 function match(pattern, pathname) {
@@ -97,7 +139,7 @@ async function route(request, env, url, executionContext) {
   const method = request.method === 'HEAD' ? 'GET' : request.method;
   let allowedMethods = null;
 
-  for (const [routeMethod, pattern, role, handler] of ROUTES) {
+  for (const [routeMethod, pattern, permission, handler] of ROUTES) {
     const params = match(pattern, url.pathname);
     if (!params) continue;
     if (routeMethod !== method) {
@@ -106,17 +148,21 @@ async function route(request, env, url, executionContext) {
       continue;
     }
 
-    const session = await getSession(request, env);
-    if (role && !hasRole(session, role)) {
-      throw session ? forbidden() : unauthorized();
+    const ctx = { request, env, url, db: env.DB, executionContext, session: null };
+
+    if (permission !== 'public') {
+      ctx.session = await getSession(request, env, env.DB);
+      if (!ctx.session) throw unauthorized();
+      if (permission && !ctx.session.permissions.includes(permission)) {
+        throw forbidden('You do not have access to that part of the system.');
+      }
     }
 
-    const ctx = { request, env, url, session, db: env.DB, executionContext };
     return handler(ctx, ...params);
   }
 
   if (allowedMethods?.length) {
-    return json({ error: `Method not allowed` }, {
+    return json({ error: 'Method not allowed' }, {
       status: 405,
       headers: { Allow: [...new Set(allowedMethods)].join(', ') },
     });
@@ -129,7 +175,7 @@ async function route(request, env, url, executionContext) {
 // ---------------------------------------------------------------------------
 
 async function login(ctx) {
-  const { request, env, url } = ctx;
+  const { request, env, url, db } = ctx;
   const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
 
   const gate = throttleCheck(ip);
@@ -143,15 +189,8 @@ async function login(ctx) {
   const body = await readJson(request);
   const pin = str(body.pin, 'PIN', { required: true, max: 64 });
 
-  if (!env.COOK_PIN && !env.MANAGER_PIN) {
-    return json(
-      { error: 'No PINs configured yet. Set COOK_PIN and MANAGER_PIN — see the README.' },
-      { status: 503 },
-    );
-  }
-
-  const role = await roleForPin(pin, env);
-  if (!role) {
+  const user = await userForPin(db, pin, env);
+  if (!user) {
     throttleFail(ip);
     // A uniform delay keeps a wrong PIN from being distinguishable by timing.
     await new Promise((resolve) => setTimeout(resolve, 400));
@@ -159,14 +198,31 @@ async function login(ctx) {
   }
 
   throttleReset(ip);
+
+  const now = Math.floor(Date.now() / 1000);
   const token = await createToken(
-    { role, iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + tokenTtl(role) },
+    {
+      uid: user.id,
+      role: user.role,
+      recovery: user.isRecovery ? 1 : 0,
+      iat: now,
+      exp: now + tokenTtl(user.role),
+    },
     env.SESSION_SECRET,
   );
 
-  const secure = url.protocol === 'https:';
-  return json({ ok: true, role }, {
-    headers: { 'Set-Cookie': sessionCookie(token, role, secure) },
+  if (!user.isRecovery) {
+    await db.prepare("UPDATE users SET last_login_at = datetime('now') WHERE id = ?")
+      .bind(user.id).run().catch(() => {});
+  }
+
+  return json({
+    ok: true,
+    role: user.role,
+    name: user.name,
+    permissions: effectivePermissions(user),
+  }, {
+    headers: { 'Set-Cookie': sessionCookie(token, user.role, url.protocol === 'https:') },
   });
 }
 
@@ -177,14 +233,19 @@ async function logout(ctx) {
 }
 
 async function me(ctx) {
-  const session = await getSession(ctx.request, ctx.env);
+  const session = await getSession(ctx.request, ctx.env, ctx.db);
   if (!session) return json({ authenticated: false });
 
-  const settings = await ctx.db.prepare("SELECT key, value FROM settings WHERE key IN ('property_name','currency','timezone')").all();
+  const settings = await ctx.db.prepare(
+    "SELECT key, value FROM settings WHERE key IN ('property_name','currency','timezone')",
+  ).all();
+
   return json({
     authenticated: true,
-    role: session.role,
-    expiresAt: session.exp,
+    role: session.user.role,
+    name: session.user.name,
+    userId: session.user.id,
+    permissions: session.permissions,
     settings: Object.fromEntries((settings.results ?? []).map((r) => [r.key, r.value])),
   });
 }

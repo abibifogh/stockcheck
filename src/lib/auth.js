@@ -1,16 +1,22 @@
 // PIN login with a signed session cookie.
 //
-// Two roles: `cook` can read the catalogue and write the day sheet; `manager`
-// can do everything. PINs live in Worker secrets rather than the database so
-// there is no user table to manage and no password reset flow for a kitchen to
-// get stuck in.
+// Each person has their own account and their own PIN. Login is by PIN alone —
+// no username — because a cook on a shared tablet should be two taps from the
+// entry screen, not filling in a login form. PINs are therefore unique across
+// users, which the users table enforces.
+//
+// The env-var PINs from the original single-tenant setup still work as a
+// recovery route (see `recoveryUser`), so an admin who forgets their PIN or
+// deactivates the last account can always get back in.
+
+import { effectivePermissions } from './permissions.js';
 
 const COOKIE = 'bf_session';
 const encoder = new TextEncoder();
 
-const ROLE_RANK = { cook: 1, manager: 2 };
-// Cooks stay signed in on the kitchen tablet; managers re-auth more often.
-const TTL_SECONDS = { cook: 60 * 60 * 24 * 60, manager: 60 * 60 * 12 };
+// Cooks stay signed in on the kitchen tablet; anyone who can see money
+// re-authenticates far more often.
+const TTL_SECONDS = { cook: 60 * 60 * 24 * 60, manager: 60 * 60 * 12, admin: 60 * 60 * 12 };
 
 function b64urlEncode(bytes) {
   let str = '';
@@ -59,18 +65,25 @@ export async function readToken(token, secret) {
   }
 }
 
-/** Length-independent comparison, so timing never reveals the PIN. */
-export async function constantTimeEqual(a, b) {
-  const key = await hmacKey('pin-compare');
-  const [ha, hb] = await Promise.all([
-    crypto.subtle.sign('HMAC', key, encoder.encode(String(a ?? ''))),
-    crypto.subtle.sign('HMAC', key, encoder.encode(String(b ?? ''))),
-  ]);
-  const va = new Uint8Array(ha);
-  const vb = new Uint8Array(hb);
-  let diff = 0;
-  for (let i = 0; i < va.length; i++) diff |= va[i] ^ vb[i];
-  return diff === 0;
+/** Hash a PIN for storage and lookup, using the installation's own pepper. */
+export async function hashPin(pin, pepper) {
+  const key = await hmacKey(`pin:${pepper}`);
+  const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(String(pin)));
+  return b64urlEncode(new Uint8Array(sig));
+}
+
+export async function getPepper(db) {
+  const row = await db.prepare("SELECT value FROM settings WHERE key = 'pin_pepper'").first();
+  if (row?.value) return row.value;
+
+  // Should already exist from the migration; create it rather than fail if an
+  // installation somehow reaches this without one.
+  const generated = b64urlEncode(crypto.getRandomValues(new Uint8Array(32)));
+  await db.prepare(
+    "INSERT INTO settings (key, value) VALUES ('pin_pepper', ?1) ON CONFLICT(key) DO NOTHING",
+  ).bind(generated).run();
+  const again = await db.prepare("SELECT value FROM settings WHERE key = 'pin_pepper'").first();
+  return again?.value ?? generated;
 }
 
 function readCookie(request, name) {
@@ -82,11 +95,75 @@ function readCookie(request, name) {
   return null;
 }
 
-export async function getSession(request, env) {
+/**
+ * The break-glass account backed by the MANAGER_PIN worker secret. It exists so
+ * that a forgotten PIN or a mistakenly deactivated last admin can never lock
+ * the owner out of their own data.
+ */
+function recoveryUser() {
+  return {
+    id: 0,
+    name: 'Recovery access',
+    role: 'admin',
+    permissions: null,
+    active: 1,
+    isRecovery: true,
+  };
+}
+
+/** Identify the person behind a PIN, or null. */
+export async function userForPin(db, pin, env) {
+  if (!pin) return null;
+
+  const pepper = await getPepper(db);
+  const hash = await hashPin(pin, pepper);
+  const row = await db.prepare(
+    'SELECT id, name, role, permissions, active FROM users WHERE pin_hash = ?',
+  ).bind(hash).first();
+
+  if (row) return row.active ? row : null;
+
+  // No matching account. Fall back to the recovery PIN.
+  if (env.MANAGER_PIN && await constantTimeEqual(pin, env.MANAGER_PIN)) return recoveryUser();
+
+  // Before anybody has been added, the original cook PIN still opens the entry
+  // screen so a fresh installation is usable immediately.
+  const anyUsers = await db.prepare('SELECT COUNT(*) AS n FROM users WHERE active = 1').first();
+  if (!anyUsers?.n && env.COOK_PIN && await constantTimeEqual(pin, env.COOK_PIN)) {
+    return { id: 0, name: 'Kitchen', role: 'cook', permissions: null, active: 1, isRecovery: true };
+  }
+
+  return null;
+}
+
+/** Load the signed-in user fresh from the database on every request. */
+export async function getSession(request, env, db) {
   const secret = env.SESSION_SECRET;
   if (!secret) return null;
+
   const token = readCookie(request, COOKIE);
-  return token ? readToken(token, secret) : null;
+  if (!token) return null;
+
+  const payload = await readToken(token, secret);
+  if (!payload) return null;
+
+  // A recovery session carries its identity in the token; there is no row.
+  if (payload.recovery) {
+    const user = payload.role === 'cook'
+      ? { id: 0, name: 'Kitchen', role: 'cook', permissions: null, active: 1, isRecovery: true }
+      : recoveryUser();
+    return { user, permissions: effectivePermissions(user) };
+  }
+
+  // Re-reading means deactivating someone, changing their role or narrowing
+  // what they can see takes effect on their very next request rather than
+  // whenever their cookie happens to expire.
+  const user = await db.prepare(
+    'SELECT id, name, role, permissions, active FROM users WHERE id = ?',
+  ).bind(payload.uid).first();
+
+  if (!user || !user.active) return null;
+  return { user, permissions: effectivePermissions(user) };
 }
 
 export function sessionCookie(token, role, secure = true) {
@@ -107,30 +184,26 @@ export function clearCookie(secure = true) {
   return attrs.join('; ');
 }
 
-export function hasRole(session, required) {
-  if (!session?.role) return false;
-  return (ROLE_RANK[session.role] ?? 0) >= (ROLE_RANK[required] ?? 99);
-}
-
-/**
- * Identify a PIN. Returns the highest role it unlocks, or null.
- * The manager PIN is checked first so that setting both to the same value
- * grants the stronger role rather than silently locking the manager out.
- */
-export async function roleForPin(pin, env) {
-  if (!pin) return null;
-  if (env.MANAGER_PIN && await constantTimeEqual(pin, env.MANAGER_PIN)) return 'manager';
-  if (env.COOK_PIN && await constantTimeEqual(pin, env.COOK_PIN)) return 'cook';
-  return null;
-}
-
 export function tokenTtl(role) {
   return TTL_SECONDS[role] ?? TTL_SECONDS.cook;
 }
 
+/** Length-independent comparison, so timing never reveals a PIN. */
+export async function constantTimeEqual(a, b) {
+  const key = await hmacKey('pin-compare');
+  const [ha, hb] = await Promise.all([
+    crypto.subtle.sign('HMAC', key, encoder.encode(String(a ?? ''))),
+    crypto.subtle.sign('HMAC', key, encoder.encode(String(b ?? ''))),
+  ]);
+  const va = new Uint8Array(ha);
+  const vb = new Uint8Array(hb);
+  let diff = 0;
+  for (let i = 0; i < va.length; i++) diff |= va[i] ^ vb[i];
+  return diff === 0;
+}
+
 // Best-effort brute-force brake. Workers isolates are ephemeral and there may
-// be several, so this slows an attacker down rather than stopping them; the
-// real protection is that a PIN is only useful with the site URL.
+// be several, so this slows an attacker down rather than stopping them.
 const attempts = new Map();
 const WINDOW_MS = 10 * 60 * 1000;
 const MAX_ATTEMPTS = 10;

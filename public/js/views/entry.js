@@ -23,9 +23,15 @@ export async function renderEntry(params) {
   const service = {
     inhouse: data.service.inhouse_guests,
     outside: data.service.outside_guests,
-    fee: Number(data.service.outsider_fee) || 0,
     note: data.service.note || '',
   };
+  // Set by an administrator, shown here only so the kitchen can see what the
+  // outside guests are being charged. The server ignores anything sent for it.
+  const outsiderFee = Number(data.outsiderFee) || 0;
+  const allowFillUsual = data.allowFillUsual !== false;
+  const requireComplete = data.requireComplete !== false;
+  const requiredIds = new Set(data.requiredIngredientIds || []);
+  const locked = Boolean(data.locked);
   let submitted = Boolean(data.service.submitted_at);
   let showAll = false;
   let filter = '';
@@ -45,7 +51,6 @@ export async function renderEntry(params) {
   const payload = (submit = false) => ({
     inhouse_guests: Number(service.inhouse) || 0,
     outside_guests: Number(service.outside) || 0,
-    outsider_fee: Number(service.fee) || 0,
     note: service.note || null,
     usage: Object.fromEntries([...usage.entries()]),
     submit,
@@ -55,17 +60,29 @@ export async function renderEntry(params) {
     const body = payload(submit);
     setStatus('Saving…');
     try {
-      await api.saveDay(day, body);
+      const result = await api.saveDay(day, body);
       dequeueDay(day);
       dirty = false;
-      if (submit) submitted = true;
+      if (submit && !result.pendingApproval) submitted = true;
       const time = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-      setStatus(submit ? 'Submitted ✓' : `Saved ${time}`, submit ? 'good' : '');
+      setStatus(
+        result.pendingApproval ? 'Sent for approval' : submit ? 'Submitted ✓' : `Saved ${time}`,
+        result.pendingApproval ? 'warn' : submit ? 'good' : '',
+      );
       if (!quiet) toast(submit ? 'Day submitted' : 'Saved', 'good');
+      return result;
     } catch (err) {
+      // A rejected submission is a rule, not a lost connection — do not queue
+      // it for retry, because retrying will fail in exactly the same way.
+      if (err.status >= 400 && err.status < 500) {
+        setStatus('Not saved', 'bad');
+        toast(err.message, 'bad');
+        return null;
+      }
       queueDay(day, body);
       setStatus('Saved on this device — will sync', 'warn');
       if (!quiet) toast(err.message, 'bad');
+      return null;
     }
   }
 
@@ -78,13 +95,28 @@ export async function renderEntry(params) {
     autosave();
   };
 
+  /** Everyday items with no figure at all — the thing that blocks a submission. */
+  function missingRequired() {
+    return activeIngredients.filter((i) => requiredIds.has(i.id) && !usage.has(i.id));
+  }
+
+  /** Items deliberately recorded as none used. Worth confirming, not blocking. */
+  function zeroItems() {
+    return activeIngredients.filter((i) => usage.get(i.id) === 0);
+  }
+
   function paintTotals() {
-    const recorded = [...usage.values()].filter((v) => v != null).length;
-    const expected = activeIngredients.filter((i) => (hints[i.id]?.coverage ?? 0) >= 60).length;
+    const required = activeIngredients.filter((i) => requiredIds.has(i.id));
+    const done = required.length - missingRequired().length;
+    const zeros = zeroItems().length;
+
     mount(totalsEl,
       h('b', `${guests()}`), ' guests · ',
-      h('b', `${recorded}`), ` of ${expected || activeIngredients.length} usual items recorded`,
-      recorded < expected ? h('span.pill.warn', `${expected - recorded} still to go`) : h('span.pill.good', 'complete'),
+      h('b', `${done}`), ` of ${required.length} everyday items entered`,
+      done < required.length
+        ? h('span.pill.warn', `${required.length - done} still to go`)
+        : h('span.pill.good', 'complete'),
+      zeros ? h('span.pill', `${zeros} recorded as zero`) : null,
     );
   }
 
@@ -120,11 +152,15 @@ export async function renderEntry(params) {
         counter(() => service.inhouse, (v) => { service.inhouse = v; })),
       h('label.field', h('span', 'Outside guests (paying)'),
         counter(() => service.outside, (v) => { service.outside = v; })),
-      h('label.field', h('span', `Fee per outsider (${state.settings.currency || 'GHS'})`),
-        h('input', {
-          type: 'number', min: 0, step: '0.5', value: service.fee || '',
-          oninput: (e) => { service.fee = Number(e.target.value) || 0; touch(); },
-        })),
+      h('label.field', h('span', 'Fee per outsider'),
+        h('div', {
+          style: {
+            padding: '.5rem .65rem', border: '1px dashed var(--border-strong)',
+            borderRadius: 'var(--radius-sm)', color: 'var(--text-dim)',
+            fontVariantNumeric: 'tabular-nums',
+          },
+          title: 'Set by your administrator',
+        }, `${state.settings.currency || 'GHS'} ${fmtNum(outsiderFee, 2)}`)),
       h('label.field', h('span', 'Note (optional)'),
         h('input', {
           type: 'text', placeholder: 'Buffet change, event, …', value: service.note,
@@ -191,7 +227,9 @@ export async function renderEntry(params) {
       hint?.perGuest ? h('span', `${fmtNum(hint.perGuest, 3)} ${ing.unit}/guest`) : null,
     );
 
-    const row = h(`div.item${usage.has(ing.id) ? '.filled' : ''}`, { dataset: { name: ing.name.toLowerCase() } },
+    const needed = highlightMissing && requiredIds.has(ing.id) && !usage.has(ing.id);
+    const row = h(`div.item${usage.has(ing.id) ? '.filled' : ''}${needed ? '.needed' : ''}`,
+      { dataset: { name: ing.name.toLowerCase() } },
       h('div',
         h('div.item-name', ing.name),
         hintLine,
@@ -206,8 +244,11 @@ export async function renderEntry(params) {
     return row;
   }
 
+  let highlightMissing = false;
+
   function paintList() {
     const visible = activeIngredients.filter((ing) => {
+      if (highlightMissing && requiredIds.has(ing.id) && !usage.has(ing.id)) return true;
       if (filter && !ing.name.toLowerCase().includes(filter)) return false;
       if (showAll || filter) return true;
       return ing.is_core || usage.has(ing.id);
@@ -286,19 +327,56 @@ export async function renderEntry(params) {
   const footer = h('div.entry-footer',
     h('div.entry-footer-inner',
       statusEl,
-      h('button', { onclick: fillUsual }, '⚡ Fill usual'),
+      allowFillUsual ? h('button', { onclick: fillUsual }, '⚡ Fill usual') : null,
       h('button', { onclick: () => save({ submit: false, quiet: false }) }, 'Save'),
-      h('button.btn-primary', {
-        onclick: async () => {
-          if (!guests()) {
-            toast('Enter the guest count before submitting', 'bad');
-            return;
-          }
-          await save({ submit: true, quiet: false });
-        },
-      }, submitted ? 'Re-submit day' : 'Submit day'),
+      h('button.btn-primary', { onclick: attemptSubmit, disabled: locked },
+        submitted ? 'Submit correction' : 'Submit day'),
     ),
   );
+
+  /**
+   * Submitting is the moment the numbers become real, so it is the one place
+   * that argues back: nothing missing, and zeros acknowledged out loud.
+   */
+  async function attemptSubmit() {
+    if (!guests()) {
+      toast('Enter the guest count before submitting', 'bad');
+      return;
+    }
+
+    const missing = missingRequired();
+    if (requireComplete && missing.length) {
+      highlightMissing = true;
+      paintList();
+      const names = missing.slice(0, 6).map((i) => i.name).join(', ');
+      toast(
+        `${missing.length} everyday ${missing.length === 1 ? 'item has' : 'items have'} no figure: `
+        + `${names}${missing.length > 6 ? '…' : ''}. Enter 0 if none was used.`,
+        'bad',
+      );
+      missing[0] && document.querySelector(`.item[data-name="${missing[0].name.toLowerCase()}"]`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+
+    const zeros = zeroItems();
+    if (zeros.length) {
+      const names = zeros.map((i) => `• ${i.name}`).join('\n');
+      const confirmed = window.confirm(
+        `You are recording ZERO used for ${zeros.length} ${zeros.length === 1 ? 'item' : 'items'}:\n\n`
+        + `${names}\n\nIs that right? Choose Cancel to go back and change them.`,
+      );
+      if (!confirmed) return;
+    }
+
+    const result = await save({ submit: true, quiet: true });
+    if (result?.pendingApproval) {
+      window.alert(result.message);
+      setStatus('Sent for approval', 'warn');
+    } else if (result) {
+      toast('Day submitted', 'good');
+    }
+  }
 
   paintTotals();
   paintList();
@@ -318,6 +396,23 @@ export async function renderEntry(params) {
       submitted ? h('span.pill.good', 'Submitted') : h('span.pill', 'In progress'),
     ),
     toolbar,
+    locked ? h('div.alert.warn',
+      h('span.alert-icon', '🔒'),
+      h('div',
+        h('div.alert-title', 'This day is in a closed period'),
+        h('div.alert-detail',
+          `${data.lock.from} to ${data.lock.to}${data.lock.reason ? ` — ${data.lock.reason}` : ''}. `
+          + 'The figures cannot be changed. Ask an administrator to unlock the period first.'),
+      )) : null,
+    data.pendingRevision ? h('div.alert.info',
+      h('span.alert-icon', '⏳'),
+      h('div',
+        h('div.alert-title', 'A correction is waiting for approval'),
+        h('div.alert-detail',
+          `Sent by ${data.pendingRevision.submitted_by ?? 'someone'} on `
+          + `${String(data.pendingRevision.submitted_at).slice(0, 16).replace('T', ' ')}. `
+          + 'The recorded figures below stay as they are until a manager accepts it.'),
+      )) : null,
     guestCard,
     listHost,
     footer,
