@@ -1,0 +1,32 @@
+name = "niceoperation-breakfast"
+main = "src/index.js"
+compatibility_date = "2025-05-01"
+
+# Static frontend is served straight from the Worker's asset store.
+# `run_worker_first` keeps /api/* on the Worker instead of falling through to
+# the SPA index.html.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "breakfast"
+# Replace with the id printed by `npm run db:create`.
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+[vars]
+# Everything here is safe to keep in source control. Secrets (PINs, session
+# key) are set with `wrangler secret put` — see README.
+APP_NAME = "Nice Operation · Breakfast"
+
+# Custom domain. Comment this block out until the zone is active on Cloudflare,
+# otherwise the first deploy fails on an unknown route.
+[[routes]]
+pattern = "breakfast.niceoperation.com"
+custom_domain = true
+
+[observability]
+enabled = true
