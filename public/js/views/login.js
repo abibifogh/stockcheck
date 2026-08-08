@@ -17,8 +17,8 @@ export function renderLogin(onSuccess) {
     error.textContent = 'Checking…';
     try {
       const result = await api.login(pin);
-      toast(`Signed in as ${result.role}`, 'good');
-      onSuccess(result.role);
+      toast(`Welcome, ${result.name}`, 'good');
+      onSuccess(result);
     } catch (err) {
       error.textContent = err.message;
       pin = '';

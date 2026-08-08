@@ -1,12 +1,16 @@
-import { badRequest, bool, int, json, notFound, num, readJson, str } from '../lib/http.js';
+import { badRequest, bool, int, isMissingTable, json, notFound, num, readJson, str } from '../lib/http.js';
+import { assertDayWritable } from '../lib/locks.js';
 import { isDay } from '../util/dates.js';
 
 const UNITS = ['kg', 'g', 'L', 'ml', 'pcs', 'pack', 'loaf', 'tray', 'crate', 'box', 'bottle'];
 
+// Settings that must never be exposed to the browser, whatever the role.
+const PRIVATE_SETTINGS = new Set(['pin_pepper']);
+
 /** Catalogue + settings in one call — the app's cold-start payload. */
 export async function bootstrap(ctx) {
   const { db } = ctx;
-  const [categories, ingredients, settings] = await Promise.all([
+  const [categories, ingredients, settings, suppliers] = await Promise.all([
     db.prepare('SELECT * FROM categories ORDER BY sort_order, name').all(),
     db.prepare(
       `SELECT i.*, c.name AS category_name
@@ -14,15 +18,113 @@ export async function bootstrap(ctx) {
        ORDER BY c.sort_order, c.name, i.sort_order, i.name`,
     ).all(),
     db.prepare('SELECT key, value FROM settings').all(),
+    db.prepare('SELECT * FROM suppliers WHERE active = 1 ORDER BY sort_order, name').all()
+      .catch((err) => {
+        if (isMissingTable(err)) return { results: [] };
+        throw err;
+      }),
   ]);
+
+  const settingsMap = Object.fromEntries(
+    (settings.results ?? [])
+      .filter((r) => !PRIVATE_SETTINGS.has(r.key))
+      .map((r) => [r.key, r.value]),
+  );
 
   return json({
     categories: categories.results ?? [],
     ingredients: ingredients.results ?? [],
-    settings: Object.fromEntries((settings.results ?? []).map((r) => [r.key, r.value])),
+    suppliers: suppliers.results ?? [],
+    settings: settingsMap,
     units: UNITS,
-    role: ctx.session.role,
+    role: ctx.session.user.role,
+    user: {
+      id: ctx.session.user.id,
+      name: ctx.session.user.name,
+      role: ctx.session.user.role,
+    },
+    permissions: ctx.session.permissions,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Suppliers
+// ---------------------------------------------------------------------------
+
+export async function listSuppliers(ctx) {
+  const rows = await ctx.db.prepare(
+    `SELECT s.*,
+            (SELECT COUNT(*) FROM purchases p WHERE p.supplier = s.name) AS purchase_count
+     FROM suppliers s ORDER BY s.active DESC, s.sort_order, s.name`,
+  ).all();
+  return json({ suppliers: rows.results ?? [] });
+}
+
+function supplierFields(body) {
+  return {
+    name: str(body.name, 'Supplier name', { required: true, max: 120 }),
+    contact: str(body.contact, 'Contact person', { max: 120 }),
+    phone: str(body.phone, 'Phone', { max: 60 }),
+    note: str(body.note, 'Note', { max: 300 }),
+    active: bool(body.active, true) ? 1 : 0,
+    sort_order: int(body.sort_order, 'Sort order', { min: 0, max: 10000, fallback: 100 }),
+  };
+}
+
+export async function createSupplier(ctx) {
+  const f = supplierFields(await readJson(ctx.request));
+  try {
+    const row = await ctx.db.prepare(
+      `INSERT INTO suppliers (name, contact, phone, note, active, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?) RETURNING *`,
+    ).bind(f.name, f.contact, f.phone, f.note, f.active, f.sort_order).first();
+    return json({ supplier: row }, { status: 201 });
+  } catch (err) {
+    if (String(err).includes('UNIQUE')) throw badRequest(`"${f.name}" is already on the supplier list`);
+    throw err;
+  }
+}
+
+export async function updateSupplier(ctx, id) {
+  const f = supplierFields(await readJson(ctx.request));
+  const existing = await ctx.db.prepare('SELECT * FROM suppliers WHERE id = ?').bind(id).first();
+  if (!existing) throw notFound('Supplier not found');
+
+  try {
+    const row = await ctx.db.prepare(
+      `UPDATE suppliers SET name = ?, contact = ?, phone = ?, note = ?, active = ?, sort_order = ?
+       WHERE id = ? RETURNING *`,
+    ).bind(f.name, f.contact, f.phone, f.note, f.active, f.sort_order, id).first();
+
+    // Past purchases record the supplier by name, so a rename has to carry
+    // through or the delivery history splits into two suppliers.
+    if (existing.name !== f.name) {
+      await ctx.db.prepare('UPDATE purchases SET supplier = ? WHERE supplier = ?')
+        .bind(f.name, existing.name).run();
+    }
+    return json({ supplier: row });
+  } catch (err) {
+    if (String(err).includes('UNIQUE')) throw badRequest(`"${f.name}" is already on the supplier list`);
+    throw err;
+  }
+}
+
+/** Suppliers with delivery history are deactivated rather than deleted. */
+export async function deleteSupplier(ctx, id) {
+  const existing = await ctx.db.prepare('SELECT * FROM suppliers WHERE id = ?').bind(id).first();
+  if (!existing) throw notFound('Supplier not found');
+
+  const used = await ctx.db.prepare('SELECT COUNT(*) AS n FROM purchases WHERE supplier = ?')
+    .bind(existing.name).first();
+
+  if (used?.n > 0) {
+    const row = await ctx.db.prepare('UPDATE suppliers SET active = 0 WHERE id = ? RETURNING *')
+      .bind(id).first();
+    return json({ ok: true, retired: true, supplier: row });
+  }
+
+  await ctx.db.prepare('DELETE FROM suppliers WHERE id = ?').bind(id).run();
+  return json({ ok: true, retired: false });
 }
 
 export async function createCategory(ctx) {
@@ -136,6 +238,37 @@ export async function deleteIngredient(ctx, id) {
   return json({ ok: true, retired: false });
 }
 
+/**
+ * The most recent unit cost paid for each ingredient. Used to pre-fill the
+ * delivery form: prices rarely move between deliveries, so the last one is
+ * almost always right, and when it is wrong the person keying it in is the one
+ * holding the invoice.
+ */
+export async function lastUnitCosts(db) {
+  const rows = await db.prepare(
+    `SELECT p.ingredient_id, p.unit_cost, p.day, p.supplier
+     FROM purchases p
+     JOIN (
+       SELECT ingredient_id, MAX(day || '-' || printf('%08d', id)) AS newest
+       FROM purchases GROUP BY ingredient_id
+     ) latest
+       ON latest.ingredient_id = p.ingredient_id
+      AND latest.newest = p.day || '-' || printf('%08d', p.id)`,
+  ).all();
+
+  return Object.fromEntries(
+    (rows.results ?? []).map((r) => [r.ingredient_id, {
+      unitCost: Number(r.unit_cost),
+      day: r.day,
+      supplier: r.supplier ?? null,
+    }]),
+  );
+}
+
+export async function getLastCosts(ctx) {
+  return json({ lastCosts: await lastUnitCosts(ctx.db) });
+}
+
 export async function listPurchases(ctx) {
   const from = ctx.url.searchParams.get('from');
   const to = ctx.url.searchParams.get('to');
@@ -153,18 +286,41 @@ export async function listPurchases(ctx) {
      LIMIT 500`,
   ).bind(...binds).all();
 
-  return json({ purchases: rows.results ?? [] });
+  return json({
+    purchases: rows.results ?? [],
+    lastCosts: await lastUnitCosts(ctx.db),
+  });
 }
 
 export async function createPurchase(ctx) {
   const body = await readJson(ctx.request);
   const day = str(body.day, 'Date', { required: true, max: 10 });
   if (!isDay(day)) throw badRequest('Invalid date');
+  await assertDayWritable(ctx.db, day);
+
   const ingredientId = int(body.ingredient_id, 'Ingredient', { min: 1, required: true });
   const qty = num(body.qty, 'Quantity', { min: 0.0001, max: 1e6, required: true });
   const unitCost = num(body.unit_cost, 'Unit cost', { min: 0, max: 1e6, required: true });
-  const supplier = str(body.supplier, 'Supplier', { max: 120 });
   const note = str(body.note, 'Note', { max: 500 });
+
+  // How the supplier is captured is an admin decision, and it is enforced here
+  // rather than only in the form — otherwise "choose from the list" would be a
+  // suggestion that any stale browser tab could ignore.
+  const modeRow = await ctx.db.prepare("SELECT value FROM settings WHERE key = 'supplier_mode'").first();
+  const mode = modeRow?.value || 'select';
+
+  let supplier = str(body.supplier, 'Supplier', { max: 120 });
+
+  if (mode === 'off') {
+    supplier = null;
+  } else if (mode === 'select' && supplier) {
+    const known = await ctx.db.prepare(
+      'SELECT name FROM suppliers WHERE name = ? AND active = 1',
+    ).bind(supplier).first();
+    if (!known) {
+      throw badRequest(`"${supplier}" is not on the supplier list. Add it under Setup → Suppliers first.`);
+    }
+  }
 
   try {
     const row = await ctx.db.prepare(
@@ -178,6 +334,93 @@ export async function createPurchase(ctx) {
   }
 }
 
+/**
+ * Record a whole delivery in one go: one date and supplier, many line items.
+ * A delivery note lists several things at once, so making somebody save them
+ * one at a time is just a slower way of typing the same invoice.
+ *
+ * The lines are written as a single batch, so a delivery is never half-saved.
+ */
+export async function createDelivery(ctx) {
+  const body = await readJson(ctx.request);
+
+  const day = str(body.day, 'Date', { required: true, max: 10 });
+  if (!isDay(day)) throw badRequest('Invalid date');
+
+  await assertDayWritable(ctx.db, day);
+
+  const note = str(body.note, 'Note', { max: 500 });
+  const items = Array.isArray(body.items) ? body.items : [];
+  if (!items.length) throw badRequest('Add at least one item to the delivery');
+  if (items.length > 200) throw badRequest('That is a very large delivery — split it into two');
+
+  const supplier = await resolveSupplier(ctx.db, body.supplier);
+
+  const validIds = new Set(
+    ((await ctx.db.prepare('SELECT id FROM ingredients WHERE active = 1').all()).results ?? [])
+      .map((r) => r.id),
+  );
+
+  const statements = [];
+  let total = 0;
+
+  items.forEach((item, index) => {
+    const ingredientId = int(item.ingredient_id, `Item ${index + 1} ingredient`, { min: 1, required: true });
+    if (!validIds.has(ingredientId)) throw badRequest(`Item ${index + 1} is not a known ingredient`);
+
+    const qty = num(item.qty, `Item ${index + 1} quantity`, { min: 0.0001, max: 1e6, required: true });
+    const unitCost = num(item.unit_cost, `Item ${index + 1} unit cost`, { min: 0, max: 1e6, fallback: 0 });
+
+    total += qty * unitCost;
+    statements.push(
+      ctx.db.prepare(
+        `INSERT INTO purchases (day, ingredient_id, qty, unit_cost, supplier, note)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      ).bind(day, ingredientId, qty, unitCost, supplier, note),
+    );
+  });
+
+  statements.push(
+    ctx.db.prepare('INSERT INTO audit_log (actor, action, entity, detail) VALUES (?, ?, ?, ?)')
+      .bind(
+        `${ctx.session.user.name} (${ctx.session.user.role})`,
+        'delivery.create',
+        day,
+        JSON.stringify({ supplier, lines: items.length, total: Math.round(total * 100) / 100 }),
+      ),
+  );
+
+  await ctx.db.batch(statements);
+
+  return json({
+    ok: true,
+    day,
+    supplier,
+    lines: items.length,
+    total: Math.round(total * 100) / 100,
+  }, { status: 201 });
+}
+
+/** Apply the admin's supplier policy to an incoming value. */
+async function resolveSupplier(db, raw) {
+  const modeRow = await db.prepare("SELECT value FROM settings WHERE key = 'supplier_mode'").first();
+  const mode = modeRow?.value || 'select';
+
+  if (mode === 'off') return null;
+
+  const supplier = str(raw, 'Supplier', { max: 120 });
+  if (!supplier) return null;
+
+  if (mode === 'select') {
+    const known = await db.prepare('SELECT name FROM suppliers WHERE name = ? AND active = 1')
+      .bind(supplier).first();
+    if (!known) {
+      throw badRequest(`"${supplier}" is not on the supplier list. Add it under Setup → Suppliers first.`);
+    }
+  }
+  return supplier;
+}
+
 export async function deletePurchase(ctx, id) {
   await ctx.db.prepare('DELETE FROM purchases WHERE id = ?').bind(id).run();
   return json({ ok: true });
@@ -188,6 +431,8 @@ export async function createStockCount(ctx) {
   const body = await readJson(ctx.request);
   const day = str(body.day, 'Date', { required: true, max: 10 });
   if (!isDay(day)) throw badRequest('Invalid date');
+  await assertDayWritable(ctx.db, day);
+
   const counts = Array.isArray(body.counts) ? body.counts : [];
   if (!counts.length) throw badRequest('No counts supplied');
   if (counts.length > 500) throw badRequest('Too many counts in one submission');
@@ -206,21 +451,52 @@ export async function createStockCount(ctx) {
   return json({ ok: true, saved: statements.length });
 }
 
-const ALLOWED_SETTINGS = new Set(['currency', 'timezone', 'property_name', 'default_outsider_fee']);
+const ALLOWED_SETTINGS = new Set([
+  'currency', 'timezone', 'property_name',
+  'outsider_fee', 'allow_fill_usual', 'supplier_mode',
+  'require_complete_entry', 'require_resubmit_approval',
+]);
+
+const SETTING_RULES = {
+  outsider_fee: (value) => {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0 || n > 1e6) throw badRequest('The outsider fee must be a positive amount');
+    return String(n);
+  },
+  allow_fill_usual: (value) => (bool(value, true) ? '1' : '0'),
+  require_complete_entry: (value) => (bool(value, true) ? '1' : '0'),
+  require_resubmit_approval: (value) => (bool(value, true) ? '1' : '0'),
+  supplier_mode: (value) => {
+    const mode = String(value);
+    if (!['select', 'free', 'off'].includes(mode)) throw badRequest('Unknown supplier setting');
+    return mode;
+  },
+  currency: (value) => str(value, 'Currency', { required: true, max: 8 }).toUpperCase(),
+};
 
 export async function updateSettings(ctx) {
   const body = await readJson(ctx.request);
   const statements = [];
+
   for (const [key, value] of Object.entries(body)) {
     if (!ALLOWED_SETTINGS.has(key)) continue;
+    const clean = SETTING_RULES[key]
+      ? SETTING_RULES[key](value)
+      : str(value, key, { max: 100, fallback: '' });
     statements.push(
       ctx.db.prepare(
         'INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?2',
-      ).bind(key, str(value, key, { max: 100, fallback: '' })),
+      ).bind(key, clean),
     );
   }
+
   if (!statements.length) throw badRequest('No recognised settings supplied');
   await ctx.db.batch(statements);
+
   const rows = await ctx.db.prepare('SELECT key, value FROM settings').all();
-  return json({ settings: Object.fromEntries((rows.results ?? []).map((r) => [r.key, r.value])) });
+  return json({
+    settings: Object.fromEntries(
+      (rows.results ?? []).filter((r) => !PRIVATE_SETTINGS.has(r.key)).map((r) => [r.key, r.value]),
+    ),
+  });
 }

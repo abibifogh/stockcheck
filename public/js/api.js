@@ -53,6 +53,19 @@ export const api = {
   recentDays: (limit = 30) => request(`/api/days?limit=${limit}`),
   getDay: (day) => request(`/api/days/${day}`),
   saveDay: (day, payload) => request(`/api/days/${day}`, { method: 'PUT', body: payload }),
+  deleteDay: (day) => request(`/api/days/${day}`, { method: 'DELETE' }),
+
+  revisions: (status = 'pending') => request(`/api/revisions?status=${status}`),
+  pendingCount: () => request('/api/revisions/pending-count'),
+  reviewRevision: (id, body) => request(`/api/revisions/${id}/review`, { method: 'POST', body }),
+
+  importTemplateUrl: () => '/api/import/template',
+  importDays: (body) => request('/api/import/days', { method: 'POST', body }),
+
+  locks: () => request('/api/locks'),
+  createLock: (body) => request('/api/locks', { method: 'POST', body }),
+  deleteLock: (id) => request(`/api/locks/${id}`, { method: 'DELETE' }),
+  audit: (limit = 100) => request(`/api/audit?limit=${limit}`),
 
   overview: () => request('/api/insights/overview'),
   daily: (day) => request(`/api/insights/daily${day ? `?day=${day}` : ''}`),
@@ -70,7 +83,26 @@ export const api = {
 
   purchases: (from, to) => request(`/api/purchases?${new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) })}`),
   createPurchase: (body) => request('/api/purchases', { method: 'POST', body }),
+  createDelivery: (body) => request('/api/deliveries', { method: 'POST', body }),
+  lastCosts: () => request('/api/purchases/last-costs'),
   deletePurchase: (id) => request(`/api/purchases/${id}`, { method: 'DELETE' }),
+
+  suppliers: () => request('/api/suppliers'),
+  createSupplier: (body) => request('/api/suppliers', { method: 'POST', body }),
+  updateSupplier: (id, body) => request(`/api/suppliers/${id}`, { method: 'PUT', body }),
+  deleteSupplier: (id) => request(`/api/suppliers/${id}`, { method: 'DELETE' }),
+
+  users: () => request('/api/users'),
+  createUser: (body) => request('/api/users', { method: 'POST', body }),
+  updateUser: (id, body) => request(`/api/users/${id}`, { method: 'PUT', body }),
+  deleteUser: (id) => request(`/api/users/${id}`, { method: 'DELETE' }),
+
+  notifications: () => request('/api/notifications'),
+  updateNotifications: (body) => request('/api/notifications', { method: 'PUT', body }),
+  testNotification: () => request('/api/notifications/test', { method: 'POST' }),
+
+  dataSummary: () => request('/api/data/summary'),
+  eraseData: (body) => request('/api/data/erase', { method: 'POST', body }),
 
   saveStockCounts: (body) => request('/api/stock-counts', { method: 'POST', body }),
   updateSettings: (body) => request('/api/settings', { method: 'PUT', body }),

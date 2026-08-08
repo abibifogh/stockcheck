@@ -28,6 +28,11 @@ with a D1 (SQLite) database behind it. Deploys from GitHub on every push to
 - **Autosaves** as you go, and falls back to the device's own storage if the
   connection drops, syncing when it returns.
 
+A submission must be **complete**: every everyday item needs a figure before
+the day can be sent. Zero is a perfectly good answer — the cook is asked to
+confirm any zeros out loud — but a blank is not, because a blank is
+indistinguishable from "we forgot" and silently drags every average down.
+
 ### For the manager — day, week, month
 
 | View | Answers |
@@ -36,8 +41,19 @@ with a D1 (SQLite) database behind it. Deploys from GitHub on every push to
 | **Day** | What this morning cost, how it compares with a normal day *of the same weekday*, and which items moved the number. |
 | **Week** | This week against last, weekday patterns, biggest risers and fallers, portioning consistency. |
 | **Month** | Full report: cost per guest trend, category mix, outsider economics, store movement, best/worst days, projection. |
+| **Approvals** | Corrections to days already submitted, shown as a before/after list to accept or reject. |
 | **Stock** | Book stock, days of cover, reorder list, physical-count variances. |
-| **Purchases** | Delivery log — what makes every money figure real rather than nominal. |
+| **Purchases** | Delivery log — multi-line, supplier picked from a list, unit costs pre-filled from the last price paid. |
+
+### For the administrator
+
+| Feature | What it does |
+|---|---|
+| **People** | Individual accounts, each with their own PIN and their own list of sections they can open. Enforced on the server, not just hidden in the menu. |
+| **Closed periods** | Lock a date range once it has been reported on. Nothing inside it can be added, changed or deleted — by anyone, including an administrator, until it is reopened. |
+| **Bulk entry** | Download a spreadsheet template, fill in a backlog, upload it. Always previews before it writes. |
+| **Daily email** | A summary of each submitted day, with the analysis, to whichever addresses you choose. |
+| **Erase data** | Clear a trial run before going live, with a typed confirmation. Keeps people, settings and the ingredient list. |
 
 ---
 
@@ -75,6 +91,11 @@ same applies to month-to-date.
 
 **Missing comparisons stay missing.** Where there is no history to compare
 against, the reports say so rather than printing a confident "0% change".
+
+**A recorded day does not change quietly.** Once a day has been submitted, a
+cook re-submitting it does not overwrite anything — the proposal is parked and
+somebody with the Approvals permission compares the two and decides. Managers
+and administrators editing directly are trusted to do so.
 
 **Outsider economics.** Outside guests eat the same food, so their attributable
 cost is the per-guest food cost times their headcount. Contribution counts food
@@ -138,6 +159,32 @@ Cooks stay signed in for 60 days so the kitchen tablet isn't logging in every
 morning; managers re-authenticate every 12 hours.
 
 To change a PIN later, run `wrangler secret put` again with the same name.
+
+Once you add real people under **Users & data**, everyone signs in with their
+own PIN and the shared `COOK_PIN` stops working. `MANAGER_PIN` keeps working
+permanently as a way back in if you ever lock yourself out — treat it as the
+spare key, not as a daily login.
+
+### 4b. Turning on the daily email (optional)
+
+Email goes out through [Resend](https://resend.com), which is free at this
+volume. Three steps:
+
+1. Create a Resend account and add `niceoperation.com` as a domain. It gives
+   you DNS records to add — since the domain is already on Cloudflare, that is
+   a few copy-pastes in the Cloudflare DNS screen.
+2. Create an API key and give it to the Worker:
+
+   ```bash
+   npx wrangler secret put RESEND_API_KEY
+   ```
+
+3. In the app, go to **Users & data → Daily email**, set the "from" address to
+   something at your verified domain, add the recipients, and press **Send a
+   test now**. The result appears in the log underneath.
+
+Without this the app works perfectly; it simply does not send email, and says
+so on that screen.
 
 ### 5. First deploy
 
@@ -258,6 +305,11 @@ without a database, which is what `test/analytics.test.js` does.
   morning belongs to. Set it in Setup before the kitchen starts recording.
 - **Retired, not deleted.** An ingredient with history is retired rather than
   removed, so past reports stay correct.
-- **Login is a shared PIN per role,** not per person. It suits a kitchen where a
-  tablet is shared; it does not tell you which individual keyed a number. The
-  audit log records the role and time of every save.
+- **Every save is attributed.** Each person has their own PIN, so day sheets,
+  deliveries, approvals and deletions all record who did them. The audit log
+  under Users & data is the full trail.
+- **Locks beat everyone.** A closed period cannot be written to by any role.
+  This is deliberate: the point of closing a month is that its numbers stop
+  moving. Reopening is possible, and is itself recorded.
+- **Imports always preview.** A bulk import shows exactly which days it will
+  create, replace or skip before it writes anything.

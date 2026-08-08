@@ -22,6 +22,18 @@ export const unauthorized = (message = 'Sign in required') => new HttpError(401,
 export const forbidden = (message = 'Manager access required') => new HttpError(403, message);
 export const notFound = (message = 'Not found') => new HttpError(404, message);
 
+/**
+ * True when a query failed because part of the schema has not been created.
+ *
+ * This happens in exactly one situation that matters: new code is deployed
+ * before the matching database changes have been applied. Detecting it lets us
+ * say so plainly instead of returning "something went wrong", which tells the
+ * person nothing about the one action that would fix it.
+ */
+export function isMissingTable(err) {
+  return /no such table|no such column/i.test(String(err?.message ?? err));
+}
+
 export async function readJson(request) {
   const type = request.headers.get('Content-Type') || '';
   if (!type.includes('application/json')) throw badRequest('Expected a JSON body');

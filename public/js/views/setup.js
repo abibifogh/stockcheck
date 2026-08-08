@@ -10,6 +10,7 @@ export async function renderSetup() {
   const reload = async () => mount(host, await renderSetup());
 
   const { categories, ingredients, units, settings } = state.catalog;
+  const supplierData = await api.suppliers().catch(() => ({ suppliers: [] }));
 
   const settingsCard = card('Property settings', {},
     settingsForm(settings, reload),
@@ -89,6 +90,7 @@ export async function renderSetup() {
       ),
     ),
     h('div.grid.grid-2', settingsCard, categoryCard),
+    supplierCard(supplierData.suppliers || [], settings, reload),
     ingredientCard,
   );
   return host;
@@ -98,15 +100,60 @@ function settingsForm(settings, onSaved) {
   const propertyName = h('input', { type: 'text', value: settings.property_name || '' });
   const currency = h('input', { type: 'text', value: settings.currency || 'GHS', maxlength: 8 });
   const timezone = h('input', { type: 'text', value: settings.timezone || 'Africa/Accra' });
-  const fee = h('input', { type: 'number', min: 0, step: '0.5', value: settings.default_outsider_fee || 0 });
+  const fee = h('input', {
+    type: 'number', min: 0, step: '0.5',
+    value: settings.outsider_fee ?? settings.default_outsider_fee ?? 0,
+  });
+  const fillUsual = h('select',
+    h('option', { value: '1', selected: settings.allow_fill_usual !== '0' }, 'Allowed'),
+    h('option', { value: '0', selected: settings.allow_fill_usual === '0' }, 'Hidden from cooks'),
+  );
+  const requireComplete = h('select',
+    h('option', { value: '1', selected: settings.require_complete_entry !== '0' },
+      'Every everyday item must have a figure'),
+    h('option', { value: '0', selected: settings.require_complete_entry === '0' },
+      'Allow partly filled sheets'),
+  );
+  const requireApproval = h('select',
+    h('option', { value: '1', selected: settings.require_resubmit_approval !== '0' },
+      'A correction waits for approval'),
+    h('option', { value: '0', selected: settings.require_resubmit_approval === '0' },
+      'A correction overwrites straight away'),
+  );
+  const supplierMode = h('select',
+    h('option', { value: 'select', selected: (settings.supplier_mode || 'select') === 'select' },
+      'Choose from the supplier list'),
+    h('option', { value: 'free', selected: settings.supplier_mode === 'free' },
+      'Type any supplier name'),
+    h('option', { value: 'off', selected: settings.supplier_mode === 'off' },
+      'Do not ask for a supplier'),
+  );
 
   return h('div',
     h('label.field', h('span', 'Property / unit name'), propertyName),
     h('div.field-row',
       h('label.field', h('span', 'Currency code'), currency),
       h('label.field', h('span', 'Timezone'), timezone),
-      h('label.field', h('span', 'Default outsider fee'), fee),
     ),
+    h('div.field-row',
+      h('label.field', h('span', 'Fee per outside guest'), fee),
+      h('label.field', h('span', '“Fill usual” button'), fillUsual),
+      h('label.field', h('span', 'Supplier on deliveries'), supplierMode),
+    ),
+    h('div.field-row',
+      h('label.field', h('span', 'Completeness of a submission'), requireComplete),
+      h('label.field', h('span', 'Re-submitting a recorded day'), requireApproval),
+    ),
+    h('p.muted', { style: { fontSize: '.8rem' } },
+      'The fee is fixed here rather than typed each morning, so the kitchen cannot change what '
+      + 'outside guests are charged. Days already recorded keep the fee that applied then.'),
+    h('p.muted', { style: { fontSize: '.8rem' } },
+      '“Fill usual” fills every habitual item in one tap. Hide it if you would rather each '
+      + 'quantity were entered deliberately — the per-item suggestions stay either way.'),
+    h('p.muted', { style: { fontSize: '.8rem' } },
+      'Requiring completeness means a cook must put a number against every everyday item before the '
+      + 'day can be submitted — 0 is a perfectly good answer, and they are asked to confirm any zeros. '
+      + 'A blank is what causes trouble, because it looks the same as “we forgot”.'),
     h('p.muted', { style: { fontSize: '.8rem' } },
       'The timezone decides which calendar day a morning belongs to. Use an IANA name such as Africa/Accra.'),
     h('button.btn-primary', {
@@ -117,7 +164,11 @@ function settingsForm(settings, onSaved) {
             property_name: propertyName.value,
             currency: currency.value.toUpperCase(),
             timezone: timezone.value,
-            default_outsider_fee: fee.value,
+            outsider_fee: fee.value,
+            allow_fill_usual: fillUsual.value === '1',
+            supplier_mode: supplierMode.value,
+            require_complete_entry: requireComplete.value === '1',
+            require_resubmit_approval: requireApproval.value === '1',
           });
           setCurrency(result.settings.currency);
           state.settings = result.settings;
@@ -129,6 +180,86 @@ function settingsForm(settings, onSaved) {
         }
       },
     }, 'Save settings'),
+  );
+}
+
+function supplierCard(suppliers, settings, onSaved) {
+  const mode = settings.supplier_mode || 'select';
+
+  const name = h('input', { type: 'text', placeholder: 'Supplier name' });
+  const contact = h('input', { type: 'text', placeholder: 'Contact person' });
+  const phone = h('input', { type: 'text', placeholder: 'Phone' });
+
+  const add = async (event) => {
+    if (!name.value.trim()) { toast('Enter a supplier name', 'bad'); return; }
+    event.target.disabled = true;
+    try {
+      await api.createSupplier({
+        name: name.value.trim(),
+        contact: contact.value.trim() || null,
+        phone: phone.value.trim() || null,
+      });
+      toast('Supplier added', 'good');
+      onSaved();
+    } catch (err) {
+      toast(err.message, 'bad');
+      event.target.disabled = false;
+    }
+  };
+
+  return card('Suppliers', {
+    note: mode === 'select'
+      ? 'Deliveries are recorded against this list'
+      : mode === 'free'
+        ? 'Supplier names are typed freely — this list is not enforced'
+        : 'Suppliers are not being recorded on deliveries',
+    wide: true,
+  },
+    table([
+      { key: 'name', label: 'Supplier' },
+      { key: 'contact', label: 'Contact', format: (v) => v || h('span.muted', '—') },
+      { key: 'phone', label: 'Phone', format: (v) => v || h('span.muted', '—') },
+      { key: 'purchase_count', label: 'Deliveries', align: 'right', format: (v) => fmtNum(v, 0) },
+      { key: 'active', label: 'Status', format: (v) => (v ? h('span.pill.good', 'active') : h('span.pill.warn', 'retired')) },
+      {
+        key: 'id',
+        label: '',
+        format: (id, row) => h('div.btn-row',
+          h('button.btn-sm', {
+            onclick: () => {
+              const next = prompt('Supplier name', row.name);
+              if (next == null || !next.trim()) return;
+              api.updateSupplier(id, { ...row, name: next.trim(), active: Boolean(row.active) })
+                .then(() => { toast('Supplier updated', 'good'); onSaved(); })
+                .catch((err) => toast(err.message, 'bad'));
+            },
+          }, 'Rename'),
+          h('button.btn-sm.btn-danger', {
+            onclick: async () => {
+              if (!confirm(`Remove ${row.name}? Past deliveries keep their supplier name.`)) return;
+              try {
+                const result = await api.deleteSupplier(id);
+                toast(result.retired ? 'Supplier retired — history kept' : 'Supplier removed', 'good');
+                onSaved();
+              } catch (err) { toast(err.message, 'bad'); }
+            },
+          }, 'Remove'),
+        ),
+      },
+    ], suppliers, { empty: 'No suppliers yet. Add the places you buy from.' }),
+
+    h('div', { style: { marginTop: '.9rem' } },
+      h('h3', { style: { marginBottom: '.5rem' } }, 'Add a supplier'),
+      h('div.field-row',
+        h('label.field', h('span', 'Name'), name),
+        h('label.field', h('span', 'Contact person'), contact),
+        h('label.field', h('span', 'Phone'), phone),
+      ),
+      h('button.btn-primary', { onclick: add }, 'Add supplier'),
+    ),
+    h('p.muted', { style: { fontSize: '.82rem', marginTop: '.7rem', marginBottom: 0 } },
+      'Renaming a supplier updates its past deliveries too, so the reports stay as one supplier '
+      + 'rather than splitting in two. A supplier with history is retired rather than deleted.'),
   );
 }
 

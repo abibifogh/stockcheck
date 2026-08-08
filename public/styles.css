@@ -377,3 +377,22 @@ body:has(.entry-footer) .toasts { bottom: calc(4.75rem + env(safe-area-inset-bot
   .topbar, .entry-footer, .toolbar, .toasts { display: none !important; }
   .card { break-inside: avoid; box-shadow: none; }
 }
+
+/* An everyday item still missing a figure when a submission was attempted. */
+.item.needed {
+  border-color: var(--bad);
+  background: color-mix(in srgb, var(--bad-soft) 60%, var(--surface));
+}
+.item.needed .item-name::after {
+  content: 'needs a figure';
+  display: inline-block;
+  margin-left: .4rem;
+  padding: .05rem .4rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bad) 16%, transparent);
+  color: var(--bad);
+  font-weight: 650;
+  font-size: .72rem;
+  white-space: nowrap;
+  vertical-align: middle;
+}
