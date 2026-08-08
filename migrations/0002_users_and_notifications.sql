@@ -8,7 +8,11 @@ CREATE TABLE IF NOT EXISTS users (
   name          TEXT    NOT NULL,
   -- HMAC of the PIN using a pepper stored in settings. Deterministic so a
   -- login is a single indexed lookup rather than a scan of every user.
-  pin_hash      TEXT    NOT NULL UNIQUE,
+  -- Null for administrators, who sign in with a password instead.
+  pin_hash      TEXT    UNIQUE,
+  -- Administrators sign in with these; everyone else uses the PIN above.
+  email         TEXT    UNIQUE,
+  password_hash TEXT,
   role          TEXT    NOT NULL DEFAULT 'cook',
   -- JSON array of permission keys. NULL means "use the role's defaults".
   permissions   TEXT,
@@ -19,6 +23,7 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_active ON users (active);
+CREATE INDEX IF NOT EXISTS idx_users_email  ON users (email);
 
 -- Delivery record for notification emails, so a manager can see at a glance
 -- whether the morning's mail actually went out.

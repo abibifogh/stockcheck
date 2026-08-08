@@ -1,6 +1,7 @@
 import {
-  clearCookie, createToken, getSession, sessionCookie,
-  throttleCheck, throttleFail, throttleReset, tokenTtl, userForPin,
+  clearCookie, createToken, getPepper, getSession, hashPassword, hashPin,
+  isReservedPin, sessionCookie, throttleCheck, throttleFail, throttleReset,
+  tokenTtl, userForCredentials, userForPin, verifyPassword,
 } from './lib/auth.js';
 import { effectivePermissions } from './lib/permissions.js';
 import {
@@ -12,6 +13,7 @@ import * as importing from './routes/importing.js';
 import * as catalog from './routes/catalog.js';
 import * as insights from './routes/insights.js';
 import * as admin from './routes/admin.js';
+import { PIN_TAKEN } from './routes/admin.js';
 
 /**
  * Route table: [method, pattern, permission, handler].
@@ -25,6 +27,7 @@ const ROUTES = [
   ['POST', '/api/auth/login', 'public', login],
   ['POST', '/api/auth/logout', 'public', logout],
   ['GET', '/api/auth/me', 'public', me],
+  ['POST', '/api/auth/change-credentials', null, changeCredentials],
 
   ['GET', '/api/bootstrap', null, catalog.bootstrap],
 
@@ -195,14 +198,21 @@ async function login(ctx) {
   }
 
   const body = await readJson(request);
-  const pin = str(body.pin, 'PIN', { required: true, max: 64 });
 
-  const user = await userForPin(db, pin, env);
+  // Two ways in: a PIN for the kitchen and anyone managing the operation, or an
+  // email address and password for administrators.
+  const user = body.email
+    ? await userForCredentials(db, body.email, String(body.password ?? ''))
+    : await userForPin(db, str(body.pin, 'PIN', { required: true, max: 64 }), env);
+
   if (!user) {
     throttleFail(ip);
-    // A uniform delay keeps a wrong PIN from being distinguishable by timing.
+    // A uniform delay keeps a wrong credential from being distinguishable by
+    // timing, and says nothing about which half was wrong.
     await new Promise((resolve) => setTimeout(resolve, 400));
-    throw badRequest('That PIN was not recognised');
+    throw badRequest(body.email
+      ? 'That email address and password combination was not recognised'
+      : 'That PIN was not recognised');
   }
 
   throttleReset(ip);
@@ -228,6 +238,7 @@ async function login(ctx) {
     ok: true,
     role: user.role,
     name: user.name,
+    isRecovery: Boolean(user.isRecovery),
     permissions: effectivePermissions(user),
   }, {
     headers: { 'Set-Cookie': sessionCookie(token, user.role, url.protocol === 'https:') },
@@ -252,8 +263,85 @@ async function me(ctx) {
     authenticated: true,
     role: session.user.role,
     name: session.user.name,
+    email: session.user.email ?? null,
     userId: session.user.id,
+    isRecovery: Boolean(session.user.isRecovery),
+    signsInWith: session.user.role === 'admin' ? 'password' : 'pin',
     permissions: session.permissions,
     settings: Object.fromEntries((settings.results ?? []).map((r) => [r.key, r.value])),
   });
+}
+
+/**
+ * Change your own PIN or password.
+ *
+ * Everyone can do this for themselves, which is what stops a shared PIN
+ * quietly becoming permanent because changing it needed an administrator.
+ * The current credential is always required, so an unattended signed-in tablet
+ * cannot be used to lock its owner out.
+ */
+async function changeCredentials(ctx) {
+  const { db, session } = ctx;
+  const body = await readJson(ctx.request);
+
+  if (session.user.isRecovery) {
+    throw badRequest(
+      'You are signed in with the emergency recovery PIN, which is set on the server rather than here. '
+      + 'Sign in with your own account to change its credentials.',
+    );
+  }
+
+  const row = await db.prepare(
+    'SELECT id, role, pin_hash, password_hash FROM users WHERE id = ?',
+  ).bind(session.user.id).first();
+  if (!row) throw badRequest('Your account could not be found');
+
+  // Administrators hold a password; everyone else holds a PIN.
+  if (session.user.role === 'admin') {
+    const current = String(body.currentPassword ?? '');
+    const next = String(body.newPassword ?? '');
+
+    if (!await verifyPassword(current, row.password_hash)) {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      throw badRequest('Your current password is not correct');
+    }
+    if (next.length < 10) throw badRequest('The new password must be at least 10 characters');
+    if (/^\d+$/.test(next)) throw badRequest('A password cannot be only digits');
+    if (next === current) throw badRequest('The new password is the same as the current one');
+
+    await db.batch([
+      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?')
+        .bind(await hashPassword(next), row.id),
+      db.prepare('INSERT INTO audit_log (actor, action, entity, detail) VALUES (?, ?, ?, ?)')
+        .bind(`${session.user.name} (${session.user.role})`, 'account.password_change', String(row.id), null),
+    ]);
+
+    return json({ ok: true, changed: 'password' });
+  }
+
+  const current = String(body.currentPin ?? '');
+  const next = String(body.newPin ?? '');
+  const pepper = await getPepper(db);
+
+  if (await hashPin(current, pepper) !== row.pin_hash) {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    throw badRequest('Your current PIN is not correct');
+  }
+  if (!/^\d{4,10}$/.test(next)) throw badRequest('The new PIN must be 4 to 10 digits');
+  if (next === current) throw badRequest('The new PIN is the same as the current one');
+  if (await isReservedPin(next, ctx.env)) throw badRequest(PIN_TAKEN);
+
+  try {
+    await db.batch([
+      db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?')
+        .bind(await hashPin(next, pepper), row.id),
+      db.prepare('INSERT INTO audit_log (actor, action, entity, detail) VALUES (?, ?, ?, ?)')
+        .bind(`${session.user.name} (${session.user.role})`, 'account.pin_change', String(row.id), null),
+    ]);
+  } catch (err) {
+    if (String(err).includes('UNIQUE')) throw badRequest(PIN_TAKEN);
+    throw err;
+  }
+
+  return json({ ok: true, changed: 'pin' });
 }

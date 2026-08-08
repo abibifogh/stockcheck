@@ -11,10 +11,12 @@ import { renderPurchases } from './views/purchases.js';
 import { renderSetup } from './views/setup.js';
 import { renderAdmin } from './views/admin.js';
 import { renderApprovals } from './views/approvals.js';
+import { openAccountDialog } from './views/account.js';
 
 export const state = {
   role: null,
   name: null,
+  isRecovery: false,
   permissions: [],
   settings: {},
   catalog: null, // { categories, ingredients, suppliers, units }
@@ -106,6 +108,14 @@ function shell(content) {
         onclick: toggleTheme,
       }, '🌗'),
       h('button.btn-ghost.btn-sm', {
+        title: state.role === 'admin' ? 'Change my password' : 'Change my PIN',
+        onclick: () => openAccountDialog({
+          role: state.role,
+          name: state.name || 'you',
+          isRecovery: state.isRecovery,
+        }),
+      }, 'My account'),
+      h('button.btn-ghost.btn-sm', {
         onclick: async () => {
           await api.logout().catch(() => {});
           resetSession();
@@ -129,9 +139,10 @@ export async function render() {
   root.classList.remove('app-loading');
 
   if (!state.role) {
-    mount(root, renderLogin(async ({ role, name, permissions }) => {
+    mount(root, renderLogin(async ({ role, name, permissions, isRecovery }) => {
       state.role = role;
       state.name = name;
+      state.isRecovery = Boolean(isRecovery);
       state.permissions = permissions ?? [];
       state.catalog = null;
       if (!location.hash || !currentRoute()) navigate(defaultRoute());
@@ -176,6 +187,7 @@ async function syncPending() {
 function resetSession() {
   state.role = null;
   state.name = null;
+  state.isRecovery = false;
   state.permissions = [];
   state.catalog = null;
 }
@@ -202,6 +214,7 @@ window.addEventListener('online', syncPending);
     if (me.authenticated) {
       state.role = me.role;
       state.name = me.name;
+      state.isRecovery = Boolean(me.isRecovery);
       state.permissions = me.permissions || [];
       state.settings = me.settings || {};
       setCurrency(me.settings?.currency);

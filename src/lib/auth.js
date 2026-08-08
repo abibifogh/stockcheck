@@ -66,6 +66,87 @@ export async function readToken(token, secret) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Passwords
+// ---------------------------------------------------------------------------
+//
+// Administrators sign in with an email address and a real password rather than
+// a PIN. A PIN is the right trade-off for a cook at a tablet with flour on
+// their hands; it is the wrong one for an account that can see every cost,
+// manage people and erase data.
+//
+// Passwords are stretched with PBKDF2-SHA256. The iteration count is stored
+// alongside each hash, so it can be raised later without invalidating anyone's
+// existing password.
+
+const PBKDF2_ITERATIONS = 210_000;
+
+export async function hashPassword(password, iterations = PBKDF2_ITERATIONS) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const bits = await deriveBits(password, salt, iterations);
+  return `pbkdf2$${iterations}$${b64urlEncode(salt)}$${b64urlEncode(new Uint8Array(bits))}`;
+}
+
+async function deriveBits(password, salt, iterations) {
+  const key = await crypto.subtle.importKey(
+    'raw', encoder.encode(String(password)), 'PBKDF2', false, ['deriveBits'],
+  );
+  return crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' }, key, 256,
+  );
+}
+
+/** Constant-time password check against a stored hash. */
+export async function verifyPassword(password, stored) {
+  if (typeof stored !== 'string' || !stored.startsWith('pbkdf2$')) return false;
+  const [, iterations, saltPart, hashPart] = stored.split('$');
+  if (!iterations || !saltPart || !hashPart) return false;
+
+  try {
+    const bits = await deriveBits(password, b64urlDecode(saltPart), Number(iterations));
+    const actual = new Uint8Array(bits);
+    const expected = b64urlDecode(hashPart);
+    if (actual.length !== expected.length) return false;
+
+    let diff = 0;
+    for (let i = 0; i < actual.length; i++) diff |= actual[i] ^ expected[i];
+    return diff === 0;
+  } catch {
+    return false;
+  }
+}
+
+export function normaliseEmail(value) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+/**
+ * Sign in with an email address and password. Used by administrators, and
+ * available to anyone else who has credentials set.
+ */
+export async function userForCredentials(db, email, password) {
+  if (!email || !password) return null;
+
+  let row = null;
+  try {
+    row = await db.prepare(
+      'SELECT id, name, role, permissions, active, password_hash FROM users WHERE email = ?',
+    ).bind(normaliseEmail(email)).first();
+  } catch (err) {
+    if (!isMissingTable(err)) throw err;
+    return null;
+  }
+
+  // Run the comparison even when no account matched, so a wrong address and a
+  // wrong password take the same amount of time.
+  const stored = row?.password_hash ?? 'pbkdf2$1$AAAA$AAAA';
+  const valid = await verifyPassword(password, stored);
+
+  if (!row || !valid || !row.active) return null;
+  const { password_hash: _ignored, ...user } = row;
+  return user;
+}
+
 /** Hash a PIN for storage and lookup, using the installation's own pepper. */
 export async function hashPin(pin, pepper) {
   const key = await hmacKey(`pin:${pepper}`);
@@ -112,6 +193,24 @@ function recoveryUser() {
   };
 }
 
+/**
+ * Is this PIN reserved by the server's recovery secrets?
+ *
+ * A user PIN that matched one of them would shadow it — the users table is
+ * consulted first — silently destroying the owner's way back in. Refusing the
+ * collision is what keeps the emergency route emergency-proof.
+ *
+ * Callers must report this with exactly the same wording as "already in use by
+ * someone else". Two different messages would let anyone with an account probe
+ * for the recovery PIN one guess at a time.
+ */
+export async function isReservedPin(pin, env) {
+  if (!pin) return false;
+  if (env.MANAGER_PIN && await constantTimeEqual(pin, env.MANAGER_PIN)) return true;
+  if (env.COOK_PIN && await constantTimeEqual(pin, env.COOK_PIN)) return true;
+  return false;
+}
+
 /** Identify the person behind a PIN, or null. */
 export async function userForPin(db, pin, env) {
   if (!pin) return null;
@@ -132,10 +231,26 @@ export async function userForPin(db, pin, env) {
     usersTableExists = false;
   }
 
-  if (row) return row.active ? row : null;
+  if (row) {
+    if (!row.active) return null;
+    // An administrator's PIN, if one was ever set, is not a way in. The whole
+    // point of giving them a password is that a short code is not enough.
+    if (row.role === 'admin') return null;
+    return row;
+  }
 
-  // No matching account. Fall back to the recovery PIN.
-  if (env.MANAGER_PIN && await constantTimeEqual(pin, env.MANAGER_PIN)) return recoveryUser();
+  // No matching account. Fall back to the recovery PIN, unless it has been
+  // switched off — which an administrator can do once they have credentials
+  // and no longer want a PIN that reaches everything.
+  let recoveryAllowed = true;
+  try {
+    const setting = await db.prepare("SELECT value FROM settings WHERE key = 'allow_recovery_pin'").first();
+    recoveryAllowed = setting?.value !== '0';
+  } catch { /* setting missing: leave the way in open */ }
+
+  if (recoveryAllowed && env.MANAGER_PIN && await constantTimeEqual(pin, env.MANAGER_PIN)) {
+    return recoveryUser();
+  }
 
   // Before anybody has been added, the original cook PIN still opens the entry
   // screen so a fresh installation is usable immediately.

@@ -325,6 +325,13 @@ function usersCard(data, reload) {
           roles.find((r) => r.key === v)?.label ?? v),
       },
       {
+        key: 'signsInWith',
+        label: 'Signs in with',
+        format: (v, r) => (v === 'password'
+          ? h('div', h('div', h('span.pill.info', 'email & password')), h('small.muted', r.email || 'no address set'))
+          : h('span.pill', 'PIN')),
+      },
+      {
         key: 'permissions',
         label: 'Can open',
         format: (list, r) => h('div.btn-row',
@@ -362,9 +369,11 @@ function usersCard(data, reload) {
     ], users, { empty: 'Nobody has been added yet — everyone is still using the shared setup PINs.' }),
 
     h('p.muted', { style: { fontSize: '.82rem', marginTop: '.8rem', marginBottom: 0 } },
-      'Each person signs in with their own PIN, so every day sheet records who entered it. '
-      + 'PINs must be different from one another. If you ever lock yourself out, the MANAGER_PIN '
-      + 'set on the server still works as a way back in.'),
+      'Administrators sign in with an email address and a password. Cooks and managers use their '
+      + 'own PIN, which is faster on a kitchen tablet — and everyone can change their own from '
+      + '“My account”. Every day sheet records who entered it. If you ever lock yourself out, the '
+      + 'MANAGER_PIN set on the server still works as a way back in; it can be switched off under '
+      + 'Setup once you no longer want it.'),
   );
 }
 
@@ -376,6 +385,27 @@ function userDialog(existing, roles, permissions, onSaved) {
     type: 'text', inputmode: 'numeric', maxlength: 10,
     placeholder: existing ? 'leave blank to keep the current PIN' : '4 to 10 digits',
   });
+  const email = h('input', {
+    type: 'email', value: value.email || '', placeholder: 'name@niceoperation.com',
+  });
+  const password = h('input', {
+    type: 'password', autocomplete: 'new-password',
+    placeholder: existing?.hasPassword ? 'leave blank to keep the current password' : 'at least 10 characters',
+  });
+
+  // Administrators sign in with credentials; everyone else with a PIN. The
+  // form follows the role rather than showing both and hoping.
+  const pinField = h('label.field', h('span', existing ? 'New PIN (optional)' : 'PIN'), pin);
+  const emailField = h('label.field', h('span', 'Email address'), email);
+  const passwordField = h('label.field',
+    h('span', existing?.hasPassword ? 'New password (optional)' : 'Password'), password);
+
+  const applyCredentialFields = () => {
+    const isAdmin = roleSelect.value === 'admin';
+    pinField.classList.toggle('hidden', isAdmin);
+    emailField.classList.toggle('hidden', !isAdmin);
+    passwordField.classList.toggle('hidden', !isAdmin);
+  };
   const note = h('input', { type: 'text', value: value.note || '', placeholder: 'Job title, shift…' });
   const active = h('select',
     h('option', { value: '1', selected: value.active }, 'Active'),
@@ -419,7 +449,7 @@ function userDialog(existing, roles, permissions, onSaved) {
     }),
   );
 
-  roleSelect.addEventListener('change', applyRoleDefaults);
+  roleSelect.addEventListener('change', () => { applyRoleDefaults(); applyCredentialFields(); });
   applyRoleDefaults();
 
   const resetToRole = h('button.btn-sm.btn-ghost', {
@@ -428,9 +458,21 @@ function userDialog(existing, roles, permissions, onSaved) {
 
   const save = async (event) => {
     const selected = [...boxes].filter(([, b]) => b.checked).map(([k]) => k);
+    const isAdmin = roleSelect.value === 'admin';
+
     if (!name.value.trim()) { toast('Enter a name', 'bad'); return; }
-    if (!existing && !pin.value.trim()) { toast('Give this person a PIN', 'bad'); return; }
     if (!selected.length) { toast('Tick at least one section they can open', 'bad'); return; }
+
+    if (isAdmin) {
+      if (!email.value.trim()) { toast('An administrator needs an email address', 'bad'); return; }
+      if (!existing?.hasPassword && !password.value) {
+        toast('Set a password of at least 10 characters', 'bad');
+        return;
+      }
+    } else if (!existing && !pin.value.trim()) {
+      toast('Give this person a PIN', 'bad');
+      return;
+    }
 
     const role = roles.find((r) => r.key === roleSelect.value);
     const matchesRole = role
@@ -446,7 +488,12 @@ function userDialog(existing, roles, permissions, onSaved) {
       note: note.value.trim() || null,
       active: active.value === '1',
     };
-    if (pin.value.trim()) body.pin = pin.value.trim();
+    if (isAdmin) {
+      body.email = email.value.trim();
+      if (password.value) body.password = password.value;
+    } else if (pin.value.trim()) {
+      body.pin = pin.value.trim();
+    }
 
     event.target.disabled = true;
     try {
@@ -474,9 +521,11 @@ function userDialog(existing, roles, permissions, onSaved) {
     ),
     h('div.field-row',
       h('label.field', h('span', 'Name'), name),
-      h('label.field', h('span', existing ? 'New PIN (optional)' : 'PIN'), pin),
       h('label.field', h('span', 'Role'), roleSelect),
       h('label.field', h('span', 'Status'), active),
+      pinField,
+      emailField,
+      passwordField,
     ),
     roleHint,
     h('label.field', h('span', 'Note (optional)'), note),
@@ -491,6 +540,7 @@ function userDialog(existing, roles, permissions, onSaved) {
     ),
   );
 
+  applyCredentialFields();
   document.body.append(dialog);
   dialog.addEventListener('close', () => dialog.remove());
   dialog.showModal();

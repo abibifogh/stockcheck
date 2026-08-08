@@ -454,7 +454,7 @@ export async function createStockCount(ctx) {
 const ALLOWED_SETTINGS = new Set([
   'currency', 'timezone', 'property_name',
   'outsider_fee', 'allow_fill_usual', 'supplier_mode',
-  'require_complete_entry', 'require_resubmit_approval',
+  'require_complete_entry', 'require_resubmit_approval', 'allow_recovery_pin',
 ]);
 
 const SETTING_RULES = {
@@ -466,6 +466,7 @@ const SETTING_RULES = {
   allow_fill_usual: (value) => (bool(value, true) ? '1' : '0'),
   require_complete_entry: (value) => (bool(value, true) ? '1' : '0'),
   require_resubmit_approval: (value) => (bool(value, true) ? '1' : '0'),
+  allow_recovery_pin: (value) => (bool(value, true) ? '1' : '0'),
   supplier_mode: (value) => {
     const mode = String(value);
     if (!['select', 'free', 'off'].includes(mode)) throw badRequest('Unknown supplier setting');
