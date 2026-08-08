@@ -1,5 +1,5 @@
 import { badRequest, bool, json, notFound, readJson, str } from '../lib/http.js';
-import { getPepper, hashPin } from '../lib/auth.js';
+import { getPepper, hashPassword, hashPin, isReservedPin, normaliseEmail } from '../lib/auth.js';
 import {
   PERMISSIONS, PERMISSION_KEYS, ROLES, effectivePermissions, isRole,
 } from '../lib/permissions.js';
@@ -7,11 +7,57 @@ import { isEmail, notifyDaySubmitted, parseRecipients } from '../lib/email.js';
 import { isDay } from '../util/dates.js';
 
 const PIN_RE = /^\d{4,10}$/;
+const MIN_PASSWORD = 10;
+
+// Deliberately identical for "a colleague has it" and "the server reserves it".
+export const PIN_TAKEN = 'That PIN is not available. Please choose a different one.';
+
+/**
+ * Administrators sign in with an email address and password; everyone else
+ * uses a PIN. Validated here rather than only in the form, so the rule holds
+ * however the request arrives.
+ */
+function readCredentials(body, role, { existing = null } = {}) {
+  const isAdmin = role === 'admin';
+
+  if (isAdmin) {
+    const email = normaliseEmail(str(body.email, 'Email address', { max: 200, fallback: '' }));
+    if (!email && !existing?.email) throw badRequest('An administrator needs an email address to sign in with');
+    if (email && !isEmail(email)) throw badRequest('That does not look like an email address');
+
+    const password = body.password ? String(body.password) : null;
+    if (!password && !existing?.password_hash) {
+      throw badRequest(`An administrator needs a password of at least ${MIN_PASSWORD} characters`);
+    }
+    if (password && password.length < MIN_PASSWORD) {
+      throw badRequest(`The password must be at least ${MIN_PASSWORD} characters`);
+    }
+    if (password && /^\d+$/.test(password)) {
+      throw badRequest('An administrator password cannot be only digits — that is a PIN, not a password');
+    }
+
+    return { isAdmin, email: email || existing?.email, password, pin: null };
+  }
+
+  // Everyone else: a PIN, required on creation.
+  const pin = str(body.pin, 'PIN', { max: 10, fallback: '' });
+  if (!pin && !existing?.pin_hash) throw badRequest('Give this person a PIN of 4 to 10 digits');
+  if (pin && !PIN_RE.test(pin)) throw badRequest('The PIN must be 4 to 10 digits');
+
+  // A demoted administrator keeps their address on file but stops using it.
+  const email = normaliseEmail(str(body.email, 'Email address', { max: 200, fallback: '' }));
+  if (email && !isEmail(email)) throw badRequest('That does not look like an email address');
+
+  return { isAdmin, email: email || null, password: body.password ? String(body.password) : null, pin };
+}
 
 function publicUser(row) {
   return {
     id: row.id,
     name: row.name,
+    email: row.email ?? null,
+    signsInWith: row.role === 'admin' ? 'password' : 'pin',
+    hasPassword: Boolean(row.password_hash),
     role: row.role,
     permissions: effectivePermissions(row),
     customPermissions: row.permissions ? JSON.parse(row.permissions) : null,
@@ -48,25 +94,28 @@ export async function createUser(ctx) {
   const role = str(body.role, 'Role', { required: true, max: 20 });
   if (!isRole(role)) throw badRequest('Unknown role');
 
-  const pin = str(body.pin, 'PIN', { required: true, max: 10 });
-  if (!PIN_RE.test(pin)) throw badRequest('The PIN must be 4 to 10 digits');
-
+  const creds = readCredentials(body, role);
   const permissions = readPermissions(body);
   const note = str(body.note, 'Note', { max: 300 });
-  const pepper = await getPepper(ctx.db);
-  const pinHash = await hashPin(pin, pepper);
+
+  if (creds.pin && await isReservedPin(creds.pin, ctx.env)) throw badRequest(PIN_TAKEN);
+
+  const pinHash = creds.pin ? await hashPin(creds.pin, await getPepper(ctx.db)) : null;
+  const passwordHash = creds.password ? await hashPassword(creds.password) : null;
 
   try {
     const row = await ctx.db.prepare(
-      `INSERT INTO users (name, pin_hash, role, permissions, active, note)
-       VALUES (?, ?, ?, ?, 1, ?) RETURNING *`,
-    ).bind(name, pinHash, role, permissions, note).first();
+      `INSERT INTO users (name, pin_hash, email, password_hash, role, permissions, active, note)
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?) RETURNING *`,
+    ).bind(name, pinHash, creds.email, passwordHash, role, permissions, note).first();
 
-    await audit(ctx, 'user.create', String(row.id), { name, role });
+    await audit(ctx, 'user.create', String(row.id), { name, role, signIn: creds.isAdmin ? 'password' : 'pin' });
     return json({ user: publicUser(row) }, { status: 201 });
   } catch (err) {
     if (String(err).includes('UNIQUE')) {
-      throw badRequest('That PIN is already in use by someone else. Every person needs their own.');
+      throw badRequest(creds.isAdmin
+        ? 'That email address is already in use by another account.'
+        : PIN_TAKEN);
     }
     throw err;
   }
@@ -98,24 +147,39 @@ export async function updateUser(ctx, id) {
     }
   }
 
-  let pinHash = existing.pin_hash;
-  if (body.pin) {
-    const pin = str(body.pin, 'PIN', { max: 10 });
-    if (!PIN_RE.test(pin)) throw badRequest('The PIN must be 4 to 10 digits');
-    pinHash = await hashPin(pin, await getPepper(ctx.db));
-  }
+  const creds = readCredentials(body, role, { existing });
+
+  // Promoting somebody to administrator retires their PIN, so the short code
+  // they have been typing all along stops being a way into the cost reports.
+  if (creds.pin && await isReservedPin(creds.pin, ctx.env)) throw badRequest(PIN_TAKEN);
+
+  let pinHash = creds.isAdmin ? null : existing.pin_hash;
+  if (creds.pin) pinHash = await hashPin(creds.pin, await getPepper(ctx.db));
+
+  let passwordHash = existing.password_hash;
+  if (creds.password) passwordHash = await hashPassword(creds.password);
 
   try {
     const row = await ctx.db.prepare(
-      `UPDATE users SET name = ?, role = ?, permissions = ?, active = ?, note = ?, pin_hash = ?
+      `UPDATE users SET name = ?, role = ?, permissions = ?, active = ?, note = ?,
+                        pin_hash = ?, email = ?, password_hash = ?
        WHERE id = ? RETURNING *`,
-    ).bind(name, role, permissions, active ? 1 : 0, note, pinHash, userId).first();
+    ).bind(
+      name, role, permissions, active ? 1 : 0, note,
+      pinHash, creds.email ?? null, passwordHash, userId,
+    ).first();
 
-    await audit(ctx, 'user.update', String(userId), { name, role, active, pinChanged: Boolean(body.pin) });
+    await audit(ctx, 'user.update', String(userId), {
+      name, role, active,
+      pinChanged: Boolean(creds.pin),
+      passwordChanged: Boolean(creds.password),
+    });
     return json({ user: publicUser(row) });
   } catch (err) {
     if (String(err).includes('UNIQUE')) {
-      throw badRequest('That PIN is already in use by someone else.');
+      throw badRequest(creds.isAdmin
+        ? 'That email address is already in use by another account.'
+        : PIN_TAKEN);
     }
     throw err;
   }

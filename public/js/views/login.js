@@ -56,16 +56,68 @@ export function renderLogin(onSuccess) {
   };
   window.addEventListener('keydown', onKeydown);
 
+  // Administrators sign in with an email address and password instead; the
+  // keypad stays the default because far more people use it, far more often.
+  const email = h('input', { type: 'email', placeholder: 'you@niceoperation.com', autocomplete: 'username' });
+  const password = h('input', { type: 'password', placeholder: 'Your password', autocomplete: 'current-password' });
+
+  const submitPassword = async (event) => {
+    if (!email.value.trim() || !password.value) {
+      error.textContent = 'Enter both your email address and password';
+      return;
+    }
+    if (event?.target) event.target.disabled = true;
+    error.textContent = 'Checking…';
+    try {
+      const result = await api.loginWithPassword(email.value.trim(), password.value);
+      toast(`Welcome, ${result.name}`, 'good');
+      onSuccess(result);
+    } catch (err) {
+      error.textContent = err.message;
+      password.value = '';
+      if (event?.target) event.target.disabled = false;
+    }
+  };
+
+  password.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitPassword({ target: null }); });
+
+  const pinPane = h('div', display, error, keypad,
+    h('p.muted', { style: { fontSize: '.75rem', marginTop: '1rem' } },
+      'Cooks and managers sign in with their own PIN.'));
+
+  const passwordPane = h('div.hidden',
+    h('label.field', { style: { textAlign: 'left' } }, h('span', 'Email address'), email),
+    h('label.field', { style: { textAlign: 'left' } }, h('span', 'Password'), password),
+    h('button.btn-primary', { style: { width: '100%' }, onclick: submitPassword }, 'Sign in'),
+    h('p.muted', { style: { fontSize: '.75rem', marginTop: '1rem' } },
+      'Administrators sign in with an email address and password.'));
+
+  const showPin = (on) => {
+    pinPane.classList.toggle('hidden', !on);
+    passwordPane.classList.toggle('hidden', on);
+    error.textContent = '';
+    if (on) window.addEventListener('keydown', onKeydown);
+    else window.removeEventListener('keydown', onKeydown);
+  };
+
+  const modeToggle = h('div.seg', { style: { marginBottom: '.9rem' } },
+    h('button', { class: 'active', onclick: (e) => { swapSeg(e); showPin(true); } }, 'PIN'),
+    h('button', { onclick: (e) => { swapSeg(e); showPin(false); setTimeout(() => email.focus(), 0); } }, 'Email & password'),
+  );
+
+  function swapSeg(event) {
+    for (const btn of event.target.parentElement.children) btn.classList.remove('active');
+    event.target.classList.add('active');
+  }
+
   const wrap = h('div.login-wrap',
     h('div.card.login-card',
       h('div', { style: { fontSize: '2rem' } }, '🍳'),
       h('h1', 'Breakfast Control'),
-      h('p.muted', { style: { fontSize: '.88rem' } }, 'Enter your PIN to continue'),
-      display,
-      error,
-      keypad,
-      h('p.muted', { style: { fontSize: '.75rem', marginTop: '1rem' } },
-        'Cooks use the kitchen PIN. Managers use the manager PIN for reports and setup.'),
+      h('p.muted', { style: { fontSize: '.88rem', marginBottom: '.9rem' } }, 'Sign in to continue'),
+      modeToggle,
+      pinPane,
+      passwordPane,
     ),
   );
 

@@ -114,6 +114,12 @@ function settingsForm(settings, onSaved) {
     h('option', { value: '0', selected: settings.require_complete_entry === '0' },
       'Allow partly filled sheets'),
   );
+  const recoveryPin = h('select',
+    h('option', { value: '1', selected: settings.allow_recovery_pin !== '0' },
+      'Emergency recovery PIN enabled'),
+    h('option', { value: '0', selected: settings.allow_recovery_pin === '0' },
+      'Disabled — administrators must use email & password'),
+  );
   const requireApproval = h('select',
     h('option', { value: '1', selected: settings.require_resubmit_approval !== '0' },
       'A correction waits for approval'),
@@ -143,7 +149,12 @@ function settingsForm(settings, onSaved) {
     h('div.field-row',
       h('label.field', h('span', 'Completeness of a submission'), requireComplete),
       h('label.field', h('span', 'Re-submitting a recorded day'), requireApproval),
+      h('label.field', h('span', 'Emergency access'), recoveryPin),
     ),
+    h('p.muted', { style: { fontSize: '.8rem' } },
+      'The emergency recovery PIN is the MANAGER_PIN set on the server. It reaches everything, so '
+      + 'switch it off once you have a working administrator account — but only once you are sure '
+      + 'you can sign in with your email and password, because it is what rescues you otherwise.'),
     h('p.muted', { style: { fontSize: '.8rem' } },
       'The fee is fixed here rather than typed each morning, so the kitchen cannot change what '
       + 'outside guests are charged. Days already recorded keep the fee that applied then.'),
@@ -169,6 +180,7 @@ function settingsForm(settings, onSaved) {
             supplier_mode: supplierMode.value,
             require_complete_entry: requireComplete.value === '1',
             require_resubmit_approval: requireApproval.value === '1',
+            allow_recovery_pin: recoveryPin.value === '1',
           });
           setCurrency(result.settings.currency);
           state.settings = result.settings;

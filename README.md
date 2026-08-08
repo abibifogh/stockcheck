@@ -49,7 +49,7 @@ indistinguishable from "we forgot" and silently drags every average down.
 
 | Feature | What it does |
 |---|---|
-| **People** | Individual accounts, each with their own PIN and their own list of sections they can open. Enforced on the server, not just hidden in the menu. |
+| **People** | Individual accounts with their own list of sections they can open, enforced on the server rather than just hidden in the menu. Administrators sign in with an email address and password; cooks and managers use a PIN. |
 | **Closed periods** | Lock a date range once it has been reported on. Nothing inside it can be added, changed or deleted — by anyone, including an administrator, until it is reopened. |
 | **Bulk entry** | Download a spreadsheet template, fill in a backlog, upload it. Always previews before it writes. |
 | **Daily email** | A summary of each submitted day, with the analysis, to whichever addresses you choose. |
@@ -160,10 +160,14 @@ morning; managers re-authenticate every 12 hours.
 
 To change a PIN later, run `wrangler secret put` again with the same name.
 
-Once you add real people under **Users & data**, everyone signs in with their
-own PIN and the shared `COOK_PIN` stops working. `MANAGER_PIN` keeps working
-permanently as a way back in if you ever lock yourself out — treat it as the
-spare key, not as a daily login.
+Once you add real people under **Users & data**, everyone signs in as
+themselves and the shared `COOK_PIN` stops working.
+
+`MANAGER_PIN` keeps working as an emergency way back in. Treat it as the spare
+key, not a daily login — and **make it long** (8–10 digits, not `1234`), since
+it reaches everything. Once you have an administrator account with an email
+address and password, you can switch the recovery PIN off entirely under
+**Setup → Emergency access**.
 
 ### 4b. Turning on the daily email (optional)
 
@@ -305,9 +309,19 @@ without a database, which is what `test/analytics.test.js` does.
   morning belongs to. Set it in Setup before the kitchen starts recording.
 - **Retired, not deleted.** An ingredient with history is retired rather than
   removed, so past reports stay correct.
-- **Every save is attributed.** Each person has their own PIN, so day sheets,
-  deliveries, approvals and deletions all record who did them. The audit log
-  under Users & data is the full trail.
+- **Two ways to sign in, chosen by role.** A PIN is right for a cook at a
+  tablet with flour on their hands. It is not right for an account that can see
+  every cost, manage people and erase data, so administrators use an email
+  address and a password (PBKDF2-SHA256, per-password salt). An administrator
+  cannot sign in with a PIN even if one was set earlier — promoting somebody
+  retires their PIN.
+- **Everyone changes their own credentials** under "My account". A credential
+  only an administrator can change is a credential nobody ever changes.
+- **A user PIN can never match the server's recovery PIN.** It would shadow it
+  and quietly destroy the owner's way back in. The refusal is worded exactly
+  like "a colleague already has that PIN", so nobody can probe for it.
+- **Every save is attributed.** Day sheets, deliveries, approvals and deletions
+  all record who did them. The audit log under Users & data is the full trail.
 - **Locks beat everyone.** A closed period cannot be written to by any role.
   This is deliberate: the point of closing a month is that its numbers stop
   moving. Reopening is possible, and is itself recorded.
