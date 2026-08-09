@@ -1,0 +1,380 @@
+import { can, state } from '../app.js';
+import { h, mount } from '../util.js';
+
+/**
+ * The user guide, written for the people who actually use this: cooks with wet
+ * hands and a manager who wants to know why last week cost more.
+ *
+ * It adapts to the reader. There is no point telling a cook how to close an
+ * accounting period, and a page full of sections you cannot open is a page
+ * nobody reads twice. Everything here is filtered by what you can actually do.
+ */
+export async function renderGuide() {
+  const sections = SECTIONS.filter((s) => !s.permission || can(s.permission));
+
+  const contents = h('nav.guide-toc',
+    h('div.stat-label', { style: { marginBottom: '.5rem' } }, 'On this page'),
+    sections.map((s) => h('a', {
+      href: `#/guide`,
+      onclick: (event) => {
+        event.preventDefault();
+        document.getElementById(`guide-${s.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      },
+    }, s.title)),
+  );
+
+  const body = sections.map((s) => h('section.card.guide-section', { id: `guide-${s.id}` },
+    h('h2', s.title),
+    s.lead ? h('p.guide-lead', s.lead) : null,
+    s.render(),
+  ));
+
+  return h('div',
+    h('div.page-head',
+      h('div',
+        h('h1', 'How to use this'),
+        h('div.sub', greeting()),
+      ),
+      h('button.btn-sm', { onclick: () => window.print() }, '🖨 Print this guide'),
+    ),
+    h('div.guide-layout', contents, h('div', body)),
+  );
+}
+
+function greeting() {
+  if (can('users')) return 'Everything, including setting the system up and looking after it';
+  if (can('reports')) return 'Recording the morning, and reading what it tells you';
+  return 'Recording the morning — that is all you need';
+}
+
+// ---------------------------------------------------------------------------
+// Small building blocks
+// ---------------------------------------------------------------------------
+
+const steps = (...items) => h('ol.guide-steps', items.map((i) => h('li', i)));
+const points = (...items) => h('ul.guide-points', items.map((i) => h('li', i)));
+const note = (title, text) => h('div.guide-note', h('strong', title), ' ', text);
+const warn = (title, text) => h('div.guide-note.warn', h('strong', title), ' ', text);
+
+function faq(...pairs) {
+  return h('div.guide-faq', pairs.map(([q, a]) => h('details',
+    h('summary', q),
+    h('div.guide-answer', a),
+  )));
+}
+
+// ---------------------------------------------------------------------------
+// The guide itself
+// ---------------------------------------------------------------------------
+
+const SECTIONS = [
+  {
+    id: 'morning',
+    title: 'Every morning',
+    permission: 'entry',
+    lead: 'This is the whole job. It should take a minute or two once you are used to it.',
+    render: () => h('div',
+      steps(
+        h('span', h('strong', 'Count the guests.'), ' In-house guests and outside guests are counted '
+          + 'separately, because outside guests pay. The fee is set by your manager and you cannot change it.'),
+        h('span', h('strong', 'Tap ⚡ Fill usual.'), ' This fills in what is normally used for that many '
+          + 'guests, worked out from your own past mornings. If the button is not there, your manager '
+          + 'has turned it off and you enter each item yourself.'),
+        h('span', h('strong', 'Correct anything that was different.'), ' This is the important part. The '
+          + 'suggestion is only a starting point — it does not know that today you ran out of bread or '
+          + 'that a coach party arrived.'),
+        h('span', h('strong', 'Enter 0 where nothing was used.'), ' A zero is a real answer. Leaving a box '
+          + 'empty is not, and the system will not let you submit until every everyday item has a number.'),
+        h('span', h('strong', 'Tap Submit day.'), ' You will be asked to confirm anything recorded as zero. '
+          + 'Read that list — it is the last chance to catch a box you meant to fill.'),
+      ),
+      note('The number under each item', 'is what that item usually takes for today’s headcount. '
+        + 'Tap it to accept it. It is a faint, slanted number until you enter something real.'),
+      note('You can save without submitting.', 'Tap Save to come back to it later. Nothing is counted '
+        + 'in the reports until you submit.'),
+      warn('If the internet drops', 'keep working. Your entries are kept on the tablet and sent as soon '
+        + 'as you are back online. You will see “Saved on this device”.'),
+    ),
+  },
+
+  {
+    id: 'fixing',
+    title: 'Fixing a mistake',
+    permission: 'entry',
+    render: () => h('div',
+      h('p', 'It depends on whether the day has been submitted yet.'),
+      points(
+        h('span', h('strong', 'Not submitted yet:'), ' just change it and submit as usual.'),
+        h('span', h('strong', 'Already submitted:'), ' change it and submit again. Your correction does '
+          + 'not overwrite anything — it is sent to a manager, who sees exactly what would change and '
+          + 'accepts or rejects it. Until they accept it, the original figures stand.'),
+        h('span', h('strong', 'An older day:'), ' use the date arrows at the top to go back. If the day '
+          + 'is in a closed period you will see a padlock message, and an administrator has to reopen it.'),
+      ),
+      note('Why the extra step?', 'Once a day has been reported on, its numbers should not change quietly. '
+        + 'You are usually right — but “usually” is not enough once someone has acted on the figures.'),
+    ),
+  },
+
+  {
+    id: 'account',
+    title: 'Your PIN and your account',
+    render: () => h('div',
+      points(
+        can('users') || state.role === 'admin'
+          ? h('span', h('strong', 'Administrators'), ' sign in with an email address and a password.')
+          : h('span', h('strong', 'You sign in with your own PIN.'), ' Nobody else has the same one, '
+            + 'which is how the system records who entered each morning.'),
+        h('span', h('strong', 'Change it yourself'), ' from ', h('em', 'My account'), ' at the top of the '
+          + 'screen. You need your current one first, so a tablet left signed in cannot be used to lock '
+          + 'you out.'),
+        h('span', h('strong', 'Add it to your home screen.'), ' On the tablet or phone, tap Share, then '
+          + '“Add to Home Screen”. It then opens like a normal app.'),
+      ),
+      warn('Do not share a PIN.', 'If two people use one PIN, the day sheets stop telling you who '
+        + 'recorded what — and that is the first thing you will want to know when a number looks wrong.'),
+    ),
+  },
+
+  {
+    id: 'reports',
+    title: 'Reading the reports',
+    permission: 'reports',
+    lead: 'Four views, each answering a different question.',
+    render: () => h('div',
+      points(
+        h('span', h('strong', 'Overview —'), ' where things stand right now, and anything that needs a '
+          + 'decision today. Start here.'),
+        h('span', h('strong', 'Day —'), ' what one morning cost, and which items pushed it up or down. '
+          + 'It compares against a normal day ', h('em', 'of the same weekday'), ', because Sundays are '
+          + 'not Tuesdays.'),
+        h('span', h('strong', 'Week —'), ' this week against last, which items moved, and which are being '
+          + 'portioned inconsistently.'),
+        h('span', h('strong', 'Month —'), ' the full picture: cost per guest over time, where the money '
+          + 'goes by category, whether the outsider fee covers itself, and what the store did.'),
+      ),
+      h('h3', { style: { marginTop: '1rem' } }, 'The one number to watch'),
+      h('p', h('strong', 'Cost per guest.'), ' Total food cost divided by everyone who ate. It is the only '
+        + 'figure that is fair to compare across days, because it does not care whether the hotel was '
+        + 'full or empty. A busy Saturday costing more than a quiet Tuesday is not a problem; a busy '
+        + 'Saturday costing more ', h('em', 'per guest'), ' than usual is worth a look.'),
+      note('Charts respond to your mouse.', 'Hover anywhere on a line or bar to read the exact figures '
+        + 'for that day.'),
+      note('Everything exports.', 'Each view has an export button that gives you a spreadsheet file.'),
+    ),
+  },
+
+  {
+    id: 'alerts',
+    title: 'What the alerts mean',
+    permission: 'reports',
+    render: () => h('div',
+      points(
+        h('span', h('strong', '“X above normal” —'), ' more of something was used than the headcount '
+          + 'explains. The figure beside it is what that difference cost you. Common causes: over-'
+          + 'portioning, waste, a spill, or a quantity keyed in wrongly.'),
+        h('span', h('strong', '“X not recorded” —'), ' an item normally used every day has no figure at '
+          + 'all. Almost always a forgotten box rather than a genuine zero.'),
+        h('span', h('strong', '“Cost per guest above normal range” —'), ' the whole morning was expensive, '
+          + 'not just one item. Open the day and look at the biggest cost drivers.'),
+        h('span', h('strong', '“Negative stock” —'), ' the records say you used more than you ever bought. '
+          + 'A delivery was not recorded. Add it under Purchases.'),
+      ),
+      note('Nothing is flagged early on.', 'An item needs about a week of history before it can be judged. '
+        + 'Flagging things on two days of data produces noise, and noise teaches people to ignore alerts.'),
+    ),
+  },
+
+  {
+    id: 'deliveries',
+    title: 'Recording deliveries',
+    permission: 'purchases',
+    lead: 'The habit that decides whether the money figures mean anything.',
+    render: () => h('div',
+      steps(
+        h('span', 'Go to ', h('strong', 'Purchases'), ' and set the delivery date and supplier.'),
+        h('span', 'Add a line for each item on the delivery note. The unit cost fills in with what you '
+          + 'last paid, and the previous price is shown beside it — change it if the price has moved.'),
+        h('span', 'Tap ', h('strong', '+ Add another item'), ' for as many lines as the note has.'),
+        h('span', 'Check the delivery total against the invoice, then ', h('strong', 'Save delivery'), '.'),
+      ),
+      warn('Why this matters more than it looks.', 'Every cost in every report comes from what you actually '
+        + 'paid. Skip the delivery log and the prices slowly drift out of date, until the reports are '
+        + 'confidently telling you something untrue.'),
+      note('Suppliers come from a list', 'so the same trader does not appear three times with three '
+        + 'spellings. An administrator manages that list under Setup.'),
+    ),
+  },
+
+  {
+    id: 'stock',
+    title: 'Stock and the monthly count',
+    permission: 'stock',
+    render: () => h('div',
+      h('p', 'The Stock screen works out what should be in the store: what you started with, plus what '
+        + 'you bought, minus what was recorded as used.'),
+      points(
+        h('span', h('strong', 'Order list —'), ' anything below its par level, with a suggested quantity '
+          + 'to bring it back up. There is a button to copy the whole list for your supplier.'),
+        h('span', h('strong', 'Days cover —'), ' how long the current stock lasts at the recent rate of '
+          + 'use. Under three days is flagged.'),
+        h('span', h('strong', 'Record a physical count —'), ' what you actually counted on the shelf.'),
+      ),
+      warn('Count the store once a month.', 'Everything else in this system is built on what people '
+        + 'said they used. A physical count is the only thing that reveals waste, over-portioning and '
+        + 'loss. The difference between the count and the book figure is the honest number.'),
+    ),
+  },
+
+  {
+    id: 'approvals',
+    title: 'Approving corrections',
+    permission: 'approvals',
+    render: () => h('div',
+      h('p', 'When a cook changes a day that was already submitted, it waits here instead of overwriting '
+        + 'anything.'),
+      points(
+        h('span', 'You see a plain before-and-after list — “Eggs 90 → 140”, “In-house guests 48 → 52”.'),
+        h('span', h('strong', 'Accept'), ' replaces the recorded figures. ', h('strong', 'Reject'), ' '
+          + 'leaves them exactly as they are. Either way you can add a note.'),
+        h('span', 'Until you decide, every report still uses the original figures.'),
+      ),
+      note('Deal with these promptly.', 'A correction sitting unapproved means somebody knows the recorded '
+        + 'numbers are wrong and the reports do not.'),
+    ),
+  },
+
+  {
+    id: 'setup',
+    title: 'Setting up the ingredient list',
+    permission: 'setup',
+    lead: 'Time spent here is what makes the kitchen’s morning quick.',
+    render: () => h('div',
+      points(
+        h('span', h('strong', 'Unit —'), ' how you actually measure it. Pieces for eggs, loaves for bread, '
+          + 'kilograms, litres.'),
+        h('span', h('strong', 'Tap step —'), ' how much one press of + or − moves the number. Set it to how '
+          + 'the kitchen counts: 6 for eggs, 0.5 for a half kilo. ', h('em', 'This is the single biggest '
+          + 'lever on how fast entry is.')),
+        h('span', h('strong', 'Everyday or occasional —'), ' everyday items show on the kitchen screen and '
+          + 'must be filled in before a day can be submitted. Occasional ones hide behind “All items”. '
+          + 'Keep the everyday list tight.'),
+        h('span', h('strong', 'Par level —'), ' the level at which you want to reorder.'),
+        h('span', h('strong', 'Opening stock —'), ' what is physically in the store today. Set this before '
+          + 'you start, or the stock figures begin wrong and stay wrong.'),
+      ),
+      note('Removing an ingredient', 'that already has history retires it rather than deleting it, so past '
+        + 'reports stay correct.'),
+      warn('Set the timezone first.', 'It decides which calendar day a morning belongs to. Changing it '
+        + 'later makes past days ambiguous.'),
+    ),
+  },
+
+  {
+    id: 'people',
+    title: 'People and access',
+    permission: 'users',
+    render: () => h('div',
+      points(
+        h('span', h('strong', 'Cooks'), ' see only the daily entry screen. No costs at all.'),
+        h('span', h('strong', 'Managers'), ' see the reports, stock, purchases and approvals.'),
+        h('span', h('strong', 'Administrators'), ' see everything, and sign in with an email address and '
+          + 'password rather than a PIN.'),
+      ),
+      h('p', 'You can also tick individual sections for one person — a manager who should not see '
+        + 'purchases, for instance. What they see in the menu and what they can actually reach are the '
+        + 'same thing; it is checked on the server every time.'),
+      warn('Keep a second administrator.', 'If only one person can administer the system and they forget '
+        + 'their password, the emergency PIN is all that stands between you and a locked door.'),
+      note('The emergency PIN', 'is set on Cloudflare, not here. This screen tells you whether it is '
+        + 'working, and warns you loudly if somebody’s everyday PIN has taken it over.'),
+    ),
+  },
+
+  {
+    id: 'admin-tools',
+    title: 'Closed periods, bulk entry and erasing',
+    permission: 'users',
+    render: () => h('div',
+      h('h3', 'Closing a period'),
+      h('p', 'Once you have reported on a month, close it. Nothing inside a closed period can be added, '
+        + 'changed or deleted by anyone — not a cook correcting a sheet, not an import, not you. '
+        + 'Reopening is possible and is recorded.'),
+      h('h3', { style: { marginTop: '1rem' } }, 'Bulk entry'),
+      h('p', 'For catching up on a backlog or importing paper records. Download the template, fill it in '
+        + 'with a spreadsheet, save as CSV and upload it. It always shows you what it would do — which '
+        + 'days it would create, replace or skip — before anything is written.'),
+      h('h3', { style: { marginTop: '1rem' } }, 'Erasing data'),
+      h('p', 'For clearing out a trial run before going live. You have to type ERASE to confirm. It keeps '
+        + 'your people, your settings and your ingredient list; you can also give a date range to remove '
+        + 'just a few bad mornings.'),
+      warn('There is no undo.', 'No recycle bin, no restore. Use the date range if you only mean to remove '
+        + 'a few days.'),
+    ),
+  },
+
+  {
+    id: 'numbers',
+    title: 'How the numbers are worked out',
+    permission: 'reports',
+    lead: 'Worth reading once, because it determines what the reports actually mean.',
+    render: () => h('div',
+      points(
+        h('span', h('strong', 'Costs use a running average price.'), ' Each delivery blends into the '
+          + 'average cost of what is already in the store. A day is costed at the price in force '
+          + 'that day, so a price rise shows up when it actually happened.'),
+        h('span', h('strong', '“Expected” is learned from you,'), ' not from a recipe book. It is the '
+          + 'middle value of the last 28 service days, per guest, scaled to today’s headcount. The middle '
+          + 'value rather than the average, so one blow-out morning does not move the yardstick.'),
+        h('span', h('strong', 'Part-finished weeks compare fairly.'), ' A week in progress is compared '
+          + 'against the same number of days of the previous week, never against a full one. The same '
+          + 'goes for the current month.'),
+        h('span', h('strong', 'Where there is no history, it says so'), ' rather than showing a confident '
+          + '“0% change”.'),
+        h('span', h('strong', 'Outside guests'), ' eat the same food, so what they cost you is the '
+          + 'per-guest food cost times their number. The month view tells you the fee at which they '
+          + 'break even.'),
+      ),
+      note('The first fortnight will feel manual.', 'Suggestions and alerts are learned from your own '
+        + 'history, so there is nothing to learn from at the start. It gets quick from about week three.'),
+    ),
+  },
+
+  {
+    id: 'problems',
+    title: 'If something goes wrong',
+    render: () => h('div',
+      faq(
+        ['It will not let me submit the day',
+          h('p', 'Every everyday item needs a number. Items still missing one are outlined in red with '
+            + '“needs a figure”. Enter 0 where nothing was used. You also need a guest count.')],
+        ['I get a padlock message about a closed period',
+          h('p', 'That date has been closed by an administrator and cannot be changed. Ask them to reopen '
+            + 'it if the correction is genuinely needed.')],
+        ['I submitted a correction but the reports have not changed',
+          h('p', 'Corrections to an already-submitted day wait for a manager to accept them. Until then '
+            + 'the original figures stand. Check the Approvals screen.')],
+        ['A number looks wrong in the reports',
+          h('p', 'Open the Day view for that date. It shows every item, what was expected, and what the '
+            + 'difference cost. If the entry itself was wrong, correct it on the entry screen — it will '
+            + 'go for approval if that day was already submitted.')],
+        ['The stock figures look impossible',
+          h('p', 'Negative stock means deliveries have not been recorded. Add them under Purchases. If the '
+            + 'figures were never right to begin with, set the opening stock for those items under Setup.')],
+        ['Someone has left and I want to stop them signing in',
+          h('p', can('users')
+            ? 'Users & data, find them, Edit, set Status to Disabled. It takes effect on their very next '
+              + 'action, not whenever they next sign out.'
+            : 'Ask an administrator to disable their account under Users & data.')],
+        ['I have forgotten my PIN or password',
+          h('p', can('users')
+            ? 'Any administrator can set a new one from Users & data. If every administrator is locked '
+              + 'out, the emergency PIN set on Cloudflare is the way back in.'
+            : 'Ask a manager or administrator to set a new one for you.')],
+        ['Nobody has entered the day and it is getting late',
+          h('p', 'Anyone with entry access can record it, including from a phone. The day sheet records '
+            + 'who submitted it, so it will be clear it was not the usual person.')],
+      ),
+    ),
+  },
+];

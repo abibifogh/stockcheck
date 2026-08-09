@@ -12,6 +12,7 @@ import { renderSetup } from './views/setup.js';
 import { renderAdmin } from './views/admin.js';
 import { renderApprovals } from './views/approvals.js';
 import { openAccountDialog } from './views/account.js';
+import { renderGuide } from './views/guide.js';
 
 export const state = {
   role: null,
@@ -34,6 +35,9 @@ const ROUTES = [
   { path: 'purchases', label: 'Purchases', permission: 'purchases', render: renderPurchases },
   { path: 'setup', label: 'Setup', permission: 'setup', render: renderSetup },
   { path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin },
+  // Open to everyone: the person most likely to need it is the one with the
+  // fewest permissions.
+  { path: 'guide', label: 'Help', permission: null, render: renderGuide },
 ];
 
 const root = document.getElementById('app');
