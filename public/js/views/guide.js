@@ -257,10 +257,11 @@ const SECTIONS = [
 
   {
     id: 'reports',
-    title: 'Reading the reports',
+    title: 'Reading the reports, and where the numbers come from',
     permission: 'reports',
-    lead: 'Five views, each answering a different question.',
+    lead: 'Five views, each answering a different question — and the handful of rules all five obey.',
     render: () => h('div',
+      h('h3', 'The five screens'),
       points(
         h('span', h('strong', 'Overview —'), ' where things stand right now, and anything that needs a '
           + 'decision today. Start here.'),
@@ -275,20 +276,43 @@ const SECTIONS = [
           + 'above always compare against the period immediately before; this one lets you pick both '
           + 'sides yourself.'),
       ),
-      h('h3', { style: { marginTop: '1rem' } }, 'The one number to watch'),
+
+      h('h3', { style: { marginTop: '1.2rem' } }, 'The one number to watch'),
       h('p', h('strong', 'Cost per guest.'), ' Total food cost divided by everyone who ate. It is the only '
         + 'figure that is fair to compare across days, because it does not care whether the hotel was '
         + 'full or empty. A busy Saturday costing more than a quiet Tuesday is not a problem; a busy '
         + 'Saturday costing more ', h('em', 'per guest'), ' than usual is worth a look.'),
+
+      // The mechanics belong here rather than in a section of their own: they
+      // are the reason the figures above mean what they mean, and nobody goes
+      // looking for them until a number surprises them.
+      h('h3', { style: { marginTop: '1.2rem' } }, 'Where the numbers come from'),
+      h('p.guide-lead', 'Worth reading once. These few rules decide what everything above actually means.'),
+      points(
+        h('span', h('strong', 'Costs use a running average price.'), ' Each delivery blends into the '
+          + 'average cost of what is already in the store. A day is costed at the price in force '
+          + 'that day, so a price rise shows up when it actually happened.'),
+        h('span', h('strong', '“Expected” is learned from you,'), ' not from a recipe book. It is the '
+          + 'middle value of the last 28 service days, per guest, scaled to today’s headcount. The middle '
+          + 'value rather than the average, so one blow-out morning does not move the yardstick.'),
+        h('span', h('strong', 'Part-finished periods compare fairly.'), ' A week or month still running is '
+          + 'only ever measured against the same number of days of the one before it. Nine days of August '
+          + 'are compared with the first nine days of July, never with the whole of it — otherwise every '
+          + 'month would look like a huge saving right up until the day it ended.'),
+        h('span', h('strong', 'Where there is no history, it says so'), ' rather than showing a confident '
+          + '“0% change”.'),
+        h('span', h('strong', 'Outside guests'), ' eat the same food, so what they cost you is the '
+          + 'per-guest food cost times their number. The month view tells you the fee at which they '
+          + 'break even.'),
+      ),
+
       note('Charts respond to your mouse.', 'Hover anywhere on a line or bar to read the exact figures '
         + 'for that day.'),
       note('Everything exports.', 'Every report has a “Save as PDF” button that gives you the whole '
         + 'screen, charts included, ready to email or file. Beside it is an export button for the '
         + 'raw numbers as a spreadsheet.'),
-      note('Nothing is ever compared unfairly.', 'A part-finished week or month is only ever measured '
-        + 'against the same number of days of the period before it. Nine days of August are compared '
-        + 'with the first nine days of July, never with the whole of it — otherwise every month would '
-        + 'look like a huge saving until the day it ended.'),
+      note('The first fortnight will feel manual.', 'Suggestions and alerts are learned from your own '
+        + 'history, so there is nothing to learn from at the start. It gets quick from about week three.'),
     ),
   },
 
@@ -680,33 +704,6 @@ const SECTIONS = [
         + 'just a few bad mornings.'),
       warn('There is no undo.', 'No recycle bin, no restore. Use the date range if you only mean to remove '
         + 'a few days.'),
-    ),
-  },
-
-  {
-    id: 'numbers',
-    title: 'How the numbers are worked out',
-    permission: 'reports',
-    lead: 'Worth reading once, because it determines what the reports actually mean.',
-    render: () => h('div',
-      points(
-        h('span', h('strong', 'Costs use a running average price.'), ' Each delivery blends into the '
-          + 'average cost of what is already in the store. A day is costed at the price in force '
-          + 'that day, so a price rise shows up when it actually happened.'),
-        h('span', h('strong', '“Expected” is learned from you,'), ' not from a recipe book. It is the '
-          + 'middle value of the last 28 service days, per guest, scaled to today’s headcount. The middle '
-          + 'value rather than the average, so one blow-out morning does not move the yardstick.'),
-        h('span', h('strong', 'Part-finished weeks compare fairly.'), ' A week in progress is compared '
-          + 'against the same number of days of the previous week, never against a full one. The same '
-          + 'goes for the current month.'),
-        h('span', h('strong', 'Where there is no history, it says so'), ' rather than showing a confident '
-          + '“0% change”.'),
-        h('span', h('strong', 'Outside guests'), ' eat the same food, so what they cost you is the '
-          + 'per-guest food cost times their number. The month view tells you the fee at which they '
-          + 'break even.'),
-      ),
-      note('The first fortnight will feel manual.', 'Suggestions and alerts are learned from your own '
-        + 'history, so there is nothing to learn from at the start. It gets quick from about week three.'),
     ),
   },
 
