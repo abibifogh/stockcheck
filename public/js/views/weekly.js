@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { replaceParams } from '../app.js';
+import { navigate, replaceParams } from '../app.js';
 import { fmtDay, fmtMoney, fmtNum, h, mount, shiftDay } from '../util.js';
 import { barChart, lineChart, rankedBars } from '../charts.js';
 import { card, exportButton, pctCell, statTile, table } from './components.js';
@@ -36,6 +36,15 @@ export async function renderWeekly(params) {
         ? `${data.partial.note}, so the comparison with last week is like for like.`
         : 'Compared against the previous week, day for day.',
     }),
+    h('button.btn-sm', {
+      // Carry the same elapsed-day alignment this view used, so a week still
+      // in progress does not arrive there measured against a full one.
+      onclick: () => navigate('compare', {
+        aFrom: data.compared.from, aTo: data.compared.to,
+        bFrom: data.previousCompared.from, bTo: data.previousCompared.to,
+      }),
+      title: 'Compare this week against any other period',
+    }, '⇄ Compare with…'),
     exportButton(api.exportUrl('daily', data.weekStart, data.weekEnd), 'Export week'),
   );
 

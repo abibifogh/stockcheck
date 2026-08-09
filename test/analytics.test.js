@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 
 import { buildLedger } from '../src/lib/ledger.js';
 import {
-  dailyInsights, dayMetrics, entryHints, makeDataset, monthlyInsights, stockReport, weeklyInsights,
+  compareInsights, dailyInsights, dayMetrics, entryHints, makeDataset, monthlyInsights,
+  stockReport, weeklyInsights,
 } from '../src/lib/analytics.js';
 import { addDays, dow, monthBounds, rangeDays, startOfWeek } from '../src/util/dates.js';
 import { median, pctChange, relativeSpread, robustZ } from '../src/util/stats.js';
@@ -432,4 +433,102 @@ test('a tripling is flagged even when the item was previously recorded identical
   assert.equal(line.expectedQty, 10);
   assert.equal(line.steadyHistory, true);
   assert.ok(insight.alerts.some((a) => a.kind === 'usage_deviation' && a.level === 'high'));
+});
+
+// -------------------------------------------------------------- compare --
+
+/**
+ * Two months of steady service where a single item doubles part way through,
+ * so a comparison has something real to find.
+ */
+function comparableDataset() {
+  const serviceDays = [];
+  const usage = [];
+  for (let i = 0; i < 40; i++) {
+    const day = addDays('2026-05-01', i);
+    serviceDays.push({ day, inhouse_guests: 45, outside_guests: 5, outsider_fee: 20, note: null, submitted_at: 'x' });
+    usage.push({ day, ingredient_id: 1, qty: i < 20 ? 100 : 200 }); // eggs double
+    usage.push({ day, ingredient_id: 2, qty: 10 });
+  }
+  return makeDataset({
+    categories: CATEGORIES,
+    ingredients: INGREDIENTS,
+    settings: [{ key: 'currency', value: 'GHS' }, { key: 'timezone', value: 'Africa/Accra' }],
+    stockCounts: [],
+    serviceDays,
+    usage,
+    purchases: [
+      { id: 1, day: '2026-05-01', ingredient_id: 1, qty: 20000, unit_cost: 1 },
+      { id: 2, day: '2026-05-01', ingredient_id: 2, qty: 1000, unit_cost: 10 },
+    ],
+  });
+}
+
+test('two equal periods compare on totals, and name the item that moved', () => {
+  const ds = comparableDataset();
+  const result = compareInsights(
+    ds,
+    { from: '2026-05-21', to: '2026-05-30' }, // the doubled half
+    { from: '2026-05-01', to: '2026-05-10' },
+  );
+
+  assert.equal(result.comparable.sameLength, true);
+  assert.equal(result.comparable.totalsMeaningful, true);
+  assert.equal(result.comparable.note, null);
+  assert.equal(result.hasComparison, true);
+
+  // Same guests either side, so the cost difference is entirely the eggs.
+  assert.equal(result.deltas.guests, 0);
+  assert.ok(result.deltas.cost > 0);
+
+  const eggs = result.ingredients.find((i) => i.name === 'Eggs');
+  assert.equal(eggs.aQty, 2000);
+  assert.equal(eggs.bQty, 1000);
+  assert.equal(eggs.deltaPerGuestPct, 100);
+  assert.equal(result.risers[0].name, 'Eggs');
+  assert.equal(result.fallers[0].name, 'Bread'); // unchanged, so bottom of the list
+});
+
+test('periods of different lengths are flagged and ranked per guest, not on totals', () => {
+  const ds = comparableDataset();
+  // 20 days against 5: the longer period wins on raw money no matter what.
+  const result = compareInsights(
+    ds,
+    { from: '2026-05-01', to: '2026-05-20' },
+    { from: '2026-05-21', to: '2026-05-25' },
+  );
+
+  assert.equal(result.comparable.sameLength, false);
+  assert.equal(result.comparable.totalsMeaningful, false);
+  assert.match(result.comparable.note, /different lengths \(20 days against 5\)/);
+  assert.match(result.comparable.note, /per-guest/);
+
+  // Raw cost favours the 20-day period, but per guest the eggs are down.
+  assert.ok(result.a.cost > result.b.cost);
+  const eggs = result.ingredients.find((i) => i.name === 'Eggs');
+  assert.equal(eggs.deltaPerGuestPct, -50);
+  assert.equal(result.fallers[0].name, 'Eggs');
+
+  // The charts overlay by position, so each period keeps its own length.
+  assert.equal(result.series.a.length, 20);
+  assert.equal(result.series.b.length, 5);
+});
+
+test('an item used in only one period is still reported, not silently dropped', () => {
+  const ds = comparableDataset();
+  const result = compareInsights(
+    ds,
+    { from: '2026-05-21', to: '2026-05-30' },
+    { from: '2026-05-01', to: '2026-05-10' },
+  );
+  assert.equal(result.ingredients.length, 2);
+
+  // A period with no service at all: nothing to compare against.
+  const empty = compareInsights(
+    ds,
+    { from: '2026-05-01', to: '2026-05-10' },
+    { from: '2026-01-01', to: '2026-01-10' },
+  );
+  assert.equal(empty.hasComparison, false);
+  assert.equal(empty.comparable.bServedDays, 0);
 });

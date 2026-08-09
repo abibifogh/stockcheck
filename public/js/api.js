@@ -76,6 +76,9 @@ export const api = {
   daily: (day) => request(`/api/insights/daily${day ? `?day=${day}` : ''}`),
   weekly: (week) => request(`/api/insights/weekly${week ? `?week=${week}` : ''}`),
   monthly: (month) => request(`/api/insights/monthly${month ? `?month=${month}` : ''}`),
+  compare: (a, b) => request(`/api/insights/compare?${new URLSearchParams({
+    aFrom: a.from, aTo: a.to, bFrom: b.from, bTo: b.to,
+  })}`),
   stock: (asOf) => request(`/api/insights/stock${asOf ? `?asOf=${asOf}` : ''}`),
 
   createCategory: (body) => request('/api/categories', { method: 'POST', body }),

@@ -140,6 +140,7 @@ export async function renderOverview() {
           subtitle: `Position as at ${fmtDay(data.latestDay)}`,
           note: 'A snapshot of where the operation stands, with the last three weeks of cost per guest.',
         }),
+        h('button.btn-sm', { onclick: () => navigate('compare') }, '⇄ Compare periods'),
         h('button.btn-sm', { onclick: () => navigate('entry') }, 'Open entry sheet'),
         h('button.btn-sm.btn-primary', { onclick: () => navigate('monthly') }, 'Monthly report'),
       ),

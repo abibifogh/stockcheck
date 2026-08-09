@@ -40,6 +40,13 @@ export async function renderMonthly(params) {
         : 'A complete month, compared against the one before it.',
     }),
     exportButton(api.exportUrl('daily', data.from, data.to), 'Daily CSV'),
+    h('button.btn-sm', {
+      onclick: () => navigate('compare', {
+        aFrom: data.compared.from, aTo: data.compared.to,
+        bFrom: data.previous.from, bTo: data.previous.to,
+      }),
+      title: 'Compare this month against any other period',
+    }, '⇄ Compare with…'),
     exportButton(api.exportUrl('usage', data.from, data.to), 'Usage CSV'),
   );
 

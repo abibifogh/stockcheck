@@ -596,3 +596,17 @@ body:has(.entry-footer) .toasts[popover] { bottom: calc(4.75rem + env(safe-area-
   padding-top: .4rem; border-top: 1px dashed var(--border-strong);
 }
 .guide-reading-action strong { color: var(--accent); }
+
+/* Two date ranges, side by side, with the second visibly subordinate. */
+.compare-picker {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;
+  margin-bottom: .9rem;
+}
+.compare-picker > div:last-child {
+  padding-left: 1rem;
+  border-left: 2px dashed var(--border-strong);
+}
+@media (max-width: 700px) {
+  .compare-picker { grid-template-columns: 1fr; }
+  .compare-picker > div:last-child { padding-left: 0; border-left: none; padding-top: .6rem; border-top: 2px dashed var(--border-strong); }
+}

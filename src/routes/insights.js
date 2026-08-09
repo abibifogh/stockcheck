@@ -1,8 +1,8 @@
 import { badRequest, csvResponse, json } from '../lib/http.js';
 import {
-  dailyInsights, loadDataset, monthlyInsights, stockReport, weeklyInsights,
+  compareInsights, dailyInsights, loadDataset, monthlyInsights, stockReport, weeklyInsights,
 } from '../lib/analytics.js';
-import { isDay, isMonth, monthOf, startOfWeek, todayIn } from '../util/dates.js';
+import { diffDays, isDay, isMonth, monthOf, startOfWeek, todayIn } from '../util/dates.js';
 
 export async function daily(ctx) {
   const ds = await loadDataset(ctx.db);
@@ -24,6 +24,31 @@ export async function monthly(ctx) {
     || monthOf(ds.recordedDays.at(-1) || todayIn(ds.timezone));
   if (!isMonth(month)) throw badRequest('Invalid month, expected YYYY-MM');
   return json(monthlyInsights(ds, month));
+}
+
+/**
+ * Two date ranges of the reader's choosing, side by side.
+ *
+ * Ranges are capped at two years: the comparison walks every day in both, and
+ * an accidental decade-wide request would be a slow way to learn nothing.
+ */
+export async function compare(ctx) {
+  const ds = await loadDataset(ctx.db);
+  const q = ctx.url.searchParams;
+
+  const read = (fromKey, toKey, label) => {
+    const from = q.get(fromKey);
+    const to = q.get(toKey);
+    if (!isDay(from) || !isDay(to)) throw badRequest(`${label}: both dates are required`);
+    if (from > to) throw badRequest(`${label}: the start date is after the end date`);
+    if (diffDays(from, to) > 730) throw badRequest(`${label}: that range is longer than two years`);
+    return { from, to };
+  };
+
+  const a = read('aFrom', 'aTo', 'First period');
+  const b = read('bFrom', 'bTo', 'Second period');
+
+  return json(compareInsights(ds, a, b));
 }
 
 export async function stock(ctx) {
