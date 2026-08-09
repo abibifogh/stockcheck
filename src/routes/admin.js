@@ -258,8 +258,23 @@ export async function getNotifications(ctx) {
     'SELECT * FROM email_log ORDER BY at DESC LIMIT 20',
   ).all();
 
+  // Phone alerts share this screen: both answer "who hears about a submission".
+  // Tolerated missing so the screen still loads before the migration is run.
+  const devices = await ctx.db.prepare(
+    `SELECT p.id, p.label, p.created_at, u.name
+       FROM push_subscriptions p
+       LEFT JOIN users u ON u.id = p.user_id
+      ORDER BY p.created_at DESC`,
+  ).all().catch(() => ({ results: [] }));
+
+  const pushLog = await ctx.db.prepare('SELECT * FROM push_log ORDER BY at DESC LIMIT 10')
+    .all().catch(() => ({ results: [] }));
+
   return json({
     enabled: settings.notify_on_submit === '1',
+    pushEnabled: settings.push_on_submit !== '0',
+    devices: devices.results ?? [],
+    pushLog: pushLog.results ?? [],
     recipients: parseRecipients(settings.notify_recipients),
     from: settings.email_from || '',
     siteUrl: settings.site_url || '',
@@ -291,15 +306,19 @@ export async function updateNotifications(ctx) {
   }
 
   const enabled = bool(body.enabled, true) ? '1' : '0';
+  const pushEnabled = bool(body.pushEnabled, true) ? '1' : '0';
 
   await ctx.db.batch([
     setting(ctx.db, 'notify_on_submit', enabled),
     setting(ctx.db, 'notify_recipients', JSON.stringify(recipients)),
     setting(ctx.db, 'email_from', from),
     setting(ctx.db, 'site_url', siteUrl.replace(/\/+$/, '')),
+    setting(ctx.db, 'push_on_submit', pushEnabled),
   ]);
 
-  await audit(ctx, 'notifications.update', null, { enabled, recipients: recipients.length });
+  await audit(ctx, 'notifications.update', null, {
+    enabled, pushEnabled, recipients: recipients.length,
+  });
   return getNotifications(ctx);
 }
 

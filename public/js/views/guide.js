@@ -686,6 +686,41 @@ const SECTIONS = [
   },
 
   {
+    id: 'alerts-setup',
+    title: 'Being told when a day is submitted',
+    permission: 'reports',
+    lead: 'Two ways to hear about it, and they do different jobs.',
+    render: () => h('div',
+      points(
+        h('span', h('strong', 'An alert on your phone or computer —'), ' arrives within seconds of a '
+          + 'cook pressing Submit, and says who submitted, how many guests and the cost per guest. '
+          + 'Tap it to open that day.'),
+        h('span', h('strong', 'An email —'), ' the full morning summary with the analysis and '
+          + 'anything flagged, which is the one worth keeping.'),
+      ),
+      h('h3', { style: { marginTop: '1.1rem' } }, 'Turning on the alert'),
+      steps(
+        h('span', 'Open ', h('strong', 'My account'), ' at the top of the screen.'),
+        h('span', 'Choose ', h('strong', '“Alert me on this device”'), ' and allow notifications when '
+          + 'the browser asks.'),
+        h('span', 'Press ', h('strong', 'Send a test'), ' to prove it arrives before you rely on it.'),
+      ),
+      warn('On an iPhone or iPad, add the site to your Home Screen first.',
+        'Use Share → Add to Home Screen, then open it from that icon and turn the alert on there. '
+        + 'Apple only allows notifications for sites opened that way — in ordinary Safari the option '
+        + 'will not work, and that is Apple’s rule rather than a fault in this system.'),
+      note('Each device is separate.', 'Your phone and your office computer are two permissions. '
+        + 'Turn it on in each place you want to be told. Turning it off on one leaves the others alone.'),
+      can('users')
+        ? note('What you can see under Users & data.', 'The “Phone alerts” panel lists every device '
+          + 'being alerted and who it belongs to, lets you retire a phone that has been lost or '
+          + 'replaced, and has a master switch. A device that stops existing — a reset phone — is '
+          + 'dropped from the list automatically the next morning.')
+        : null,
+    ),
+  },
+
+  {
     id: 'admin-tools',
     title: 'Closed periods, bulk entry and erasing',
     permission: 'users',

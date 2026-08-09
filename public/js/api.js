@@ -105,6 +105,13 @@ export const api = {
   updateUser: (id, body) => request(`/api/users/${id}`, { method: 'PUT', body }),
   deleteUser: (id) => request(`/api/users/${id}`, { method: 'DELETE' }),
 
+  pushKey: () => request('/api/push/key'),
+  pushStatus: (endpoint) => request(`/api/push/status${endpoint ? `?endpoint=${encodeURIComponent(endpoint)}` : ''}`),
+  pushSubscribe: (body) => request('/api/push/subscribe', { method: 'POST', body }),
+  pushUnsubscribe: (body) => request('/api/push/unsubscribe', { method: 'POST', body }),
+  pushTest: (body) => request('/api/push/test', { method: 'POST', body }),
+  removePushDevice: (id) => request(`/api/push/devices/${id}`, { method: 'DELETE' }),
+
   notifications: () => request('/api/notifications'),
   updateNotifications: (body) => request('/api/notifications', { method: 'PUT', body }),
   testNotification: () => request('/api/notifications/test', { method: 'POST' }),

@@ -1,6 +1,7 @@
 import { HttpError, badRequest, bool, int, isMissingTable, json, num, readJson, str } from '../lib/http.js';
 import { entryHints, loadDataset } from '../lib/analytics.js';
 import { notifyDaySubmitted } from '../lib/email.js';
+import { pingDaySubmitted } from '../lib/push.js';
 import { assertDayWritable, lockCovering, locksFor } from '../lib/locks.js';
 import { isDay, todayIn } from '../util/dates.js';
 
@@ -248,11 +249,14 @@ export async function saveDay(ctx, day) {
   await db.batch(statements);
 
   if (submit) {
-    const task = notifyDaySubmitted(db, ctx.env, {
-      day,
-      submittedBy: session.user.name,
-      resubmission: alreadySubmitted,
-    });
+    // Both alerts, neither able to hold up the response: the kitchen has
+    // finished, and whether a mail server or a push service is having a bad
+    // morning is not the cook's problem.
+    const details = { day, submittedBy: session.user.name, resubmission: alreadySubmitted };
+    const task = Promise.all([
+      notifyDaySubmitted(db, ctx.env, details),
+      pingDaySubmitted(db, details),
+    ]);
     if (ctx.executionContext?.waitUntil) ctx.executionContext.waitUntil(task);
     else await task.catch(() => {});
   }
