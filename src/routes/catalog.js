@@ -1,4 +1,7 @@
-import { badRequest, bool, int, isMissingTable, json, notFound, num, readJson, str } from '../lib/http.js';
+import {
+  badRequest, bool, int, isMissingTable, json, notFound, num, readJson,
+  rethrowConstraint, str,
+} from '../lib/http.js';
 import { assertDayWritable } from '../lib/locks.js';
 import { isDay } from '../util/dates.js';
 
@@ -80,8 +83,7 @@ export async function createSupplier(ctx) {
     ).bind(f.name, f.contact, f.phone, f.note, f.active, f.sort_order).first();
     return json({ supplier: row }, { status: 201 });
   } catch (err) {
-    if (String(err).includes('UNIQUE')) throw badRequest(`"${f.name}" is already on the supplier list`);
-    throw err;
+    rethrowConstraint(err, { unique: `“${f.name}” is already on the supplier list.` });
   }
 }
 
@@ -104,8 +106,7 @@ export async function updateSupplier(ctx, id) {
     }
     return json({ supplier: row });
   } catch (err) {
-    if (String(err).includes('UNIQUE')) throw badRequest(`"${f.name}" is already on the supplier list`);
-    throw err;
+    rethrowConstraint(err, { unique: `“${f.name}” is already on the supplier list.` });
   }
 }
 
@@ -137,8 +138,7 @@ export async function createCategory(ctx) {
     ).bind(name, sortOrder).first();
     return json({ category: row }, { status: 201 });
   } catch (err) {
-    if (String(err).includes('UNIQUE')) throw badRequest(`Category "${name}" already exists`);
-    throw err;
+    rethrowConstraint(err, { unique: `There is already a category called “${name}”.` });
   }
 }
 
@@ -146,9 +146,14 @@ export async function updateCategory(ctx, id) {
   const body = await readJson(ctx.request);
   const name = str(body.name, 'Category name', { required: true, max: 80 });
   const sortOrder = int(body.sort_order, 'Sort order', { min: 0, max: 10000, fallback: 100 });
-  const row = await ctx.db.prepare(
-    'UPDATE categories SET name = ?, sort_order = ? WHERE id = ? RETURNING *',
-  ).bind(name, sortOrder, id).first();
+  let row;
+  try {
+    row = await ctx.db.prepare(
+      'UPDATE categories SET name = ?, sort_order = ? WHERE id = ? RETURNING *',
+    ).bind(name, sortOrder, id).first();
+  } catch (err) {
+    rethrowConstraint(err, { unique: `There is already a category called “${name}”.` });
+  }
   if (!row) throw notFound('Category not found');
   return json({ category: row });
 }
@@ -194,24 +199,43 @@ export async function createIngredient(ctx) {
     ).first();
     return json({ ingredient: row }, { status: 201 });
   } catch (err) {
-    if (String(err).includes('UNIQUE')) throw badRequest(`"${f.name}" already exists in that category`);
-    if (String(err).includes('FOREIGN KEY')) throw badRequest('Unknown category');
-    throw err;
+    rethrowConstraint(err, {
+      unique: `There is already an ingredient called "${f.name}" in that category.`,
+      foreignKey: 'That category no longer exists. Reload the page and try again.',
+    });
   }
 }
 
 export async function updateIngredient(ctx, id) {
   const body = await readJson(ctx.request);
   const f = ingredientFields(body);
-  const row = await ctx.db.prepare(
-    `UPDATE ingredients SET
-       category_id = ?, name = ?, unit = ?, step = ?, par_level = ?,
-       default_unit_cost = ?, opening_stock = ?, is_core = ?, active = ?, sort_order = ?
-     WHERE id = ? RETURNING *`,
-  ).bind(
-    f.category_id, f.name, f.unit, f.step, f.par_level,
-    f.default_unit_cost, f.opening_stock, f.is_core, f.active, f.sort_order, id,
-  ).first();
+
+  // Moving an ingredient into a category that already has one of that name, or
+  // into a category somebody else has since deleted, are both ordinary
+  // mistakes — and both used to surface as an unexplained server error.
+  let row;
+  try {
+    row = await ctx.db.prepare(
+      `UPDATE ingredients SET
+         category_id = ?, name = ?, unit = ?, step = ?, par_level = ?,
+         default_unit_cost = ?, opening_stock = ?, is_core = ?, active = ?, sort_order = ?
+       WHERE id = ? RETURNING *`,
+    ).bind(
+      f.category_id, f.name, f.unit, f.step, f.par_level,
+      f.default_unit_cost, f.opening_stock, f.is_core, f.active, f.sort_order, id,
+    ).first();
+  } catch (err) {
+    const category = await ctx.db.prepare('SELECT name FROM categories WHERE id = ?')
+      .bind(f.category_id).first();
+    rethrowConstraint(err, {
+      unique: category
+        ? `“${category.name}” already has an ingredient called “${f.name}”. `
+          + 'Rename one of them, or move it to a different category.'
+        : `There is already an ingredient called “${f.name}” in that category.`,
+      foreignKey: 'That category no longer exists. Reload the page and choose another.',
+    });
+  }
+
   if (!row) throw notFound('Ingredient not found');
   return json({ ingredient: row });
 }
@@ -329,8 +353,9 @@ export async function createPurchase(ctx) {
     ).bind(day, ingredientId, qty, unitCost, supplier, note).first();
     return json({ purchase: row }, { status: 201 });
   } catch (err) {
-    if (String(err).includes('FOREIGN KEY')) throw badRequest('Unknown ingredient');
-    throw err;
+    rethrowConstraint(err, {
+      foreignKey: 'That ingredient no longer exists. Reload the page and try again.',
+    });
   }
 }
 
