@@ -114,6 +114,12 @@ function settingsForm(settings, onSaved) {
     h('option', { value: '0', selected: settings.require_complete_entry === '0' },
       'Allow partly filled sheets'),
   );
+  const restrictCooks = h('select',
+    h('option', { value: '0', selected: settings.restrict_cooks_to_everyday !== '1' },
+      'Cooks can open the full item list'),
+    h('option', { value: '1', selected: settings.restrict_cooks_to_everyday === '1' },
+      'Cooks see everyday items only'),
+  );
   const recoveryPin = h('select',
     h('option', { value: '1', selected: settings.allow_recovery_pin !== '0' },
       'Emergency recovery PIN enabled'),
@@ -145,6 +151,7 @@ function settingsForm(settings, onSaved) {
       h('label.field', h('span', 'Fee per outside guest'), fee),
       h('label.field', h('span', '“Fill usual” button'), fillUsual),
       h('label.field', h('span', 'Supplier on deliveries'), supplierMode),
+      h('label.field', h('span', 'Item list for cooks'), restrictCooks),
     ),
     h('div.field-row',
       h('label.field', h('span', 'Completeness of a submission'), requireComplete),
@@ -162,6 +169,10 @@ function settingsForm(settings, onSaved) {
       '“Fill usual” fills every habitual item in one tap. Hide it if you would rather each '
       + 'quantity were entered deliberately — the per-item suggestions stay either way.'),
     h('p.muted', { style: { fontSize: '.8rem' } },
+      'Restricting cooks to everyday items hides the “All items” switch from anyone whose only job '
+      + 'here is the entry screen, so their morning is a short fixed list. Anything already recorded '
+      + 'stays visible, and managers keep the full list.'),
+    h('p.muted', { style: { fontSize: '.8rem' } },
       'Requiring completeness means a cook must put a number against every everyday item before the '
       + 'day can be submitted — 0 is a perfectly good answer, and they are asked to confirm any zeros. '
       + 'A blank is what causes trouble, because it looks the same as “we forgot”.'),
@@ -178,6 +189,7 @@ function settingsForm(settings, onSaved) {
             outsider_fee: fee.value,
             allow_fill_usual: fillUsual.value === '1',
             supplier_mode: supplierMode.value,
+            restrict_cooks_to_everyday: restrictCooks.value === '1',
             require_complete_entry: requireComplete.value === '1',
             require_resubmit_approval: requireApproval.value === '1',
             allow_recovery_pin: recoveryPin.value === '1',

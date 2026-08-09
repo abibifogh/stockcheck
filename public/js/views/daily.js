@@ -3,6 +3,7 @@ import { replaceParams } from '../app.js';
 import { fmtDay, fmtDayShort, fmtMoney, fmtNum, h, mount, shiftDay } from '../util.js';
 import { donutChart, lineChart, rankedBars } from '../charts.js';
 import { alertList, card, exportButton, pctCell, statTile, table, unitCell } from './components.js';
+import { printButton } from '../print.js';
 
 /**
  * One morning in full detail: what it cost, how that compares with a normal
@@ -26,6 +27,12 @@ export async function renderDaily(params) {
     }),
     h('button.btn-sm', { onclick: () => reload(shiftDay(data.day, 1)) }, 'Next day ›'),
     h('div', { style: { flex: 1 } }),
+    printButton({
+      title: `Breakfast — ${fmtDay(data.day, { withYear: true })}`,
+      subtitle: `${data.weekday} service · ${fmtNum(t.guests, 0)} guests`,
+      note: 'Expected quantities are the usual rate per guest over the last 28 service days, '
+        + 'scaled to this day’s headcount.',
+    }),
     exportButton(api.exportUrl('usage', data.day, data.day), 'Export this day'),
   );
 

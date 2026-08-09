@@ -52,6 +52,19 @@ function greeting() {
 // ---------------------------------------------------------------------------
 
 const steps = (...items) => h('ol.guide-steps', items.map((i) => h('li', i)));
+
+/**
+ * One panel of a report, explained: what it is called on screen, what it is
+ * actually telling you, and what to do about it. The third column is the one
+ * that matters — a number nobody acts on is decoration.
+ */
+function readings(...rows) {
+  return h('div.guide-readings', rows.map(([name, means, action]) => h('div.guide-reading',
+    h('div.guide-reading-name', name),
+    h('div.guide-reading-means', means),
+    h('div.guide-reading-action', h('strong', 'What to do: '), action),
+  )));
+}
 const points = (...items) => h('ul.guide-points', items.map((i) => h('li', i)));
 const note = (title, text) => h('div.guide-note', h('strong', title), ' ', text);
 const warn = (title, text) => h('div.guide-note.warn', h('strong', title), ' ', text);
@@ -161,6 +174,181 @@ const SECTIONS = [
       note('Charts respond to your mouse.', 'Hover anywhere on a line or bar to read the exact figures '
         + 'for that day.'),
       note('Everything exports.', 'Each view has an export button that gives you a spreadsheet file.'),
+    ),
+  },
+
+  {
+    id: 'overview-explained',
+    title: 'The Overview screen, panel by panel',
+    permission: 'reports',
+    lead: 'Where things stand right now. If you only look at one screen, look at this one.',
+    render: () => readings(
+      ['Latest day — guests',
+        'How many people ate at the most recent breakfast, in-house and paying guests added together. '
+        + 'The small line underneath is the last three weeks, so you can see whether it is a normal number.',
+        'Nothing, usually. It is context for everything else on the screen.'],
+      ['Cost per guest',
+        'What the food cost divided by the number of people who ate. This is the fairest single '
+        + 'number in the whole system, because it does not change just because the hotel was busy.',
+        'Compare it with the little trend line beside it. A steadily rising line means your costs are '
+        + 'creeping up — either prices rose or portions grew.'],
+      ['This week',
+        'Total food cost so far this week, and how it compares with the same number of days last week. '
+        + 'A part-finished week is never compared against a full one, so the percentage is honest.',
+        'A green figure means you spent less than the equivalent days last week. A red one is worth '
+        + 'opening the Week screen for.'],
+      ['Month to date',
+        'The same thing over the current month, with the cost per guest for the month so far.',
+        'Use it to see whether the month is on track before it ends, rather than finding out afterwards.'],
+      ['Outsider revenue (month)',
+        'Money taken from people who are not staying at the hotel but paid to eat breakfast.',
+        'Compare it with the food cost per guest on the Month screen — that tells you whether the fee '
+        + 'is actually worth charging.'],
+      ['Stock on hand',
+        'What the store is worth right now: everything you have bought, minus everything recorded as '
+        + 'used, priced at what you paid.',
+        'If this is negative or wildly wrong, deliveries have not been recorded. Fix that first — it '
+        + 'affects every other number.'],
+      ['Needs reordering',
+        'How many items have fallen below the level you said you want to keep in stock.',
+        'Open the Stock screen and use the order list.'],
+      ['Today',
+        'Whether the kitchen has recorded today yet.',
+        'If it still says “Not yet” late in the day, chase it. A missing day is worse than a rough one, '
+        + 'because it leaves a hole in every average.'],
+      ['Needs your attention',
+        'The system comparing today against your own normal and telling you what looks off — one item '
+        + 'used far more than the headcount explains, something habitual not recorded at all, or stock '
+        + 'that has gone impossible.',
+        'This is the part to actually read. Each line says what happened and roughly what it cost.'],
+      ['Cost per guest against covers',
+        'Two lines on one chart: what each guest cost you (left) and how many guests there were (right). '
+        + 'They have separate scales so both are readable.',
+        'Look for the lines moving apart. Cost per guest climbing while guest numbers fall is the '
+        + 'classic sign of a buffet laid out for more people than turned up.'],
+      ['Guests per day / Daily food cost this week',
+        'The week so far, day by day, with last week faded behind it for comparison.',
+        'Spot the odd day out, then open it on the Day screen.'],
+    ),
+  },
+
+  {
+    id: 'day-explained',
+    title: 'The Day screen, panel by panel',
+    permission: 'reports',
+    lead: 'One morning in detail. This is where you find out why a day was expensive.',
+    render: () => readings(
+      ['The four tiles at the top',
+        'Guests, total food cost, cost per guest, and money taken from outside guests — each with how '
+        + 'it compares against a normal recent day.',
+        'The cost-per-guest tile is the one to judge the day by. The others explain it.'],
+      ['What stands out',
+        'Plain-language notes on anything unusual: an item used well above or below what that many '
+        + 'guests would normally need, or a habitual item with nothing recorded.',
+        'Read these first. Each one names the item, the quantity, what was expected, and what the '
+        + 'difference cost you.'],
+      ['Where the money went',
+        'The day’s cost split by category — eggs and dairy, bakery, meats and so on.',
+        'Useful for spotting a category that has quietly become a bigger share than you thought.'],
+      ['Against a typical [weekday]',
+        'The same day of the week, averaged over the last few weeks. Sundays are compared with Sundays.',
+        'This is the fairest comparison on the screen. A busy Saturday costing more than a quiet Tuesday '
+        + 'is normal; a Saturday costing more than other Saturdays is not.'],
+      ['Usage against expectation',
+        'Every item, with what was used, what would normally be used for that many guests, the '
+        + 'difference as a percentage, and — the important column — what that difference cost in money.',
+        'Sort your eye down the “cost impact” column. The biggest numbers there are where the money '
+        + 'actually went, which is rarely the biggest percentage.'],
+      ['Recent trend',
+        'Cost per guest and guest numbers over the last four weeks, so this day sits in context.',
+        'A single bad day is noise. Three in a row is a pattern worth acting on.'],
+      ['Entry quality',
+        'How completely the sheet was filled in, and which items were left blank.',
+        'A low score means the day’s figures understate reality. Treat its costs as a floor, not a fact.'],
+    ),
+  },
+
+  {
+    id: 'week-explained',
+    title: 'The Week screen, panel by panel',
+    permission: 'reports',
+    lead: 'Comparison. Everything here answers “compared with what?”',
+    render: () => readings(
+      ['The four tiles',
+        'Guests, food cost, cost per guest and outsider income for the week, each against last week.',
+        'If cost went up but cost per guest did not, you simply served more people. That is not a problem.'],
+      ['This week against last week',
+        'Each day’s cost with the same weekday last week beside it.',
+        'Look for one day sticking out rather than the whole week drifting.'],
+      ['Cost per guest through the week',
+        'The same, per guest, with last week as a dashed line.',
+        'Where the solid line sits above the dashed one, that day got more expensive per head.'],
+      ['What moved',
+        'The items whose spend rose or fell most against last week, in money.',
+        'This is your shortlist. Two or three items usually explain most of a week’s change.'],
+      ['Weekday pattern',
+        'How each day of the week normally behaves, averaged over the last eight weeks.',
+        'Use it to set expectations, not to judge one morning. If Sunday is always heavier, that is your '
+        + 'business, not a fault.'],
+      ['Category spend',
+        'Each category this week against last, and its share of the total.',
+        'A category whose share keeps growing is worth a conversation with the kitchen.'],
+      ['Ingredient detail — the “Consistency” column',
+        'How steady each item’s use per guest is. “Steady” means the same amount per person every day. '
+        + '“Erratic” means it swings about.',
+        'Erratic items are usually being eyeballed rather than measured, or guessed at the end of '
+        + 'service. They are the easiest place to find savings.'],
+      ['Portioning to look at',
+        'The worst offenders from that column, gathered in one place.',
+        'Start here if you want to tighten portion control.'],
+    ),
+  },
+
+  {
+    id: 'month-explained',
+    title: 'The Month screen, panel by panel',
+    permission: 'reports',
+    lead: 'The owner’s report. This is the one to read at the end of a month.',
+    render: () => readings(
+      ['The four tiles',
+        'Guests, food cost, cost per guest and outsider income for the month, against the month before.',
+        'Cost per guest is the headline. The rest is context.'],
+      ['Where the month is heading',
+        'If the month is not finished, a straight-line estimate of where it will land based on the days '
+        + 'recorded so far.',
+        'An early warning. It assumes the rest of the month looks like the part already served, so '
+        + 'treat it as a direction, not a forecast.'],
+      ['Daily cost per guest',
+        'Every service day in the month on one line, with whether the trend is rising, falling or flat.',
+        'A rising trend inside a single month usually means supplier prices moved. Check the Purchases '
+        + 'screen for when.'],
+      ['Outside guests — does the walk-in fee pay for itself?',
+        'What you charge outsiders, against what their food actually costs. “Break-even fee” is the '
+        + 'price at which you neither gain nor lose on the food.',
+        'If your fee is below the break-even figure you are paying people to eat. If it is above, the '
+        + 'difference is contribution — but remember it only counts food, not labour or gas.'],
+      ['Store movement',
+        'What you bought this month against what you consumed, and what the store is worth at the end.',
+        'Buying much more than you used ties up cash on shelves. Using much more than you bought means '
+        + 'you are eating through earlier purchases. Either is fine occasionally; month after month is '
+        + 'worth understanding.'],
+      ['Week by week',
+        'The month broken into weeks, so you can see within-month drift.',
+        'Steady climb week on week is the pattern to catch early.'],
+      ['Category mix',
+        'The share of the month’s spend by category.',
+        'Compare it with what you would expect a breakfast to cost. A category well out of line is '
+        + 'either a genuine menu choice or a leak.'],
+      ['Biggest cost drivers',
+        'The dozen items that cost you the most this month.',
+        'These are where attention pays. A 10% saving on your top item beats eliminating your smallest.'],
+      ['Best and worst days',
+        'The leanest and heaviest days by cost per guest.',
+        'Open the worst ones to see why. Open the best ones too — sometimes a very cheap day is a sheet '
+        + 'that was only half filled in.'],
+      ['Every ingredient — “vs last month”',
+        'Whether each item’s use per guest went up or down compared with last month.',
+        'This is the like-for-like measure. It ignores how busy each month was.'],
     ),
   },
 
