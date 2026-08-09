@@ -306,6 +306,14 @@ function editCategory(row, onSaved) {
 }
 
 function ingredientForm(existing, categories, units, onSaved) {
+  // Shown in the form rather than as a toast: when this form is opened as a
+  // modal, a toast would be hidden behind it.
+  const problem = h('div.form-error.hidden');
+  const showProblem = (message) => {
+    problem.textContent = message;
+    problem.classList.remove('hidden');
+    problem.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  };
   const value = existing || {
     category_id: categories[0]?.id, name: '', unit: 'kg', step: 1,
     par_level: 0, default_unit_cost: 0, opening_stock: 0, is_core: 1, active: 1, sort_order: 100,
@@ -329,8 +337,9 @@ function ingredientForm(existing, categories, units, onSaved) {
   const order = h('input', { type: 'number', value: value.sort_order, step: 10 });
 
   const submit = async (event) => {
+    problem.classList.add('hidden');
     if (!name.value.trim()) {
-      toast('Give the ingredient a name', 'bad');
+      showProblem('Give the ingredient a name.');
       return;
     }
     event.target.disabled = true;
@@ -352,7 +361,7 @@ function ingredientForm(existing, categories, units, onSaved) {
       toast(existing ? 'Ingredient updated' : 'Ingredient added', 'good');
       onSaved();
     } catch (err) {
-      toast(err.message, 'bad');
+      showProblem(err.message);
       event.target.disabled = false;
     }
   };
@@ -372,6 +381,7 @@ function ingredientForm(existing, categories, units, onSaved) {
     ),
     h('p.muted', { style: { fontSize: '.8rem' } },
       'Tap step is how much one press of + or − moves the quantity — set it to how the kitchen actually measures (6 for eggs, 0.5 for a half kilo). Fallback unit cost is only used until the first delivery of that item is recorded.'),
+    problem,
     h('button.btn-primary', { onclick: submit }, existing ? 'Save changes' : 'Add ingredient'),
   );
 }

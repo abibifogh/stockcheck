@@ -396,3 +396,34 @@ body:has(.entry-footer) .toasts { bottom: calc(4.75rem + env(safe-area-inset-bot
   white-space: nowrap;
   vertical-align: middle;
 }
+
+/* A problem with what was typed, shown beside the fields that caused it.
+   Modal dialogs sit above every toast, so form errors must live in the form. */
+.form-error {
+  margin: .6rem 0 0;
+  padding: .6rem .75rem;
+  border-radius: var(--radius-sm);
+  background: var(--bad-soft);
+  border: 1px solid color-mix(in srgb, var(--bad) 35%, transparent);
+  color: var(--bad);
+  font-size: .86rem;
+  font-weight: 550;
+  line-height: 1.45;
+}
+
+/* The toast host is a popover so it shares the top layer with modal dialogs
+   and can never be painted behind one. Strip the browser's default chrome. */
+.toasts[popover] {
+  inset: auto;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  overflow: visible;
+}
+.toasts[popover]:not(:popover-open) { display: none; }
+.toasts[popover]:popover-open { display: grid; }
+body:has(.entry-footer) .toasts[popover] { bottom: calc(4.75rem + env(safe-area-inset-bottom)); }

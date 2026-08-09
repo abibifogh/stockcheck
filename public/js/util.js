@@ -153,10 +153,22 @@ export function toast(message, kind = '') {
   if (!host) return;
   const el = h(`div.toast${kind ? `.${kind}` : ''}`, message);
   host.append(el);
+
+  // A modal <dialog> lives in the browser's top layer, above any z-index.
+  // Promoting the toast host to a popover puts it in that same layer, so a
+  // message can never end up hidden behind an open form.
+  try {
+    if (host.showPopover && !host.matches(':popover-open')) host.showPopover();
+  } catch { /* older browser: the toast still shows, just below a modal */ }
   setTimeout(() => {
     el.style.transition = 'opacity .25s';
     el.style.opacity = '0';
-    setTimeout(() => el.remove(), 250);
+    setTimeout(() => {
+      el.remove();
+      if (!host.children.length) {
+        try { host.hidePopover?.(); } catch { /* nothing open to hide */ }
+      }
+    }, 250);
   }, kind === 'bad' ? 5000 : 2600);
 }
 
