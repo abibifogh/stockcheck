@@ -29,6 +29,7 @@ export async function renderAdmin() {
     importCard(reload),
     submissionsCard(days.days || [], reload),
     notificationsCard(notifications, reload),
+    pushCard(notifications, reload),
     eraseCard(summary, reload),
   );
   return host;
@@ -733,6 +734,104 @@ function notificationsCard(data, reload) {
           { key: 'recipients', label: 'To', format: (v) => v || h('span.muted', '—') },
           { key: 'detail', label: 'Detail', format: (v) => (v ? h('span.muted', v) : '—') },
         ], data.log))
+      : null,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Phone alerts
+// ---------------------------------------------------------------------------
+
+/**
+ * The list of devices, and the master switch.
+ *
+ * Turning alerts on is done by each person on each of their own devices, from
+ * My account — permission to show a notification is granted by a browser to a
+ * site and cannot be handed out from here. What an administrator gets is the
+ * ability to see who is being alerted, retire a phone that has been lost or
+ * replaced, and switch the whole thing off.
+ */
+function pushCard(data, reload) {
+  const enabled = h('select',
+    h('option', { value: '1', selected: data.pushEnabled }, 'Alert every subscribed device'),
+    h('option', { value: '0', selected: !data.pushEnabled }, 'Do not send alerts'),
+  );
+
+  const save = async (event) => {
+    event.target.disabled = true;
+    try {
+      // Sent alongside the email settings, which is the only thing this
+      // endpoint updates — resend them unchanged.
+      await api.updateNotifications({
+        enabled: data.enabled,
+        recipients: data.recipients,
+        from: data.from,
+        siteUrl: data.siteUrl,
+        pushEnabled: enabled.value === '1',
+      });
+      toast('Alert settings saved', 'good');
+      reload();
+    } catch (err) {
+      toast(err.message, 'bad');
+      event.target.disabled = false;
+    }
+  };
+
+  const remove = async (device) => {
+    if (!confirm(`Stop alerting ${device.label || 'this device'}?`)) return;
+    try {
+      await api.removePushDevice(device.id);
+      toast('Device removed');
+      reload();
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+  };
+
+  return card('Phone alerts', {
+    note: 'A notification the moment a day is submitted',
+    wide: true,
+  },
+    h('p.muted', { style: { fontSize: '.87rem' } },
+      'Each person turns these on for themselves, on each device they want alerted, under '
+      + '“My account”. A phone and a computer count as two devices.'),
+    h('div.field-row',
+      h('label.field', h('span', 'When a day is submitted'), enabled),
+    ),
+    h('div', { style: { marginTop: '.8rem' } },
+      h('div.stat-label', { style: { marginBottom: '.4rem' } }, 'Devices being alerted'),
+      data.devices?.length
+        ? table([
+          { key: 'label', label: 'Device', format: (v) => v || h('span.muted', 'Unnamed device') },
+          { key: 'name', label: 'Person', format: (v) => v || h('span.muted', 'Emergency access') },
+          { key: 'created_at', label: 'Added', format: (v) => h('span.muted', String(v).slice(0, 10)) },
+          {
+            key: 'id',
+            label: '',
+            align: 'right',
+            format: (_v, row) => h('button.btn-sm.btn-ghost', { onclick: () => remove(row) }, 'Remove'),
+          },
+        ], data.devices)
+        : h('p.muted', { style: { fontSize: '.85rem', margin: 0 } },
+          'Nobody has turned alerts on yet. Open “My account” and choose “Alert me on this device”.'),
+    ),
+    h('div.btn-row', { style: { marginTop: '1rem' } },
+      h('button.btn-primary', { onclick: save }, 'Save'),
+    ),
+    data.pushLog?.length
+      ? h('div', { style: { marginTop: '.6rem' } },
+        h('div.stat-label', { style: { marginBottom: '.4rem' } }, 'Recent alerts'),
+        table([
+          { key: 'at', label: 'When', format: (v) => h('span.muted', String(v).slice(0, 16).replace('T', ' ')) },
+          { key: 'day', label: 'For day', format: (v) => (v ? fmtDay(v) : '—') },
+          {
+            key: 'status',
+            label: 'Result',
+            format: (v) => h(`span.pill.${v === 'sent' ? 'good' : v === 'skipped' ? 'warn' : 'bad'}`, v),
+          },
+          { key: 'sent', label: 'Devices', align: 'right' },
+          { key: 'detail', label: 'Detail', format: (v) => (v ? h('span.muted', v) : '—') },
+        ], data.pushLog))
       : null,
   );
 }

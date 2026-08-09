@@ -13,6 +13,7 @@ import * as importing from './routes/importing.js';
 import * as catalog from './routes/catalog.js';
 import * as insights from './routes/insights.js';
 import * as admin from './routes/admin.js';
+import * as push from './routes/push.js';
 import { PIN_TAKEN } from './routes/admin.js';
 
 /**
@@ -79,6 +80,13 @@ const ROUTES = [
   ['POST', '/api/users', 'users', admin.createUser],
   ['PUT', '/api/users/:id', 'users', admin.updateUser],
   ['DELETE', '/api/users/:id', 'users', admin.deleteUser],
+
+  ['GET', '/api/push/key', null, push.publicKey],
+  ['GET', '/api/push/status', null, push.status],
+  ['POST', '/api/push/subscribe', null, push.subscribe],
+  ['POST', '/api/push/unsubscribe', null, push.unsubscribe],
+  ['POST', '/api/push/test', null, push.test],
+  ['DELETE', '/api/push/devices/:id', 'users', push.removeDevice],
 
   ['GET', '/api/notifications', 'users', admin.getNotifications],
   ['PUT', '/api/notifications', 'users', admin.updateNotifications],

@@ -121,6 +121,7 @@ function shell(content) {
           name: state.name || 'you',
           email: state.email,
           isRecovery: state.isRecovery,
+          canAlert: can('reports'),
         }),
       }, 'My account'),
       h('button.btn-ghost.btn-sm', {

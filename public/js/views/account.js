@@ -1,6 +1,9 @@
 import { api } from '../api.js';
 import { deriveLoginKey, prepareNewPassword } from '../crypto.js';
-import { h, toast } from '../util.js';
+import { h, mount, toast } from '../util.js';
+import {
+  currentSubscription, disablePush, enablePush, needsHomeScreen, pushSupported, testPush,
+} from '../push.js';
 
 /**
  * Changing your own PIN or password.
@@ -9,8 +12,11 @@ import { h, toast } from '../util.js';
  * change is a credential nobody ever changes — and a kitchen PIN that has been
  * the same since opening day is known to people who left months ago.
  */
-export function openAccountDialog({ role, name, email: myEmail, isRecovery }) {
+export function openAccountDialog({ role, name, email: myEmail, isRecovery, canAlert = false }) {
   const usesPassword = role === 'admin';
+  // Only the people who read the reports are offered the alert. A cook does not
+  // need to be pinged about the sheet they just filled in themselves.
+  const canSeeAlerts = canAlert && pushSupported();
   const error = h('p.muted', { style: { minHeight: '1.2rem', fontSize: '.85rem' } });
 
   const current = h('input', {
@@ -116,10 +122,84 @@ export function openAccountDialog({ role, name, email: myEmail, isRecovery }) {
     h('p.muted', { style: { fontSize: '.85rem', marginTop: '-.4rem' } },
       `Signed in as ${name}`),
     body,
+    canSeeAlerts ? alertsSection() : null,
   );
 
   document.body.append(dialog);
   dialog.addEventListener('close', () => dialog.remove());
   dialog.showModal();
   if (!isRecovery) setTimeout(() => current.focus(), 0);
+
+  /**
+   * Alerts on this device.
+   *
+   * Rendered into a placeholder rather than awaited before opening, so the
+   * dialog never waits on a service worker to appear.
+   */
+  function alertsSection() {
+    const host = h('div', { style: { marginTop: '1.1rem', paddingTop: '.9rem', borderTop: '1px solid var(--border)' } });
+    const status = h('p.muted', { style: { fontSize: '.85rem', minHeight: '1.2rem' } });
+
+    const draw = (subscribed) => {
+      const busy = (button, label) => { button.disabled = true; button.textContent = label; };
+
+      const turnOn = h('button.btn-primary', {
+        onclick: async (event) => {
+          busy(event.target, 'Asking…');
+          try {
+            await enablePush();
+            toast('Alerts are on for this device', 'good');
+            draw(true);
+          } catch (err) {
+            status.textContent = err.message;
+            event.target.disabled = false;
+            event.target.textContent = 'Alert me on this device';
+          }
+        },
+      }, 'Alert me on this device');
+
+      const turnOff = h('button', {
+        onclick: async (event) => {
+          busy(event.target, 'Turning off…');
+          await disablePush().catch(() => {});
+          toast('Alerts are off for this device');
+          draw(false);
+        },
+      }, 'Turn off');
+
+      const tryIt = h('button.btn-sm', {
+        onclick: async (event) => {
+          busy(event.target, 'Sending…');
+          try {
+            await testPush();
+            status.textContent = 'Sent. It should appear within a few seconds.';
+          } catch (err) {
+            status.textContent = err.message;
+          }
+          event.target.disabled = false;
+          event.target.textContent = 'Send a test';
+        },
+      }, 'Send a test');
+
+      mount(host,
+        h('h3', { style: { fontSize: '.95rem', marginBottom: '.35rem' } }, 'Alerts on this device'),
+        h('p.muted', { style: { fontSize: '.85rem' } },
+          subscribed
+            ? 'This device is alerted whenever a cook submits a day.'
+            : 'Get a notification the moment a cook submits a day. Each device has to be turned on '
+              + 'separately — a phone and a computer are two separate permissions.'),
+        needsHomeScreen() && !subscribed
+          ? h('div.guide-note.warn', { style: { marginTop: 0, fontSize: '.83rem' } },
+            h('strong', 'On an iPhone or iPad: '),
+            'add this site to your Home Screen first (Share → Add to Home Screen) and open it from '
+            + 'there. Apple only allows alerts for sites added that way.')
+          : null,
+        status,
+        h('div.btn-row', subscribed ? [turnOff, tryIt] : [turnOn]),
+      );
+    };
+
+    currentSubscription().then((sub) => draw(Boolean(sub))).catch(() => draw(false));
+    return host;
+  }
 }
