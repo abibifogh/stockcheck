@@ -257,7 +257,7 @@ const SECTIONS = [
 
   {
     id: 'reports',
-    title: 'Reading the reports, and where the numbers come from',
+    title: 'Reading the reports',
     permission: 'reports',
     lead: 'Five views, each answering a different question — and the handful of rules all five obey.',
     render: () => h('div',
