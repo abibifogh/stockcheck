@@ -46,8 +46,9 @@ async function request(path, { method = 'GET', body, signal } = {}) {
 export const api = {
   ApiError,
   login: (pin) => request('/api/auth/login', { method: 'POST', body: { pin } }),
-  loginWithPassword: (email, password) =>
-    request('/api/auth/login', { method: 'POST', body: { email, password } }),
+  passwordSalt: (email) => request('/api/auth/salt', { method: 'POST', body: { email } }),
+  loginWithKey: (email, passwordKey) =>
+    request('/api/auth/login', { method: 'POST', body: { email, passwordKey } }),
   changeCredentials: (body) =>
     request('/api/auth/change-credentials', { method: 'POST', body }),
   logout: () => request('/api/auth/logout', { method: 'POST' }),

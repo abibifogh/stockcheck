@@ -79,41 +79,84 @@ export async function readToken(token, secret) {
 // alongside each hash, so it can be raised later without invalidating anyone's
 // existing password.
 
-const PBKDF2_ITERATIONS = 210_000;
+// The browser derives a key from the password (see public/js/crypto.js) and
+// sends that. All the server does is keep a keyed hash of it, which costs
+// microseconds and fits comfortably inside a Worker's CPU budget.
+//
+// Stored as:  pbkdf2c$1$<iterations>$<salt>$<hmac>
+//
+// The salt and iteration count are not secret; they are recorded so the browser
+// can reproduce the same derivation at sign-in. The hash is keyed with the
+// installation's pepper, so a stolen database still has to be attacked one
+// guess at a time — and every guess costs the full 600,000 rounds, because that
+// is where the work actually happens.
 
-export async function hashPassword(password, iterations = PBKDF2_ITERATIONS) {
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const bits = await deriveBits(password, salt, iterations);
-  return `pbkdf2$${iterations}$${b64urlEncode(salt)}$${b64urlEncode(new Uint8Array(bits))}`;
+const PASSWORD_VERSION = '1';
+export const DEFAULT_PASSWORD_ITERATIONS = 600_000;
+
+async function pepperHmac(value, pepper) {
+  const key = await hmacKey(`password:${pepper}`);
+  const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(String(value)));
+  return b64urlEncode(new Uint8Array(sig));
 }
 
-async function deriveBits(password, salt, iterations) {
-  const key = await crypto.subtle.importKey(
-    'raw', encoder.encode(String(password)), 'PBKDF2', false, ['deriveBits'],
-  );
-  return crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' }, key, 256,
-  );
+/**
+ * Build the stored value from what the browser derived.
+ * `salt` and `iterations` come from the browser and are kept verbatim.
+ */
+export async function storedPassword({ passwordKey, salt, iterations }, pepper) {
+  const hmac = await pepperHmac(passwordKey, pepper);
+  return `pbkdf2c$${PASSWORD_VERSION}$${Number(iterations) || DEFAULT_PASSWORD_ITERATIONS}$${salt}$${hmac}`;
 }
 
-/** Constant-time password check against a stored hash. */
-export async function verifyPassword(password, stored) {
-  if (typeof stored !== 'string' || !stored.startsWith('pbkdf2$')) return false;
-  const [, iterations, saltPart, hashPart] = stored.split('$');
-  if (!iterations || !saltPart || !hashPart) return false;
+/** The salt and work factor recorded in a stored password, or null. */
+export function passwordParams(stored) {
+  if (typeof stored !== 'string' || !stored.startsWith('pbkdf2c$')) return null;
+  const [, , iterations, salt] = stored.split('$');
+  if (!iterations || !salt) return null;
+  return { iterations: Number(iterations), salt };
+}
 
+/** Constant-time check of a browser-derived key against a stored password. */
+export async function verifyPasswordKey(passwordKey, stored, pepper) {
+  const params = passwordParams(stored);
+  if (!params || !passwordKey) return false;
+
+  const expected = stored.split('$')[4];
+  const actual = await pepperHmac(passwordKey, pepper);
+  if (!expected || expected.length !== actual.length) return false;
+
+  let diff = 0;
+  for (let i = 0; i < actual.length; i++) diff |= actual.charCodeAt(i) ^ expected.charCodeAt(i);
+  return diff === 0;
+}
+
+/**
+ * The salt to derive with for a given address.
+ *
+ * An address with no account still gets a salt — a stable one derived from the
+ * address itself — so that asking for a salt never reveals who has an account.
+ */
+export async function saltForEmail(db, email, pepper) {
+  const normalised = normaliseEmail(email);
+
+  let row = null;
   try {
-    const bits = await deriveBits(password, b64urlDecode(saltPart), Number(iterations));
-    const actual = new Uint8Array(bits);
-    const expected = b64urlDecode(hashPart);
-    if (actual.length !== expected.length) return false;
-
-    let diff = 0;
-    for (let i = 0; i < actual.length; i++) diff |= actual[i] ^ expected[i];
-    return diff === 0;
-  } catch {
-    return false;
+    row = await db.prepare('SELECT password_hash FROM users WHERE email = ? AND active = 1')
+      .bind(normalised).first();
+  } catch (err) {
+    if (!isMissingTable(err)) throw err;
   }
+
+  const params = row ? passwordParams(row.password_hash) : null;
+  if (params) return params;
+
+  const key = await hmacKey(`salt:${pepper}`);
+  const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(normalised));
+  return {
+    salt: b64urlEncode(new Uint8Array(sig).slice(0, 16)),
+    iterations: DEFAULT_PASSWORD_ITERATIONS,
+  };
 }
 
 export function normaliseEmail(value) {
@@ -124,23 +167,25 @@ export function normaliseEmail(value) {
  * Sign in with an email address and password. Used by administrators, and
  * available to anyone else who has credentials set.
  */
-export async function userForCredentials(db, email, password) {
-  if (!email || !password) return null;
+export async function userForCredentials(db, email, passwordKey) {
+  if (!email || !passwordKey) return null;
 
   let row = null;
   try {
     row = await db.prepare(
-      'SELECT id, name, role, permissions, active, password_hash FROM users WHERE email = ?',
+      'SELECT id, name, role, permissions, active, email, password_hash FROM users WHERE email = ?',
     ).bind(normaliseEmail(email)).first();
   } catch (err) {
     if (!isMissingTable(err)) throw err;
     return null;
   }
 
-  // Run the comparison even when no account matched, so a wrong address and a
-  // wrong password take the same amount of time.
-  const stored = row?.password_hash ?? 'pbkdf2$1$AAAA$AAAA';
-  const valid = await verifyPassword(password, stored);
+  const pepper = await getPepper(db);
+
+  // Compare even when no account matched, so a wrong address and a wrong
+  // password take the same path and the same time.
+  const stored = row?.password_hash ?? `pbkdf2c$1$1$AAAAAAAAAAAAAAAAAAAAAA$${'A'.repeat(43)}`;
+  const valid = await verifyPasswordKey(passwordKey, stored, pepper);
 
   if (!row || !valid || !row.active) return null;
   const { password_hash: _ignored, ...user } = row;

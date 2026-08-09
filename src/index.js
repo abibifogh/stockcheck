@@ -1,7 +1,7 @@
 import {
-  clearCookie, createToken, getPepper, getSession, hashPassword, hashPin,
-  isReservedPin, sessionCookie, throttleCheck, throttleFail, throttleReset,
-  tokenTtl, userForCredentials, userForPin, verifyPassword,
+  clearCookie, createToken, getPepper, getSession, hashPin, isReservedPin,
+  saltForEmail, sessionCookie, storedPassword, throttleCheck, throttleFail,
+  throttleReset, tokenTtl, userForCredentials, userForPin, verifyPasswordKey,
 } from './lib/auth.js';
 import { effectivePermissions } from './lib/permissions.js';
 import {
@@ -24,6 +24,7 @@ import { PIN_TAKEN } from './routes/admin.js';
  * listed before the auth check are public.
  */
 const ROUTES = [
+  ['POST', '/api/auth/salt', 'public', passwordSalt],
   ['POST', '/api/auth/login', 'public', login],
   ['POST', '/api/auth/logout', 'public', logout],
   ['GET', '/api/auth/me', 'public', me],
@@ -200,6 +201,20 @@ async function route(request, env, url, executionContext) {
 // Auth endpoints
 // ---------------------------------------------------------------------------
 
+/**
+ * The salt and work factor to derive with, for a given address.
+ *
+ * Public by necessity — the browser needs it before it can prove anything. An
+ * address with no account gets a stable made-up salt, so this cannot be used to
+ * find out who has an account.
+ */
+async function passwordSalt(ctx) {
+  const body = await readJson(ctx.request);
+  const email = str(body.email, 'Email address', { required: true, max: 200 });
+  const params = await saltForEmail(ctx.db, email, await getPepper(ctx.db));
+  return json(params);
+}
+
 async function login(ctx) {
   const { request, env, url, db } = ctx;
   const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
@@ -217,7 +232,7 @@ async function login(ctx) {
   // Two ways in: a PIN for the kitchen and anyone managing the operation, or an
   // email address and password for administrators.
   const user = body.email
-    ? await userForCredentials(db, body.email, String(body.password ?? ''))
+    ? await userForCredentials(db, body.email, String(body.passwordKey ?? ''))
     : await userForPin(db, str(body.pin, 'PIN', { required: true, max: 64 }), env);
 
   if (!user) {
@@ -253,6 +268,7 @@ async function login(ctx) {
     ok: true,
     role: user.role,
     name: user.name,
+    email: user.email ?? null,
     isRecovery: Boolean(user.isRecovery),
     permissions: effectivePermissions(user),
   }, {
@@ -313,20 +329,28 @@ async function changeCredentials(ctx) {
 
   // Administrators hold a password; everyone else holds a PIN.
   if (session.user.role === 'admin') {
-    const current = String(body.currentPassword ?? '');
-    const next = String(body.newPassword ?? '');
+    const pepper = await getPepper(db);
+    const currentKey = String(body.currentPasswordKey ?? '');
 
-    if (!await verifyPassword(current, row.password_hash)) {
+    if (!await verifyPasswordKey(currentKey, row.password_hash, pepper)) {
       await new Promise((resolve) => setTimeout(resolve, 400));
       throw badRequest('Your current password is not correct');
     }
-    if (next.length < 10) throw badRequest('The new password must be at least 10 characters');
-    if (/^\d+$/.test(next)) throw badRequest('A password cannot be only digits');
-    if (next === current) throw badRequest('The new password is the same as the current one');
+    if (!body.passwordKey || !body.passwordSalt) {
+      throw badRequest('The new password did not reach the server correctly. Please try again.');
+    }
+    if (body.passwordKey === currentKey) {
+      throw badRequest('The new password is the same as the current one');
+    }
+
+    const next = await storedPassword({
+      passwordKey: String(body.passwordKey),
+      salt: String(body.passwordSalt),
+      iterations: body.passwordIterations,
+    }, pepper);
 
     await db.batch([
-      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?')
-        .bind(await hashPassword(next), row.id),
+      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').bind(next, row.id),
       db.prepare('INSERT INTO audit_log (actor, action, entity, detail) VALUES (?, ?, ?, ?)')
         .bind(`${session.user.name} (${session.user.role})`, 'account.password_change', String(row.id), null),
     ]);

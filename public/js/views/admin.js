@@ -1,5 +1,6 @@
 import { api } from '../api.js';
 import { state } from '../app.js';
+import { prepareNewPassword } from '../crypto.js';
 import { fmtDay, fmtNum, h, mount, toast, todayISO } from '../util.js';
 import { card, table } from './components.js';
 
@@ -328,7 +329,10 @@ function usersCard(data, reload) {
         key: 'signsInWith',
         label: 'Signs in with',
         format: (v, r) => (v === 'password'
-          ? h('div', h('div', h('span.pill.info', 'email & password')), h('small.muted', r.email || 'no address set'))
+          ? h('div',
+            h('div', h(`span.pill.${r.needsPasswordReset ? 'bad' : 'info'}`,
+              r.needsPasswordReset ? 'password needs resetting' : 'email & password')),
+            h('small.muted', r.email || 'no address set'))
           : h('span.pill', 'PIN')),
       },
       {
@@ -484,6 +488,14 @@ function userDialog(existing, roles, permissions, onSaved) {
         showProblem('Set a password of at least 10 characters. A few unrelated words works well.');
         return;
       }
+      if (password.value && password.value.length < 10) {
+        showProblem('The password must be at least 10 characters. A few unrelated words works well.');
+        return;
+      }
+      if (password.value && /^\d+$/.test(password.value)) {
+        showProblem('A password of only digits is a PIN. Include some words or letters.');
+        return;
+      }
     } else if (!existing && !pin.value.trim()) {
       showProblem('Give this person a PIN of 4 to 10 digits.');
       return;
@@ -505,7 +517,9 @@ function userDialog(existing, roles, permissions, onSaved) {
     };
     if (isAdmin) {
       body.email = email.value.trim();
-      if (password.value) body.password = password.value;
+      // Stretched here, in the browser: the server has a 10ms CPU budget and
+      // the raw password should not travel further than it must.
+      if (password.value) Object.assign(body, await prepareNewPassword(password.value));
     } else if (pin.value.trim()) {
       body.pin = pin.value.trim();
     }

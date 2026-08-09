@@ -16,6 +16,7 @@ import { openAccountDialog } from './views/account.js';
 export const state = {
   role: null,
   name: null,
+  email: null,
   isRecovery: false,
   permissions: [],
   settings: {},
@@ -112,6 +113,7 @@ function shell(content) {
         onclick: () => openAccountDialog({
           role: state.role,
           name: state.name || 'you',
+          email: state.email,
           isRecovery: state.isRecovery,
         }),
       }, 'My account'),
@@ -139,9 +141,10 @@ export async function render() {
   root.classList.remove('app-loading');
 
   if (!state.role) {
-    mount(root, renderLogin(async ({ role, name, permissions, isRecovery }) => {
+    mount(root, renderLogin(async ({ role, name, email, permissions, isRecovery }) => {
       state.role = role;
       state.name = name;
+      state.email = email ?? null;
       state.isRecovery = Boolean(isRecovery);
       state.permissions = permissions ?? [];
       state.catalog = null;
@@ -187,6 +190,7 @@ async function syncPending() {
 function resetSession() {
   state.role = null;
   state.name = null;
+  state.email = null;
   state.isRecovery = false;
   state.permissions = [];
   state.catalog = null;
@@ -214,6 +218,7 @@ window.addEventListener('online', syncPending);
     if (me.authenticated) {
       state.role = me.role;
       state.name = me.name;
+      state.email = me.email ?? null;
       state.isRecovery = Boolean(me.isRecovery);
       state.permissions = me.permissions || [];
       state.settings = me.settings || {};

@@ -312,9 +312,17 @@ without a database, which is what `test/analytics.test.js` does.
 - **Two ways to sign in, chosen by role.** A PIN is right for a cook at a
   tablet with flour on their hands. It is not right for an account that can see
   every cost, manage people and erase data, so administrators use an email
-  address and a password (PBKDF2-SHA256, per-password salt). An administrator
-  cannot sign in with a PIN even if one was set earlier — promoting somebody
-  retires their PIN.
+  address and a password. An administrator cannot sign in with a PIN even if
+  one was set earlier — promoting somebody retires their PIN.
+- **Password stretching happens in the browser, not on the server.** A Worker
+  gets 10ms of CPU per request on Cloudflare's free plan; 600,000 PBKDF2 rounds
+  costs roughly 90ms. Doing it server-side means either a login that fails
+  outright or a work factor too low to be worth having. So the browser derives
+  a key (PBKDF2-SHA256, 600k rounds, per-password salt) and the server keeps a
+  peppered HMAC of that key, which costs microseconds. An attacker with the
+  whole database still has to run the full 600,000 rounds for every guess,
+  which is where the protection actually comes from — and the raw password
+  never leaves the browser.
 - **Everyone changes their own credentials** under "My account". A credential
   only an administrator can change is a credential nobody ever changes.
 - **A user PIN can never match the server's recovery PIN.** It would shadow it
