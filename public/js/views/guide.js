@@ -353,6 +353,63 @@ const SECTIONS = [
   },
 
   {
+    id: 'compare-explained',
+    title: 'The Compare screen, panel by panel',
+    permission: 'reports',
+    lead: 'Any two periods you choose. The Week and Month screens only ever compare against the '
+      + 'period immediately before; this one answers everything else.',
+    render: () => h('div',
+      h('p', 'Use it for questions the other screens cannot answer: this August against last '
+        + 'August, the month before you changed the menu against the month after, high season '
+        + 'against low season.'),
+      readings(
+        ['Which periods?',
+          'It opens on this month so far against the same number of days of last month — the '
+          + 'ninth of August is measured against the first nine days of July, never against the '
+          + 'whole of it. Below that are six ready-made comparisons, or any two date ranges you '
+          + 'type yourself. “Use the period immediately before” sets the second range to match the '
+          + 'length of the first, ending the day before it starts.',
+          'Start with a preset. Type dates only when you have a specific question.'],
+        ['The warning about different sizes',
+          'If the two ranges are not the same length, or one has more service days than the other, '
+          + 'the screen says so.',
+          'Take it seriously. A fortnight will always cost more than a week. When you see that '
+          + 'warning, read the per-guest figures and ignore the totals.'],
+        ['The tiles',
+          'Guests, food cost, cost per guest and outsider income for the first period, with the '
+          + 'second underneath as “was …”.',
+          'Cost per guest is the only one that is fair across periods of any size.'],
+        ['Service days / guests per day / cost per day',
+          'The same figures divided by how many mornings were actually served.',
+          'These make a busy fortnight comparable with a quiet week.'],
+        ['Cost per guest, day by day',
+          'Both periods drawn over each other, starting from each one’s first day. The dates along '
+          + 'the bottom are the first period’s; the dashed line is the same *position* in the second '
+          + 'period, not the same calendar date.',
+          'Look for one period sitting consistently above the other, rather than for single spikes.'],
+        ['What changed most',
+          'The items that moved most between the two periods. When the periods are the same size '
+          + 'this is ranked in money; when they are not, it switches to cost per guest so a longer '
+          + 'period cannot sweep the board simply by being longer.',
+          'This is your shortlist. Two or three items usually explain most of the difference.'],
+        ['By day of the week',
+          'Cost per guest for each weekday in both periods.',
+          'A single weekday that moved while the others held still points at a change in that day’s '
+          + 'service, not at prices.'],
+        ['Outside guests',
+          'The fee you charged and the break-even fee in each period, side by side.',
+          'If the break-even figure has climbed above what you charge, food costs have overtaken '
+          + 'the fee and it needs revisiting.'],
+        ['By category / Every ingredient',
+          'The same comparison at category and item level, with the per-guest change alongside the '
+          + 'money change.',
+          'Trust the per-guest column. The money column is only like-for-like when the two periods '
+          + 'are the same size.'],
+      ),
+    ),
+  },
+
+  {
     id: 'alerts',
     title: 'What the alerts mean',
     permission: 'reports',

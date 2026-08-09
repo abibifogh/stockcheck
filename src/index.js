@@ -48,6 +48,7 @@ const ROUTES = [
   ['GET', '/api/insights/daily', 'reports', insights.daily],
   ['GET', '/api/insights/weekly', 'reports', insights.weekly],
   ['GET', '/api/insights/monthly', 'reports', insights.monthly],
+  ['GET', '/api/insights/compare', 'reports', insights.compare],
   ['GET', '/api/export', 'reports', insights.exportCsv],
 
   ['GET', '/api/insights/stock', 'stock', insights.stock],

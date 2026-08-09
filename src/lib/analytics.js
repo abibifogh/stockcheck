@@ -558,6 +558,11 @@ export function weeklyInsights(ds, weekStart) {
         ? `Comparing the first ${elapsedCount} ${elapsedCount === 1 ? 'day' : 'days'} of each week`
         : null,
     },
+    // The exact windows the figures above cover, so a reader who opens the
+    // full comparison screen gets the same like-for-like pair, not a part
+    // week held against a whole one.
+    compared: { from: comparedDays[0], to: comparedDays[comparedDays.length - 1] },
+    previousCompared: { from: prevComparedDays[0], to: prevComparedDays[prevComparedDays.length - 1] },
     current: stripMetrics(current),
     previous: stripMetrics(previous),
     previousFullWeek: stripMetrics(previousFull),
@@ -711,9 +716,20 @@ export function monthlyInsights(ds, month) {
         ? `Month to date — compared against the first ${elapsedDays} days of ${prevMonth}`
         : null,
     },
+    // The slice of this month with figures in it, and the matching slice of
+    // last month it was measured against.
+    compared: { from, to: partialMonth ? lastRecorded : to },
     current: stripMetrics(current),
-    previous: { ...stripMetrics(previous), month: prevMonth },
-    previousFullMonth: { ...stripMetrics(previousFull), month: prevMonth },
+    previous: {
+      ...stripMetrics(previous),
+      month: prevMonth,
+      from: prevComparedDays[0] ?? prevBounds.from,
+      to: prevComparedDays[prevComparedDays.length - 1] ?? prevBounds.to,
+    },
+    previousFullMonth: {
+      ...stripMetrics(previousFull), month: prevMonth,
+      from: prevBounds.from, to: prevBounds.to,
+    },
     deltas: {
       guests: delta(previous.guests, current.guests),
       cost: delta(previous.cost, current.cost),
@@ -889,4 +905,192 @@ export function entryHints(ds, day, guests) {
     };
   }
   return hints;
+}
+
+// ---------------------------------------------------------------------------
+// Comparing two periods of your choosing
+// ---------------------------------------------------------------------------
+
+/**
+ * Compare any two date ranges.
+ *
+ * The fixed week and month views always compare against the period immediately
+ * before. That answers "is this week worse than last week" and nothing else —
+ * not "how does this August compare with last August", not "did the change we
+ * made in March actually help".
+ *
+ * Two ranges of different lengths cannot be compared on totals: a fortnight
+ * will always beat a week. So every figure here is reported twice — as a raw
+ * total, and per guest or per service day — and the response says plainly
+ * which of the two can be trusted for the ranges given.
+ */
+export function compareInsights(ds, a, b) {
+  const aDays = rangeDays(a.from, a.to);
+  const bDays = rangeDays(b.from, b.to);
+
+  const aAgg = aggregate(ds, aDays);
+  const bAgg = aggregate(ds, bDays);
+
+  const aTotals = ingredientTotals(ds, aDays);
+  const bTotals = new Map(ingredientTotals(ds, bDays).map((r) => [r.ingredientId, r]));
+
+  const aCats = categoryBreakdown(ds, aDays);
+  const bCats = new Map(categoryBreakdown(ds, bDays).map((c) => [c.categoryId, c]));
+
+  const sameLength = aDays.length === bDays.length;
+  const servedGap = Math.abs(aAgg.servedDays - bAgg.servedDays);
+
+  // Which figures are safe to read directly, and which need normalising.
+  const comparable = {
+    sameLength,
+    aCalendarDays: aDays.length,
+    bCalendarDays: bDays.length,
+    aServedDays: aAgg.servedDays,
+    bServedDays: bAgg.servedDays,
+    // Totals only mean something when the two periods are of comparable size.
+    totalsMeaningful: sameLength && servedGap <= 1,
+    note: sameLength && servedGap <= 1
+      ? null
+      : !sameLength
+        ? `These periods are different lengths (${aDays.length} days against ${bDays.length}). `
+          + 'Compare the per-guest figures rather than the totals.'
+        : `One period has ${aAgg.servedDays} service days and the other ${bAgg.servedDays}. `
+          + 'The per-guest figures are the fair comparison.',
+  };
+
+  const ingredients = aTotals.map((row) => {
+    const other = bTotals.get(row.ingredientId);
+    return {
+      ingredientId: row.ingredientId,
+      name: row.name,
+      unit: row.unit,
+      categoryName: row.categoryName,
+      aQty: row.qty,
+      bQty: other?.qty ?? 0,
+      aPerGuest: row.perGuest,
+      bPerGuest: other?.perGuest ?? null,
+      deltaPerGuestPct: delta(other?.perGuest, row.perGuest),
+      aCost: row.cost,
+      bCost: other?.cost ?? 0,
+      deltaCost: round(row.cost - (other?.cost ?? 0), 2),
+      aCostPerGuest: row.costPerGuest,
+      bCostPerGuest: other?.costPerGuest ?? null,
+      deltaCostPerGuestPct: delta(other?.costPerGuest, row.costPerGuest),
+      volatility: row.volatility,
+    };
+  });
+
+  // Items only in the second period still matter — something stopped being used.
+  for (const [id, row] of bTotals) {
+    if (aTotals.some((r) => r.ingredientId === id)) continue;
+    ingredients.push({
+      ingredientId: id,
+      name: row.name,
+      unit: row.unit,
+      categoryName: row.categoryName,
+      aQty: 0,
+      bQty: row.qty,
+      aPerGuest: 0,
+      bPerGuest: row.perGuest,
+      deltaPerGuestPct: delta(row.perGuest, 0),
+      aCost: 0,
+      bCost: row.cost,
+      deltaCost: round(-row.cost, 2),
+      aCostPerGuest: 0,
+      bCostPerGuest: row.costPerGuest,
+      deltaCostPerGuestPct: delta(row.costPerGuest, 0),
+      volatility: row.volatility,
+    });
+  }
+
+  // Ranked on cost per guest when the periods differ in size, so a longer
+  // period does not sweep the board simply by being longer.
+  const rankKey = comparable.totalsMeaningful
+    ? (m) => m.deltaCost
+    : (m) => (m.aCostPerGuest ?? 0) - (m.bCostPerGuest ?? 0);
+
+  const movers = ingredients.filter((m) => m.aCost > 0 || m.bCost > 0);
+  const risers = [...movers].sort((x, y) => rankKey(y) - rankKey(x)).slice(0, 8);
+  const fallers = [...movers].sort((x, y) => rankKey(x) - rankKey(y)).slice(0, 8);
+
+  const weekday = DOW_LABELS.map((label, idx) => {
+    const inA = aDays.filter((d) => dow(d) === idx && ds.serviceByDay.has(d));
+    const inB = bDays.filter((d) => dow(d) === idx && ds.serviceByDay.has(d));
+    const one = aggregate(ds, inA);
+    const two = aggregate(ds, inB);
+    return {
+      weekday: label,
+      aCostPerGuest: one.costPerGuest,
+      bCostPerGuest: two.costPerGuest,
+      aAvgGuests: one.avgGuestsPerDay,
+      bAvgGuests: two.avgGuestsPerDay,
+      aSample: one.servedDays,
+      bSample: two.servedDays,
+    };
+  });
+
+  const seriesFor = (days) => days.map((d) => {
+    const m = dayMetrics(ds, d);
+    return {
+      day: d,
+      weekday: m.weekday,
+      guests: m.guests,
+      cost: m.cost,
+      costPerGuest: m.costPerGuest,
+      recorded: m.exists,
+    };
+  });
+
+  return {
+    currency: ds.currency,
+    a: { ...stripMetrics(aAgg), from: a.from, to: a.to, label: a.label ?? `${a.from} → ${a.to}` },
+    b: { ...stripMetrics(bAgg), from: b.from, to: b.to, label: b.label ?? `${b.from} → ${b.to}` },
+    comparable,
+    hasComparison: bAgg.servedDays > 0,
+    deltas: {
+      guests: delta(bAgg.guests, aAgg.guests),
+      cost: delta(bAgg.cost, aAgg.cost),
+      costPerGuest: delta(bAgg.costPerGuest, aAgg.costPerGuest),
+      revenue: delta(bAgg.revenue, aAgg.revenue),
+      outside: delta(bAgg.outside, aAgg.outside),
+      avgGuestsPerDay: delta(bAgg.avgGuestsPerDay, aAgg.avgGuestsPerDay),
+      avgCostPerDay: delta(bAgg.avgCostPerDay, aAgg.avgCostPerDay),
+    },
+    economics: {
+      a: outsiderEconomics(aAgg),
+      b: outsiderEconomics(bAgg),
+    },
+    categories: aCats.map((c) => {
+      const other = bCats.get(c.categoryId);
+      return {
+        categoryId: c.categoryId,
+        name: c.name,
+        aCost: c.cost,
+        bCost: other?.cost ?? 0,
+        aShare: c.share,
+        bShare: other?.share ?? 0,
+        deltaCost: round(c.cost - (other?.cost ?? 0), 2),
+        deltaPct: delta(other?.cost, c.cost),
+        aCostPerGuest: aAgg.guests ? round(c.cost / aAgg.guests, 3) : null,
+        bCostPerGuest: bAgg.guests && other ? round(other.cost / bAgg.guests, 3) : null,
+      };
+    }),
+    ingredients: ingredients.sort((x, y) => Math.abs(y.deltaCost) - Math.abs(x.deltaCost)),
+    risers,
+    fallers,
+    weekday,
+    series: { a: seriesFor(aDays), b: seriesFor(bDays) },
+  };
+}
+
+function outsiderEconomics(agg) {
+  return {
+    guests: agg.outside,
+    revenue: agg.revenue,
+    avgFee: agg.outside ? round(agg.revenue / agg.outside, 2) : 0,
+    breakEvenFee: agg.costPerGuest,
+    contribution: agg.costPerGuest != null
+      ? round(agg.revenue - agg.costPerGuest * agg.outside, 2)
+      : agg.revenue,
+  };
 }

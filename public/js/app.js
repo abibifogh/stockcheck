@@ -13,6 +13,7 @@ import { renderAdmin } from './views/admin.js';
 import { renderApprovals } from './views/approvals.js';
 import { openAccountDialog } from './views/account.js';
 import { renderGuide } from './views/guide.js';
+import { renderCompare } from './views/compare.js';
 
 export const state = {
   role: null,
@@ -30,6 +31,7 @@ const ROUTES = [
   { path: 'daily', label: 'Day', permission: 'reports', render: renderDaily },
   { path: 'weekly', label: 'Week', permission: 'reports', render: renderWeekly },
   { path: 'monthly', label: 'Month', permission: 'reports', render: renderMonthly },
+  { path: 'compare', label: 'Compare', permission: 'reports', render: renderCompare },
   { path: 'approvals', label: 'Approvals', permission: 'approvals', render: renderApprovals },
   { path: 'stock', label: 'Stock', permission: 'stock', render: renderStock },
   { path: 'purchases', label: 'Purchases', permission: 'purchases', render: renderPurchases },
