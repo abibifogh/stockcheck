@@ -34,6 +34,25 @@ export function isMissingTable(err) {
   return /no such table|no such column/i.test(String(err?.message ?? err));
 }
 
+/**
+ * Turn a database constraint failure into something a person can act on.
+ *
+ * SQLite reports these as ordinary errors, so an uncaught one surfaces as
+ * "something went wrong on the server" — which is both alarming and useless,
+ * since the cause is almost always an ordinary mistake the person could fix in
+ * five seconds if only they were told what it was.
+ *
+ * Anything that is not a recognised constraint is re-thrown untouched: a real
+ * fault should stay loud.
+ */
+export function rethrowConstraint(err, { unique, foreignKey, notNull } = {}) {
+  const text = String(err?.message ?? err);
+  if (unique && /UNIQUE constraint/i.test(text)) throw badRequest(unique);
+  if (foreignKey && /FOREIGN KEY constraint/i.test(text)) throw badRequest(foreignKey);
+  if (notNull && /NOT NULL constraint/i.test(text)) throw badRequest(notNull);
+  throw err;
+}
+
 export async function readJson(request) {
   const type = request.headers.get('Content-Type') || '';
   if (!type.includes('application/json')) throw badRequest('Expected a JSON body');

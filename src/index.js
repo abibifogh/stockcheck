@@ -130,6 +130,21 @@ export default {
           detail: { missingSchema: true },
         }, { status: 503 });
       }
+      // Last resort: a constraint that slipped past its handler is still a
+      // rule being broken, not a broken server. Say which rule.
+      const text = String(err?.message ?? err);
+      if (/UNIQUE constraint/i.test(text)) {
+        return json({
+          error: 'That would duplicate something that has to be unique — usually a name '
+            + 'that is already taken. Change it and try again.',
+        }, { status: 400 });
+      }
+      if (/FOREIGN KEY constraint/i.test(text)) {
+        return json({
+          error: 'That refers to something that no longer exists. Reload the page and try again.',
+        }, { status: 400 });
+      }
+
       console.error('Unhandled error', err);
       return json({ error: 'Something went wrong on the server' }, { status: 500 });
     }
