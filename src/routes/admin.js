@@ -80,6 +80,36 @@ function publicUser(row) {
   };
 }
 
+/**
+ * The state of the emergency recovery PIN.
+ *
+ * A user PIN can never be set to the recovery PIN — that is refused. The
+ * reverse is not something this app can refuse, because the recovery PIN is
+ * set on the server, outside it. If somebody changes it to a value a cook
+ * already uses, the users table is consulted first and the cook silently
+ * shadows it: the way back in stops working, and nobody finds out until the
+ * day it is needed. So it is checked and reported here instead.
+ */
+async function recoveryStatus(ctx) {
+  const configured = Boolean(ctx.env.MANAGER_PIN);
+
+  const setting = await ctx.db.prepare(
+    "SELECT value FROM settings WHERE key = 'allow_recovery_pin'",
+  ).first();
+  const enabled = setting?.value !== '0';
+
+  let conflictsWith = null;
+  if (configured) {
+    const hash = await hashPin(ctx.env.MANAGER_PIN, await getPepper(ctx.db));
+    const clash = await ctx.db.prepare(
+      'SELECT name FROM users WHERE pin_hash = ? AND active = 1',
+    ).bind(hash).first();
+    if (clash) conflictsWith = clash.name;
+  }
+
+  return { configured, enabled, conflictsWith };
+}
+
 export async function listUsers(ctx) {
   const rows = await ctx.db.prepare(
     'SELECT * FROM users ORDER BY active DESC, role, name',
@@ -89,6 +119,7 @@ export async function listUsers(ctx) {
     users: (rows.results ?? []).map(publicUser),
     roles: ROLES,
     permissions: PERMISSIONS,
+    recovery: await recoveryStatus(ctx),
   });
 }
 
