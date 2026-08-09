@@ -373,10 +373,7 @@ body:has(.entry-footer) .toasts { bottom: calc(4.75rem + env(safe-area-inset-bot
   .stat-value { font-size: 1.45rem; }
 }
 
-@media print {
-  .topbar, .entry-footer, .toolbar, .toasts { display: none !important; }
-  .card { break-inside: avoid; box-shadow: none; }
-}
+
 
 /* An everyday item still missing a figure when a submission was attempted. */
 .item.needed {
@@ -484,3 +481,118 @@ body:has(.entry-footer) .toasts[popover] { bottom: calc(4.75rem + env(safe-area-
   .guide-faq details { border: none; background: none; padding: 0; }
   .guide-faq details > div { display: block !important; }
 }
+
+/* --------------------------------------------------------------- printing --
+   Reports are saved as PDF through the browser's own print dialog. The charts
+   are SVG, so they come out as vector rather than a screenshot. Everything
+   below is about removing the furniture and making dark mode print sensibly. */
+
+.print-header, .print-footer { display: none; }
+
+@media print {
+  /* Force the light palette: printing a dark theme wastes ink and reads badly.
+     Both explicit-theme selectors are listed so a chosen theme cannot win. */
+  :root,
+  :root[data-theme="dark"],
+  :root[data-theme="light"] {
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #f4f6f8;
+    --surface-3: #e9edf1;
+    --border: #d4dae1;
+    --border-strong: #b3bcc7;
+    --text: #101418;
+    --text-dim: #4a535e;
+    --text-faint: #6f7884;
+    --accent: #1f5fd0;
+    --accent-soft: #e8f0fd;
+    --good: #0f7048;  --good-soft: #e6f4ed;
+    --warn: #9a5800;  --warn-soft: #fbf0de;
+    --bad:  #b02436;  --bad-soft:  #fbe9eb;
+    --c1: #1f5fd0; --c2: #0d8f80; --c3: #b96604; --c4: #6d43c4;
+    --c5: #c01f42; --c6: #0a7591; --c7: #4f8209; --c8: #b32270;
+    --shadow: none;
+  }
+
+  html, body {
+    background: #fff;
+    font-size: 11pt;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  @page { margin: 14mm 12mm; }
+
+  /* Furniture nobody wants on paper. */
+  .topbar, .nav, .toolbar, .entry-footer, .toasts, .guide-toc,
+  button, .btn, dialog { display: none !important; }
+
+  .main { max-width: none; padding: 0; margin: 0; }
+  .page-head { margin-bottom: .5rem; }
+  .page-head .btn-row, .page-head .seg { display: none !important; }
+
+  .print-header { display: block; margin-bottom: 10mm; }
+  .print-brand {
+    display: flex; align-items: center; gap: .4rem;
+    font-size: 10pt; color: #4a535e; margin-bottom: 2mm;
+  }
+  .print-title { font-size: 20pt; margin: 0; letter-spacing: -.02em; }
+  .print-subtitle { font-size: 11pt; color: #4a535e; margin-top: 1mm; }
+  .print-note { font-size: 9.5pt; color: #4a535e; margin-top: 2mm; font-style: italic; }
+  .print-meta {
+    font-size: 9pt; color: #6f7884; margin-top: 3mm;
+    padding-top: 2mm; border-top: 1px solid #d4dae1;
+  }
+
+  .print-footer {
+    display: block; margin-top: 8mm; padding-top: 3mm;
+    border-top: 1px solid #d4dae1;
+    font-size: 8.5pt; color: #6f7884; line-height: 1.5;
+  }
+
+  /* Keep a card, a chart or a table row from being split across pages. */
+  .card {
+    break-inside: avoid; page-break-inside: avoid;
+    box-shadow: none; border: 1px solid #d4dae1;
+    margin-bottom: 5mm; padding: 4mm 5mm;
+  }
+  .chart, .stat, .alert, tr, .guide-section { break-inside: avoid; page-break-inside: avoid; }
+  h1, h2, h3 { break-after: avoid; page-break-after: avoid; }
+
+  /* Grids collapse to something a page can hold. */
+  .grid-4 { grid-template-columns: repeat(4, 1fr); gap: 3mm; }
+  .grid-3 { grid-template-columns: repeat(3, 1fr); gap: 3mm; }
+  .grid-2 { grid-template-columns: repeat(2, 1fr); gap: 3mm; }
+
+  .stat { border: 1px solid #d4dae1; padding: 2.5mm 3mm; }
+  .stat-value { font-size: 14pt; }
+  .stat-label { font-size: 7.5pt; }
+  .stat-sub { font-size: 8pt; }
+
+  table { font-size: 8.5pt; }
+  th, td { padding: 1.4mm 2mm; }
+  thead { display: table-header-group; }   /* repeat headers across pages */
+  .table-wrap { overflow: visible; margin: 0; padding: 0; }
+
+  /* Charts must not be clipped by their scroll container. */
+  .chart { overflow: visible !important; }
+  .chart svg { max-width: 100%; height: auto; }
+
+  a { color: inherit; text-decoration: none; }
+}
+
+/* Plain-language explanations of each report panel. */
+.guide-readings { display: grid; gap: .7rem; }
+.guide-reading {
+  padding: .7rem .85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.guide-reading-name { font-weight: 660; font-size: .92rem; margin-bottom: .25rem; }
+.guide-reading-means { font-size: .87rem; line-height: 1.55; color: var(--text-dim); }
+.guide-reading-action {
+  font-size: .87rem; line-height: 1.55; margin-top: .4rem;
+  padding-top: .4rem; border-top: 1px dashed var(--border-strong);
+}
+.guide-reading-action strong { color: var(--accent); }

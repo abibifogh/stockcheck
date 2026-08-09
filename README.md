@@ -19,7 +19,10 @@ with a D1 (SQLite) database behind it. Deploys from GitHub on every push to
 - **Guest count first.** In-house and outside (paying) guests are counted
   separately, because the analysis and the economics differ.
 - **Everyday items only** by default. Occasional items sit behind "All items",
-  so the daily screen stays short.
+  so the daily screen stays short — and an administrator can remove that switch
+  entirely for cooks, leaving a short fixed list. Anything already recorded
+  stays visible either way, so turning it on never hides a figure somebody
+  entered.
 - **"Usual" hints.** Each item shows what it normally takes for *today's*
   headcount, learned from the last 28 service days. One tap accepts it.
 - **⚡ Fill usual** fills every habitual item at once; the cook adjusts only what
@@ -38,6 +41,7 @@ indistinguishable from "we forgot" and silently drags every average down.
 | View | Answers |
 |---|---|
 | **Overview** | Where we stand today, and what needs a decision. |
+| *(every report)* | **Save as PDF** through the browser's own print dialog — the charts are SVG, so they come out as vector rather than a screenshot. |
 | **Day** | What this morning cost, how it compares with a normal day *of the same weekday*, and which items moved the number. |
 | **Week** | This week against last, weekday patterns, biggest risers and fallers, portioning consistency. |
 | **Month** | Full report: cost per guest trend, category mix, outsider economics, store movement, best/worst days, projection. |

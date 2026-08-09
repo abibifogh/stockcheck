@@ -32,6 +32,7 @@ export async function renderEntry(params) {
   const requireComplete = data.requireComplete !== false;
   const requiredIds = new Set(data.requiredIngredientIds || []);
   const locked = Boolean(data.locked);
+  const restrictToEveryday = data.restrictToEveryday === true;
   let submitted = Boolean(data.service.submitted_at);
   let showAll = false;
   let filter = '';
@@ -250,6 +251,11 @@ export async function renderEntry(params) {
     const visible = activeIngredients.filter((ing) => {
       if (highlightMissing && requiredIds.has(ing.id) && !usage.has(ing.id)) return true;
       if (filter && !ing.name.toLowerCase().includes(filter)) return false;
+
+      // A restricted list still shows anything already recorded, so switching
+      // the setting on never makes a figure somebody entered disappear.
+      if (restrictToEveryday) return ing.is_core || usage.has(ing.id);
+
       if (showAll || filter) return true;
       return ing.is_core || usage.has(ing.id);
     });
@@ -305,7 +311,7 @@ export async function renderEntry(params) {
       type: 'search', placeholder: 'Search ingredient…', style: { maxWidth: '200px' },
       oninput: (e) => { filter = e.target.value.trim().toLowerCase(); paintList(); },
     }),
-    h('div.seg',
+    restrictToEveryday ? null : h('div.seg',
       h('button', { class: showAll ? '' : 'active', onclick: (e) => { showAll = false; segSwap(e); paintList(); } }, 'Everyday'),
       h('button', { class: showAll ? 'active' : '', onclick: (e) => { showAll = true; segSwap(e); paintList(); } }, 'All items'),
     ),

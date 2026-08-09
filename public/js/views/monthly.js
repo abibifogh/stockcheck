@@ -3,6 +3,7 @@ import { navigate, replaceParams } from '../app.js';
 import { fmtDay, fmtDayShort, fmtMoney, fmtNum, h, mount, shiftMonth } from '../util.js';
 import { barChart, donutChart, lineChart, rankedBars } from '../charts.js';
 import { card, exportButton, pctCell, statTile, table } from './components.js';
+import { printButton } from '../print.js';
 
 /**
  * Month view — the owner's report. Costs, the economics of letting outsiders
@@ -17,6 +18,11 @@ export async function renderMonthly(params) {
     mount(host, await renderMonthly({ month }));
   };
 
+  const cur = data.current;
+  const prev = data.previous;
+  const econ = data.economics;
+  const inv = data.inventory;
+
   const nav = h('div.toolbar',
     h('button.btn-sm', { onclick: () => reload(shiftMonth(data.month, -1)) }, '‹ Previous month'),
     h('input', {
@@ -25,14 +31,17 @@ export async function renderMonthly(params) {
     }),
     h('button.btn-sm', { onclick: () => reload(shiftMonth(data.month, 1)) }, 'Next month ›'),
     h('div', { style: { flex: 1 } }),
+    printButton({
+      title: `Breakfast report — ${data.label}`,
+      subtitle: `${fmtDay(data.from)} to ${fmtDay(data.to)} · ${cur.servedDays} service days · `
+        + `${fmtNum(cur.guests, 0)} guests`,
+      note: data.partial.isPartial
+        ? `Month to date. ${data.partial.note}.`
+        : 'A complete month, compared against the one before it.',
+    }),
     exportButton(api.exportUrl('daily', data.from, data.to), 'Daily CSV'),
     exportButton(api.exportUrl('usage', data.from, data.to), 'Usage CSV'),
   );
-
-  const cur = data.current;
-  const prev = data.previous;
-  const econ = data.economics;
-  const inv = data.inventory;
 
   // With no history in the previous month there is nothing to compare against,
   // and saying so is more useful than printing a confident zero.

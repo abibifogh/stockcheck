@@ -3,6 +3,7 @@ import { replaceParams } from '../app.js';
 import { fmtDay, fmtMoney, fmtNum, h, mount, shiftDay } from '../util.js';
 import { barChart, lineChart, rankedBars } from '../charts.js';
 import { card, exportButton, pctCell, statTile, table } from './components.js';
+import { printButton } from '../print.js';
 
 /**
  * Week view. The whole point is comparison: this week against last week, and
@@ -17,6 +18,9 @@ export async function renderWeekly(params) {
     mount(host, await renderWeekly({ week }));
   };
 
+  const cur = data.current;
+  const prev = data.previous;
+
   const nav = h('div.toolbar',
     h('button.btn-sm', { onclick: () => reload(shiftDay(data.weekStart, -7)) }, '‹ Previous week'),
     h('input', {
@@ -25,11 +29,15 @@ export async function renderWeekly(params) {
     }),
     h('button.btn-sm', { onclick: () => reload(shiftDay(data.weekStart, 7)) }, 'Next week ›'),
     h('div', { style: { flex: 1 } }),
+    printButton({
+      title: `Breakfast week — ${fmtDay(data.weekStart)} to ${fmtDay(data.weekEnd)}`,
+      subtitle: `${cur.servedDays} service days · ${fmtNum(cur.guests, 0)} guests`,
+      note: data.partial.isPartial
+        ? `${data.partial.note}, so the comparison with last week is like for like.`
+        : 'Compared against the previous week, day for day.',
+    }),
     exportButton(api.exportUrl('daily', data.weekStart, data.weekEnd), 'Export week'),
   );
-
-  const cur = data.current;
-  const prev = data.previous;
 
   const partialBanner = data.partial.isPartial
     ? h('div.alert.info', { style: { marginBottom: '1rem' } },

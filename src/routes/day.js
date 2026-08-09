@@ -51,6 +51,13 @@ export async function getDay(ctx, day) {
     // Everyday items are what a complete sheet means; occasional items stay
     // optional so a rule meant to catch forgetfulness does not become busywork.
     requiredIngredientIds: ds.ingredients.filter((i) => i.active && i.is_core).map((i) => i.id),
+    // Restricting the list to everyday items is about keeping the morning
+    // short, so it applies to people whose whole job here is the entry screen.
+    // Anyone who can also see reports keeps the full list, since they are the
+    // ones who need an occasional item when it actually gets used.
+    restrictToEveryday: ds.settings.restrict_cooks_to_everyday === '1'
+      && ctx.session.permissions.length === 1
+      && ctx.session.permissions[0] === 'entry',
     locked: Boolean(lock),
     lock: lock ? { from: lock.from_day, to: lock.to_day, reason: lock.reason } : null,
     pendingRevision: pending ?? null,

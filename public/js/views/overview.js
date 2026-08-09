@@ -3,6 +3,7 @@ import { navigate } from '../app.js';
 import { fmtDay, fmtDayShort, fmtMoney, fmtNum, h } from '../util.js';
 import { lineChart, barChart } from '../charts.js';
 import { alertList, card, emptyState, statTile } from './components.js';
+import { printButton } from '../print.js';
 
 /** The landing screen: where we stand today, and what needs a decision. */
 export async function renderOverview() {
@@ -134,6 +135,11 @@ export async function renderOverview() {
         h('div.sub', `Latest recorded service: ${fmtDay(data.latestDay)}`),
       ),
       h('div.btn-row',
+        printButton({
+          title: 'Breakfast overview',
+          subtitle: `Position as at ${fmtDay(data.latestDay)}`,
+          note: 'A snapshot of where the operation stands, with the last three weeks of cost per guest.',
+        }),
         h('button.btn-sm', { onclick: () => navigate('entry') }, 'Open entry sheet'),
         h('button.btn-sm.btn-primary', { onclick: () => navigate('monthly') }, 'Monthly report'),
       ),
