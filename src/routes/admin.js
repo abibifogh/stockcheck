@@ -1,5 +1,7 @@
 import { badRequest, bool, json, notFound, readJson, str } from '../lib/http.js';
-import { getPepper, hashPassword, hashPin, isReservedPin, normaliseEmail } from '../lib/auth.js';
+import {
+  getPepper, hashPin, isReservedPin, normaliseEmail, storedPassword,
+} from '../lib/auth.js';
 import {
   PERMISSIONS, PERMISSION_KEYS, ROLES, effectivePermissions, isRole,
 } from '../lib/permissions.js';
@@ -25,15 +27,19 @@ function readCredentials(body, role, { existing = null } = {}) {
     if (!email && !existing?.email) throw badRequest('An administrator needs an email address to sign in with');
     if (email && !isEmail(email)) throw badRequest('That does not look like an email address');
 
-    const password = body.password ? String(body.password) : null;
+    // The browser stretches the password and sends the derived key with the
+    // salt it used; the raw password never reaches here. Length and shape are
+    // checked in the browser, where the password still exists.
+    const password = body.passwordKey
+      ? {
+          passwordKey: String(body.passwordKey),
+          salt: str(body.passwordSalt, 'Password salt', { required: true, max: 64 }),
+          iterations: body.passwordIterations,
+        }
+      : null;
+
     if (!password && !existing?.password_hash) {
       throw badRequest(`An administrator needs a password of at least ${MIN_PASSWORD} characters`);
-    }
-    if (password && password.length < MIN_PASSWORD) {
-      throw badRequest(`The password must be at least ${MIN_PASSWORD} characters`);
-    }
-    if (password && /^\d+$/.test(password)) {
-      throw badRequest('An administrator password cannot be only digits — that is a PIN, not a password');
     }
 
     return { isAdmin, email: email || existing?.email, password, pin: null };
@@ -57,7 +63,13 @@ function publicUser(row) {
     name: row.name,
     email: row.email ?? null,
     signsInWith: row.role === 'admin' ? 'password' : 'pin',
-    hasPassword: Boolean(row.password_hash),
+    // Only the current format counts. A password stored under the old
+    // server-side scheme can no longer be verified, so the account needs a new
+    // one — showing it as "no password" makes the form ask for exactly that.
+    hasPassword: typeof row.password_hash === 'string' && row.password_hash.startsWith('pbkdf2c$'),
+    needsPasswordReset: typeof row.password_hash === 'string'
+      && row.password_hash.length > 0
+      && !row.password_hash.startsWith('pbkdf2c$'),
     role: row.role,
     permissions: effectivePermissions(row),
     customPermissions: row.permissions ? JSON.parse(row.permissions) : null,
@@ -100,8 +112,9 @@ export async function createUser(ctx) {
 
   if (creds.pin && await isReservedPin(creds.pin, ctx.env)) throw badRequest(PIN_TAKEN);
 
-  const pinHash = creds.pin ? await hashPin(creds.pin, await getPepper(ctx.db)) : null;
-  const passwordHash = creds.password ? await hashPassword(creds.password) : null;
+  const pepper = await getPepper(ctx.db);
+  const pinHash = creds.pin ? await hashPin(creds.pin, pepper) : null;
+  const passwordHash = creds.password ? await storedPassword(creds.password, pepper) : null;
 
   try {
     const row = await ctx.db.prepare(
@@ -157,7 +170,7 @@ export async function updateUser(ctx, id) {
   if (creds.pin) pinHash = await hashPin(creds.pin, await getPepper(ctx.db));
 
   let passwordHash = existing.password_hash;
-  if (creds.password) passwordHash = await hashPassword(creds.password);
+  if (creds.password) passwordHash = await storedPassword(creds.password, await getPepper(ctx.db));
 
   try {
     const row = await ctx.db.prepare(

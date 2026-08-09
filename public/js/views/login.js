@@ -1,4 +1,5 @@
 import { api } from '../api.js';
+import { deriveLoginKey } from '../crypto.js';
 import { h, mount, toast } from '../util.js';
 
 /** PIN keypad. Big targets, no keyboard needed, works with gloves on. */
@@ -67,9 +68,13 @@ export function renderLogin(onSuccess) {
       return;
     }
     if (event?.target) event.target.disabled = true;
+    // The stretching runs here rather than on the server, and takes a moment on
+    // a phone — say so rather than looking frozen.
     error.textContent = 'Checking…';
     try {
-      const result = await api.loginWithPassword(email.value.trim(), password.value);
+      const params = await api.passwordSalt(email.value.trim());
+      const passwordKey = await deriveLoginKey(password.value, params.salt, params.iterations);
+      const result = await api.loginWithKey(email.value.trim(), passwordKey);
       toast(`Welcome, ${result.name}`, 'good');
       onSuccess(result);
     } catch (err) {

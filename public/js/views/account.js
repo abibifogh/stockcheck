@@ -1,4 +1,5 @@
 import { api } from '../api.js';
+import { deriveLoginKey, prepareNewPassword } from '../crypto.js';
 import { h, toast } from '../util.js';
 
 /**
@@ -8,7 +9,7 @@ import { h, toast } from '../util.js';
  * change is a credential nobody ever changes — and a kitchen PIN that has been
  * the same since opening day is known to people who left months ago.
  */
-export function openAccountDialog({ role, name, isRecovery }) {
+export function openAccountDialog({ role, name, email: myEmail, isRecovery }) {
   const usesPassword = role === 'admin';
   const error = h('p.muted', { style: { minHeight: '1.2rem', fontSize: '.85rem' } });
 
@@ -43,12 +44,30 @@ export function openAccountDialog({ role, name, isRecovery }) {
       return;
     }
 
+    if (usesPassword && next.value.length < 10) {
+      error.textContent = 'The new password must be at least 10 characters';
+      return;
+    }
+    if (usesPassword && /^\d+$/.test(next.value)) {
+      error.textContent = 'A password of only digits is a PIN. Include some words or letters.';
+      return;
+    }
+
     event.target.disabled = true;
     error.textContent = 'Saving…';
     try {
-      await api.changeCredentials(usesPassword
-        ? { currentPassword: current.value, newPassword: next.value }
-        : { currentPin: current.value, newPin: next.value });
+      if (usesPassword) {
+        // Both the current and the new password are stretched here; neither
+        // reaches the server in the clear.
+        const params = await api.passwordSalt(myEmail);
+        const currentPasswordKey = await deriveLoginKey(current.value, params.salt, params.iterations);
+        await api.changeCredentials({
+          currentPasswordKey,
+          ...(await prepareNewPassword(next.value)),
+        });
+      } else {
+        await api.changeCredentials({ currentPin: current.value, newPin: next.value });
+      }
 
       toast(usesPassword ? 'Password changed' : 'PIN changed', 'good');
       dialog.close();
