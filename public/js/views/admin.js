@@ -302,6 +302,41 @@ const ROLE_PILL = { cook: '', manager: 'info', admin: 'good' };
 
 function usersCard(data, reload) {
   const { users, roles, permissions } = data;
+  const recovery = data.recovery ?? {};
+
+  // The one failure mode the app cannot prevent on its own, so it watches for
+  // it instead: an emergency PIN that somebody's everyday PIN has taken over.
+  const recoveryBanner = recovery.conflictsWith
+    ? h('div.alert.high',
+      h('span.alert-icon', '⛔'),
+      h('div',
+        h('div.alert-title', 'The emergency PIN no longer works'),
+        h('div.alert-detail',
+          `It is the same as ${recovery.conflictsWith}'s everyday PIN, so signing in with it opens `
+          + `${recovery.conflictsWith}'s account instead of letting you back in. `
+          + 'Change MANAGER_PIN on the server to something nobody here uses — while you can still '
+          + 'sign in normally.'),
+      ))
+    : !recovery.configured
+      ? h('div.alert.warn',
+        h('span.alert-icon', '⚠️'),
+        h('div',
+          h('div.alert-title', 'No emergency PIN is set'),
+          h('div.alert-detail',
+            'If every administrator forgets their password, there is no way back into this site. '
+            + 'Set MANAGER_PIN on the server, or make sure at least two people can sign in as '
+            + 'administrators.'),
+        ))
+      : !recovery.enabled
+        ? h('div.alert.info',
+          h('span.alert-icon', 'ℹ️'),
+          h('div',
+            h('div.alert-title', 'The emergency PIN is switched off'),
+            h('div.alert-detail',
+              'Administrators can only sign in with their email address and password. You can turn '
+              + 'it back on under Setup → Emergency access.'),
+          ))
+        : null;
 
   return card('People', {
     note: `${users.filter((u) => u.active).length} active`,
@@ -371,6 +406,8 @@ function usersCard(data, reload) {
         ),
       },
     ], users, { empty: 'Nobody has been added yet — everyone is still using the shared setup PINs.' }),
+
+    recoveryBanner,
 
     h('p.muted', { style: { fontSize: '.82rem', marginTop: '.8rem', marginBottom: 0 } },
       'Administrators sign in with an email address and a password. Cooks and managers use their '
