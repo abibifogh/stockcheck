@@ -135,6 +135,25 @@ function shell(content) {
   );
 }
 
+/**
+ * Publish the header's real height as --topbar-h.
+ *
+ * The tab bar wraps onto a second row when it cannot fit, and how many tabs
+ * somebody has depends on what they are allowed to see. Anything sticky below
+ * the header — the guest counts on the entry sheet, the guide's contents list —
+ * measures from this rather than from a guessed constant.
+ */
+let topbarWatcher = null;
+function trackTopbarHeight() {
+  const bar = document.querySelector('.topbar');
+  if (!bar || typeof ResizeObserver !== 'function') return;
+  topbarWatcher?.disconnect();
+  topbarWatcher = new ResizeObserver(() => {
+    document.documentElement.style.setProperty('--topbar-h', `${Math.round(bar.getBoundingClientRect().height)}px`);
+  });
+  topbarWatcher.observe(bar);
+}
+
 function toggleTheme() {
   const explicit = document.documentElement.getAttribute('data-theme');
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -169,6 +188,7 @@ export async function render() {
 
   const container = h('div');
   mount(root, shell(container));
+  trackTopbarHeight();
   mount(container, h('div.card', h('div.skeleton', { style: { height: '120px' } })));
 
   try {

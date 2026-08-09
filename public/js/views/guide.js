@@ -12,22 +12,30 @@ import { h, mount } from '../util.js';
 export async function renderGuide() {
   const sections = SECTIONS.filter((s) => !s.permission || can(s.permission));
 
-  const contents = h('nav.guide-toc',
-    h('div.stat-label', { style: { marginBottom: '.5rem' } }, 'On this page'),
-    sections.map((s) => h('a', {
-      href: `#/guide`,
+  // Each contents entry is paired with its section, so the list can follow
+  // the reader down the page.
+  const pairs = sections.map((s) => {
+    const el = h('section.card.guide-section', { id: `guide-${s.id}` },
+      h('h2', s.title),
+      s.lead ? h('p.guide-lead', s.lead) : null,
+      s.render(),
+    );
+    const link = h('a', {
+      href: '#/guide',
       onclick: (event) => {
         event.preventDefault();
-        document.getElementById(`guide-${s.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
       },
-    }, s.title)),
+    }, s.title);
+    return { link, el };
+  });
+
+  const contents = h('nav.guide-toc',
+    h('div.stat-label', { style: { marginBottom: '.5rem' } }, 'On this page'),
+    pairs.map((p) => p.link),
   );
 
-  const body = sections.map((s) => h('section.card.guide-section', { id: `guide-${s.id}` },
-    h('h2', s.title),
-    s.lead ? h('p.guide-lead', s.lead) : null,
-    s.render(),
-  ));
+  followReading(contents, pairs);
 
   return h('div',
     h('div.page-head',
@@ -37,8 +45,106 @@ export async function renderGuide() {
       ),
       h('button.btn-sm', { onclick: () => window.print() }, '🖨 Print this guide'),
     ),
-    h('div.guide-layout', contents, h('div', body)),
+    h('div.guide-layout', contents, h('div', pairs.map((p) => p.el))),
   );
+}
+
+/** Just below the sticky header, which is where the eye actually reads. */
+function bandTop() {
+  return (document.querySelector('.topbar')?.getBoundingClientRect().height ?? 58) + 22;
+}
+
+/**
+ * Mark whichever section is being read.
+ *
+ * This guide is long, and a contents list that does not say where you already
+ * are is only half a map. The active entry is the topmost section crossing a
+ * band just under the header — which is where the eye is when reading, rather
+ * than the middle of the screen.
+ */
+function followReading(toc, pairs) {
+  if (!pairs.length || typeof IntersectionObserver !== 'function') return;
+
+  const onScreen = new Set();
+  let active = null;
+
+  const highlight = (el) => {
+    if (el === active) return;
+    active = el;
+    for (const p of pairs) p.link.classList.toggle('active', p.el === el);
+    const link = pairs.find((p) => p.el === el)?.link;
+    if (link) keepInView(toc, link);
+  };
+
+  /**
+   * Once the page can scroll no further the band stops moving, so the last
+   * section or two would never light up. There we fall back to whichever
+   * section actually fills most of the screen, which is the honest answer when
+   * the reader can see the end of the document.
+   */
+  const largestOnScreen = () => {
+    const top = bandTop();
+    let best = null;
+    let bestArea = 0;
+    for (const p of pairs) {
+      const box = p.el.getBoundingClientRect();
+      const area = Math.min(box.bottom, window.innerHeight) - Math.max(box.top, top);
+      if (area > bestArea) { bestArea = area; best = p.el; }
+    }
+    return best;
+  };
+
+  // One decision, made in one place, so the observer and the scroll handler
+  // cannot fight over the answer.
+  const update = () => {
+    const atBottom = window.innerHeight + window.scrollY
+      >= document.documentElement.scrollHeight - 2;
+    if (atBottom) return highlight(largestOnScreen() ?? pairs[pairs.length - 1].el);
+    // Between two sections nothing is in the band; leaving the last one lit is
+    // better than blanking the list.
+    if (!onScreen.size) return;
+    return highlight(pairs.find((p) => onScreen.has(p.el))?.el);
+  };
+
+  const observer = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (entry.isIntersecting) onScreen.add(entry.target);
+      else onScreen.delete(entry.target);
+    }
+    update();
+  }, { rootMargin: `-${Math.round(bandTop())}px 0px -60% 0px` });
+
+  let queued = false;
+  const onScroll = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => { queued = false; update(); });
+  };
+
+  // Built before it is mounted, so wait a frame for the sections to be on the
+  // page and stop once they leave it again.
+  requestAnimationFrame(() => {
+    if (!pairs[0].el.isConnected) return;
+    highlight(pairs[0].el);
+    for (const p of pairs) observer.observe(p.el);
+    window.addEventListener('scroll', onScroll, { passive: true });
+
+    const watcher = new MutationObserver(() => {
+      if (pairs[0].el.isConnected) return;
+      observer.disconnect();
+      window.removeEventListener('scroll', onScroll);
+      watcher.disconnect();
+    });
+    watcher.observe(document.body, { childList: true, subtree: true });
+  });
+}
+
+/** Scroll the contents list itself, never the page, to reveal the active entry. */
+function keepInView(toc, link) {
+  const box = toc.getBoundingClientRect();
+  const item = link.getBoundingClientRect();
+  if (item.top < box.top) toc.scrollTop -= box.top - item.top + 8;
+  else if (item.bottom > box.bottom) toc.scrollTop += item.bottom - box.bottom + 8;
 }
 
 function greeting() {
@@ -153,7 +259,7 @@ const SECTIONS = [
     id: 'reports',
     title: 'Reading the reports',
     permission: 'reports',
-    lead: 'Four views, each answering a different question.',
+    lead: 'Five views, each answering a different question.',
     render: () => h('div',
       points(
         h('span', h('strong', 'Overview —'), ' where things stand right now, and anything that needs a '
@@ -165,6 +271,9 @@ const SECTIONS = [
           + 'portioned inconsistently.'),
         h('span', h('strong', 'Month —'), ' the full picture: cost per guest over time, where the money '
           + 'goes by category, whether the outsider fee covers itself, and what the store did.'),
+        h('span', h('strong', 'Compare —'), ' any two periods you choose, side by side. The four screens '
+          + 'above always compare against the period immediately before; this one lets you pick both '
+          + 'sides yourself.'),
       ),
       h('h3', { style: { marginTop: '1rem' } }, 'The one number to watch'),
       h('p', h('strong', 'Cost per guest.'), ' Total food cost divided by everyone who ate. It is the only '
@@ -173,7 +282,13 @@ const SECTIONS = [
         + 'Saturday costing more ', h('em', 'per guest'), ' than usual is worth a look.'),
       note('Charts respond to your mouse.', 'Hover anywhere on a line or bar to read the exact figures '
         + 'for that day.'),
-      note('Everything exports.', 'Each view has an export button that gives you a spreadsheet file.'),
+      note('Everything exports.', 'Every report has a “Save as PDF” button that gives you the whole '
+        + 'screen, charts included, ready to email or file. Beside it is an export button for the '
+        + 'raw numbers as a spreadsheet.'),
+      note('Nothing is ever compared unfairly.', 'A part-finished week or month is only ever measured '
+        + 'against the same number of days of the period before it. Nine days of August are compared '
+        + 'with the first nine days of July, never with the whole of it — otherwise every month would '
+        + 'look like a huge saving until the day it ended.'),
     ),
   },
 
@@ -301,6 +416,10 @@ const SECTIONS = [
       ['Portioning to look at',
         'The worst offenders from that column, gathered in one place.',
         'Start here if you want to tighten portion control.'],
+      ['The “⇄ Compare with…” button',
+        'Opens the Compare screen carrying this week and the week before it, already filled in.',
+        'Use it when last week is not the comparison you want — change either date range once you '
+        + 'are there and measure this week against any other.'],
     ),
   },
 
@@ -347,8 +466,14 @@ const SECTIONS = [
         'Open the worst ones to see why. Open the best ones too — sometimes a very cheap day is a sheet '
         + 'that was only half filled in.'],
       ['Every ingredient — “vs last month”',
-        'Whether each item’s use per guest went up or down compared with last month.',
+        'Whether each item’s use per guest went up or down compared with last month. If this month is '
+        + 'still running, “last month” means the same number of days of it, not the whole of it.',
         'This is the like-for-like measure. It ignores how busy each month was.'],
+      ['The “⇄ Compare with…” button',
+        'Opens the Compare screen carrying this month and the matching stretch of the month before, '
+        + 'already filled in.',
+        'Use it when the previous month is not the right yardstick — the same month last year, or the '
+        + 'months either side of a menu change, usually tell you more.'],
     ),
   },
 
@@ -383,9 +508,9 @@ const SECTIONS = [
           'The same figures divided by how many mornings were actually served.',
           'These make a busy fortnight comparable with a quiet week.'],
         ['Cost per guest, day by day',
-          'Both periods drawn over each other, starting from each one’s first day. The dates along '
-          + 'the bottom are the first period’s; the dashed line is the same *position* in the second '
-          + 'period, not the same calendar date.',
+          h('span', 'Both periods drawn over each other, starting from each one’s first day. The dates '
+            + 'along the bottom are the first period’s; the dashed line is the same ', h('em', 'position'),
+          ' in the second period, not the same calendar date.'),
           'Look for one period sitting consistently above the other, rather than for single spikes.'],
         ['What changed most',
           'The items that moved most between the two periods. When the periods are the same size '
@@ -603,6 +728,16 @@ const SECTIONS = [
           h('p', 'Open the Day view for that date. It shows every item, what was expected, and what the '
             + 'difference cost. If the entry itself was wrong, correct it on the entry screen — it will '
             + 'go for approval if that day was already submitted.')],
+        ['A comparison shows a huge rise or fall I do not believe',
+          h('p', 'Check the two date ranges are the same length. On the Compare screen a yellow banner '
+            + 'appears when they are not, or when one has far more service days than the other — in that '
+            + 'case the totals are meaningless and only the per-guest figures can be trusted. The same '
+            + 'thing happens if a few days were never entered: missing mornings pull the total down and '
+            + 'read as a saving that never happened.')],
+        ['I want to compare two particular periods',
+          h('p', 'Open ', h('strong', 'Compare'), ' in the top menu. Pick one of the ready-made buttons, '
+            + 'or type any two date ranges yourself and press Compare. You can also start from the Week '
+            + 'or Month screen and press “⇄ Compare with…”, which carries that period across for you.')],
         ['The stock figures look impossible',
           h('p', 'Negative stock means deliveries have not been recorded. Add them under Purchases. If the '
             + 'figures were never right to begin with, set the opening stock for those items under Setup.')],
