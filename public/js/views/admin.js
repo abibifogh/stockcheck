@@ -456,21 +456,36 @@ function userDialog(existing, roles, permissions, onSaved) {
     onclick: () => { custom = null; applyRoleDefaults(); toast('Back to the standard access for this role'); },
   }, 'Use the standard access for this role');
 
+  // A modal dialog sits in the browser's top layer, above every toast. Form
+  // problems are shown in the form itself, where the person is already looking
+  // and where the message stays put while they fix it.
+  const problem = h('div.form-error.hidden');
+  const showProblem = (message) => {
+    problem.textContent = message;
+    problem.classList.remove('hidden');
+    problem.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  };
+  const clearProblem = () => problem.classList.add('hidden');
+
   const save = async (event) => {
+    clearProblem();
     const selected = [...boxes].filter(([, b]) => b.checked).map(([k]) => k);
     const isAdmin = roleSelect.value === 'admin';
 
-    if (!name.value.trim()) { toast('Enter a name', 'bad'); return; }
-    if (!selected.length) { toast('Tick at least one section they can open', 'bad'); return; }
+    if (!name.value.trim()) { showProblem('Enter a name for this person.'); return; }
+    if (!selected.length) { showProblem('Tick at least one section they can open.'); return; }
 
     if (isAdmin) {
-      if (!email.value.trim()) { toast('An administrator needs an email address', 'bad'); return; }
+      if (!email.value.trim()) {
+        showProblem('An administrator signs in with an email address — enter one.');
+        return;
+      }
       if (!existing?.hasPassword && !password.value) {
-        toast('Set a password of at least 10 characters', 'bad');
+        showProblem('Set a password of at least 10 characters. A few unrelated words works well.');
         return;
       }
     } else if (!existing && !pin.value.trim()) {
-      toast('Give this person a PIN', 'bad');
+      showProblem('Give this person a PIN of 4 to 10 digits.');
       return;
     }
 
@@ -503,7 +518,7 @@ function userDialog(existing, roles, permissions, onSaved) {
       dialog.close();
       onSaved();
     } catch (err) {
-      toast(err.message, 'bad');
+      showProblem(err.message);
       event.target.disabled = false;
     }
   };
@@ -534,6 +549,7 @@ function userDialog(existing, roles, permissions, onSaved) {
       permissionList,
       h('div', { style: { marginTop: '.5rem' } }, resetToRole),
     ),
+    problem,
     h('div.btn-row', { style: { marginTop: '1rem', justifyContent: 'flex-end' } },
       h('button', { onclick: () => dialog.close() }, 'Cancel'),
       h('button.btn-primary', { onclick: save }, existing ? 'Save changes' : 'Add person'),
