@@ -175,3 +175,33 @@ export function toast(message, kind = '') {
 export function confirmAction(message) {
   return window.confirm(message);
 }
+
+/**
+ * The descriptive variables on a maintenance part — size, colour, rating.
+ *
+ * Stored as a JSON object on the part. Parsed defensively: a malformed value
+ * should cost you the detail line, never the screen.
+ */
+export function parseAttributes(value) {
+  if (!value) return {};
+  if (typeof value === 'object') return value;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/** "9W · Warm white" — compact enough to sit under a part's name. */
+export function attributeSummary(value) {
+  return Object.values(parseAttributes(value)).join(' · ');
+}
+
+/** Everything about a part that a search box should match. */
+export function attributeSearchText(value) {
+  return Object.entries(parseAttributes(value))
+    .map(([k, v]) => `${k} ${v}`)
+    .join(' ')
+    .toLowerCase();
+}

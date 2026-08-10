@@ -33,16 +33,16 @@ export const state = {
 };
 
 const ROUTES = [
-  { path: 'entry', label: 'Daily entry', permission: 'entry', render: renderEntry },
-  { path: 'overview', label: 'Overview', permission: 'reports', render: renderOverview },
-  { path: 'daily', label: 'Day', permission: 'reports', render: renderDaily },
-  { path: 'weekly', label: 'Week', permission: 'reports', render: renderWeekly },
-  { path: 'monthly', label: 'Month', permission: 'reports', render: renderMonthly },
-  { path: 'compare', label: 'Compare', permission: 'reports', render: renderCompare },
-  { path: 'approvals', label: 'Approvals', permission: 'approvals', render: renderApprovals },
-  { path: 'stock', label: 'Stock', permission: 'stock', render: renderStock },
-  { path: 'purchases', label: 'Purchases', permission: 'purchases', render: renderPurchases },
-  { path: 'setup', label: 'Setup', permission: 'setup', render: renderSetup },
+  { path: 'entry', label: 'Daily entry', permission: 'entry', render: renderEntry, group: 'Breakfast' },
+  { path: 'overview', label: 'Overview', permission: 'reports', render: renderOverview, group: 'Breakfast' },
+  { path: 'daily', label: 'Day', permission: 'reports', render: renderDaily, group: 'Breakfast' },
+  { path: 'weekly', label: 'Week', permission: 'reports', render: renderWeekly, group: 'Breakfast' },
+  { path: 'monthly', label: 'Month', permission: 'reports', render: renderMonthly, group: 'Breakfast' },
+  { path: 'compare', label: 'Compare', permission: 'reports', render: renderCompare, group: 'Breakfast' },
+  { path: 'approvals', label: 'Approvals', permission: 'approvals', render: renderApprovals, group: 'Breakfast' },
+  { path: 'stock', label: 'Stock', permission: 'stock', render: renderStock, group: 'Breakfast' },
+  { path: 'purchases', label: 'Purchases', permission: 'purchases', render: renderPurchases, group: 'Breakfast' },
+  { path: 'setup', label: 'Setup', permission: 'setup', render: renderSetup, group: 'Breakfast' },
   { path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin },
   // ------------------------------------------------------------ maintenance --
   // A second store with its own screens. Grouped in the menu so somebody who
@@ -113,30 +113,90 @@ export async function ensureCatalog(force = false) {
   return state.catalog;
 }
 
-function shell(content) {
+/**
+ * The side navigation.
+ *
+ * A single row of tabs stopped working the moment there were two stores: an
+ * administrator had nineteen of them, wrapping onto three lines and burying
+ * "Users & data" at the end. Down the side there is room for the sections to be
+ * named, so "Stock" under Breakfast and "Parts" under Maintenance can never be
+ * mistaken for each other.
+ *
+ * Sections collapse, and the one you are in is always open — closing the
+ * section you are reading would hide the page you are on.
+ */
+const collapsed = new Set(JSON.parse(localStorage.getItem('bf.navClosed') || '[]'));
+
+function saveCollapsed() {
+  localStorage.setItem('bf.navClosed', JSON.stringify([...collapsed]));
+}
+
+function sidebar() {
   const visible = ROUTES.filter((r) => allowed(r) && !r.hidden);
-  const link = (route) => h('a', {
+  const here = currentRoute()?.path;
+
+  const link = (route) => h('a.side-link', {
     href: `#/${route.path}`,
-    class: currentRoute()?.path === route.path ? 'active' : '',
+    class: here === route.path ? 'side-link active' : 'side-link',
+    onclick: () => closeDrawer(),
   }, route.label);
 
-  const kitchen = visible.filter((r) => !r.group);
-  const maintenance = visible.filter((r) => r.group === 'Maintenance');
+  // Preserve the order routes are declared in rather than sorting: it runs
+  // from "what you do every morning" to "what you set up once".
+  const groups = [];
+  for (const route of visible) {
+    const name = route.group ?? null;
+    let group = groups.find((g) => g.name === name);
+    if (!group) { group = { name, routes: [] }; groups.push(group); }
+    group.routes.push(route);
+  }
+  // Whatever order the routes happen to be declared in, the odds and ends —
+  // Users & data, Help — sit at the foot rather than between two sections.
+  groups.sort((a, b) => (a.name ? 0 : 1) - (b.name ? 0 : 1));
 
-  const nav = h('nav.nav',
-    kitchen.map(link),
-    // Only worth labelling when somebody can see both stores; a technician who
-    // only has the maintenance screens does not need to be told which they are.
-    maintenance.length
-      ? [
-        kitchen.length ? h('span.nav-divider', 'Maintenance') : null,
-        maintenance.map(link),
-      ]
-      : null,
-  );
+  return h('nav.sidebar', groups.map((group) => {
+    if (!group.name) return h('div.side-group', group.routes.map(link));
 
-  return h('div.shell',
+    const holdsCurrent = group.routes.some((r) => r.path === here);
+    // A section with only one thing in it is a link, not a section.
+    if (group.routes.length === 1) return h('div.side-group', group.routes.map(link));
+
+    const isOpen = holdsCurrent || !collapsed.has(group.name);
+    const body = h('div.side-items', group.routes.map(link));
+
+    const header = h('button.side-head', {
+      class: isOpen ? 'side-head open' : 'side-head',
+      onclick: (event) => {
+        // Always toggles, even for the section holding the current page: a
+        // header that visibly does nothing when clicked reads as broken. The
+        // page itself is still on screen either way.
+        const open = collapsed.has(group.name);
+        if (open) collapsed.delete(group.name);
+        else collapsed.add(group.name);
+        saveCollapsed();
+        body.style.display = open ? '' : 'none';
+        event.currentTarget.classList.toggle('open', open);
+      },
+    }, h('span', group.name), h('span.side-caret', '▾'));
+
+    if (!isOpen) body.style.display = 'none';
+    return h('div.side-group', header, body);
+  }));
+}
+
+function closeDrawer() {
+  document.querySelector('.shell')?.classList.remove('nav-open');
+}
+
+function shell(content) {
+  const menuButton = h('button.btn-ghost.btn-sm.nav-toggle', {
+    title: 'Menu',
+    onclick: () => document.querySelector('.shell')?.classList.toggle('nav-open'),
+  }, '☰');
+
+  const shellEl = h('div.shell',
     h('header.topbar',
+      menuButton,
       h('div.brand',
         h('span.brand-mark', '🍳'),
         h('div',
@@ -145,7 +205,6 @@ function shell(content) {
         ),
       ),
       h('div.topbar-spacer'),
-      nav,
       h('button.btn-ghost.btn-sm', {
         title: 'Switch light / dark',
         onclick: toggleTheme,
@@ -168,17 +227,24 @@ function shell(content) {
         },
       }, 'Sign out'),
     ),
-    h('main.main', content),
+    h('div.body-row',
+      sidebar(),
+      // Tapping the page behind an open drawer closes it, which is what every
+      // phone user already expects to happen.
+      h('div.nav-scrim', { onclick: closeDrawer }),
+      h('main.main', content),
+    ),
   );
+
+  return shellEl;
 }
 
 /**
  * Publish the header's real height as --topbar-h.
  *
- * The tab bar wraps onto a second row when it cannot fit, and how many tabs
- * somebody has depends on what they are allowed to see. Anything sticky below
- * the header — the guest counts on the entry sheet, the guide's contents list —
- * measures from this rather than from a guessed constant.
+ * Anything sticky below the header — the sidebar, the guest counts on the entry
+ * sheet, the guide's contents list — measures from this rather than a guessed
+ * constant, so a header that changes height cannot hide them.
  */
 let topbarWatcher = null;
 function trackTopbarHeight() {

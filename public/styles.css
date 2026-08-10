@@ -114,16 +114,54 @@ a { color: var(--accent); }
 .brand-sub { color: var(--text-faint); font-weight: 500; font-size: .78rem; display: block; letter-spacing: 0; }
 .topbar-spacer { flex: 1; }
 
-.nav { display: flex; gap: .15rem; overflow-x: auto; scrollbar-width: none; }
-.nav::-webkit-scrollbar { display: none; }
-.nav a {
-  padding: .45rem .75rem; border-radius: 999px; font-size: .88rem; font-weight: 550;
-  color: var(--text-dim); text-decoration: none; white-space: nowrap;
-}
-.nav a:hover { background: var(--surface-2); color: var(--text); }
-.nav a.active { background: var(--accent); color: #fff; }
+/* ------------------------------------------------------------- side nav --
+   Two stores will not fit in one row of tabs, so navigation lives down the
+   side where each section can be named. */
+.body-row { display: flex; flex: 1; min-height: 0; align-items: flex-start; }
 
-.main { flex: 1; width: 100%; max-width: 1320px; margin: 0 auto; padding: clamp(.85rem, 2.5vw, 1.6rem); }
+.sidebar {
+  position: sticky; top: var(--topbar-h); z-index: 30;
+  flex: 0 0 208px; width: 208px;
+  max-height: calc(100dvh - var(--topbar-h));
+  overflow-y: auto; overscroll-behavior: contain;
+  padding: .8rem .6rem 1.2rem;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  display: grid; gap: .15rem; align-content: start;
+}
+
+.side-group { display: grid; gap: .1rem; margin-bottom: .5rem; }
+
+.side-head {
+  display: flex; align-items: center; justify-content: space-between; gap: .4rem;
+  width: 100%; padding: .4rem .55rem; margin-bottom: .1rem;
+  background: none; border: 0; border-radius: var(--radius-sm);
+  color: var(--text-faint); cursor: pointer;
+  font-size: .7rem; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+}
+.side-head:hover { background: var(--surface-2); color: var(--text-dim); }
+.side-caret { transition: transform .15s; display: inline-block; transform: rotate(-90deg); }
+.side-head.open .side-caret { transform: rotate(0deg); }
+
+.side-items { display: grid; gap: .1rem; }
+
+.side-link {
+  display: block; padding: .45rem .65rem;
+  border-radius: var(--radius-sm);
+  border-left: 2px solid transparent;
+  font-size: .89rem; font-weight: 550;
+  color: var(--text-dim); text-decoration: none;
+}
+.side-link:hover { background: var(--surface-2); color: var(--text); }
+.side-link.active {
+  background: var(--accent-soft); color: var(--accent);
+  border-left-color: var(--accent); font-weight: 650;
+}
+
+.nav-toggle { display: none; font-size: 1.1rem; }
+.nav-scrim { display: none; }
+
+.main { flex: 1; min-width: 0; max-width: 1320px; margin: 0 auto; padding: clamp(.85rem, 2.5vw, 1.6rem); }
 
 .page-head {
   display: flex; flex-wrap: wrap; gap: .75rem; align-items: flex-end;
@@ -369,16 +407,21 @@ body:has(.entry-footer) .toasts { bottom: calc(4.75rem + env(safe-area-inset-bot
 .skeleton { background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2)); background-size: 200% 100%; animation: shimmer 1.2s infinite; border-radius: var(--radius-sm); height: 1rem; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 
-/* An administrator has eleven tabs, which will not fit beside the property name
-   and the account buttons on a laptop. Rather than silently clipping the last
-   of them — Users & data, of all things — the tab bar drops to a full-width row
-   of its own. Everything sticky below the header follows --topbar-h, so the
-   extra row pushes them down instead of hiding under them. */
-@media (max-width: 1500px) {
-  .topbar { flex-wrap: wrap; }
-  /* On its own row it wraps onto a second line rather than scrolling sideways:
-     a tab hidden behind an invisible scrollbar is a tab nobody finds. */
-  .nav { order: 3; width: 100%; padding-top: .35rem; flex-wrap: wrap; overflow-x: visible; }
+/* On a phone the sidebar becomes a drawer. Nineteen links down the side would
+   otherwise leave no room for the page they lead to. */
+@media (max-width: 900px) {
+  .nav-toggle { display: inline-flex; }
+  .sidebar {
+    position: fixed; top: var(--topbar-h); bottom: 0; left: 0;
+    width: 250px; flex-basis: 250px; max-height: none;
+    transform: translateX(-100%); transition: transform .18s ease;
+    box-shadow: var(--shadow); z-index: 45;
+  }
+  .shell.nav-open .sidebar { transform: translateX(0); }
+  .shell.nav-open .nav-scrim {
+    display: block; position: fixed; inset: var(--topbar-h) 0 0 0;
+    background: rgba(8, 12, 20, .4); z-index: 40;
+  }
 }
 
 @media (max-width: 720px) {
@@ -551,7 +594,7 @@ body:has(.entry-footer) .toasts[popover] { bottom: calc(4.75rem + env(safe-area-
   @page { margin: 14mm 12mm; }
 
   /* Furniture nobody wants on paper. */
-  .topbar, .nav, .toolbar, .entry-footer, .toasts, .guide-toc,
+  .topbar, .sidebar, .nav-scrim, .toolbar, .entry-footer, .toasts, .guide-toc,
   button, .btn, dialog { display: none !important; }
 
   .main { max-width: none; padding: 0; margin: 0; }
@@ -642,15 +685,6 @@ body:has(.entry-footer) .toasts[popover] { bottom: calc(4.75rem + env(safe-area-
    The issue screen is built for a thumb. Everything here is sized so a
    technician standing in a corridor can hit it without looking twice. */
 
-.nav-divider {
-  align-self: center;
-  padding: 0 .35rem 0 .6rem;
-  margin-left: .25rem;
-  border-left: 1px solid var(--border-strong);
-  font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
-  color: var(--text-faint);
-  white-space: nowrap;
-}
 
 .mx-search {
   width: 100%; padding: .55rem .7rem;
@@ -750,4 +784,9 @@ body:has(.entry-footer) .toasts[popover] { bottom: calc(4.75rem + env(safe-area-
   .mx-delivery-line { grid-template-columns: 1fr 1fr; }
   .mx-delivery-line select { grid-column: 1 / -1; }
   .mx-basket-lines { max-height: 38vh; }
+}
+
+.mx-tile-attrs {
+  font-size: .75rem; color: var(--accent);
+  line-height: 1.2; margin-top: -.05rem;
 }

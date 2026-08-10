@@ -697,7 +697,8 @@ const SECTIONS = [
         h('span', h('strong', 'Tap where you are working.'), ' Rooms and areas are listed; type in the '
           + 'box to jump straight to one. If you are not working in a particular room, skip it.'),
         h('span', h('strong', 'Tap each part you used.'), ' Tapping the same part again makes it two, '
-          + 'then three. For anything not on the everyday list, type its name in the search box.'),
+          + 'then three. For anything not on the everyday list, type in the search box — the size, '
+          + 'colour or fitting works as well as the name, so “9W” finds the right bulb.'),
         h('span', h('strong', 'Tap Record issue.'), ' That is it. The room stays selected so the next '
           + 'thing you fit in the same room is two taps.'),
       ),
@@ -771,6 +772,10 @@ const SECTIONS = [
           + 'more. Leave it at zero for anything you buy only when a job needs it.'),
         h('span', h('strong', 'On the shelf now'), ' is what is there the day you start. Get this '
           + 'roughly right and the stock figures are useful from week one.'),
+        h('span', h('strong', 'Details'), ' are the variables that tell two similar parts apart — size, '
+          + 'colour, fitting, material, whatever you actually use. Add as many as a part needs. They '
+          + 'show under its name on the issue screen and in the stock list, and searching matches '
+          + 'them, so somebody can type “9W” or “chrome” instead of hunting through the list.'),
       ),
       note('Removing something keeps its history.', 'A part or a room that has been used is retired '
         + 'rather than deleted, so past months still add up to what they actually cost.'),
@@ -792,7 +797,7 @@ const SECTIONS = [
       ),
       h('h3', { style: { marginTop: '1.1rem' } }, 'Turning on the alert'),
       steps(
-        h('span', 'Open ', h('strong', 'My account'), ' at the top of the screen.'),
+        h('span', 'Open ', h('strong', 'My account'), ' at the top right of the screen.'),
         h('span', 'Choose ', h('strong', '“Alert me on this device”'), ' and allow notifications when '
           + 'the browser asks.'),
         h('span', 'Press ', h('strong', 'Send a test'), ' to prove it arrives before you rely on it.'),
@@ -859,7 +864,8 @@ const SECTIONS = [
             + 'thing happens if a few days were never entered: missing mornings pull the total down and '
             + 'read as a saving that never happened.')],
         ['I want to compare two particular periods',
-          h('p', 'Open ', h('strong', 'Compare'), ' in the top menu. Pick one of the ready-made buttons, '
+          h('p', 'Open ', h('strong', 'Compare'), ' under Breakfast in the side menu. Pick one of the '
+            + 'ready-made buttons, '
             + 'or type any two date ranges yourself and press Compare. You can also start from the Week '
             + 'or Month screen and press “⇄ Compare with…”, which carries that period across for you.')],
         ['The stock figures look impossible',
