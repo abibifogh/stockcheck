@@ -72,19 +72,26 @@ export function buildLedger({ ingredients, purchases = [], usage = [] }) {
       }
 
       if (purchasedQty > 0) {
+        // Blend only against stock that actually exists. A negative book
+        // balance is not stock owed back to the shelf — it is a delivery that
+        // was never keyed in, so there is nothing there to average with.
+        //
+        // Blending against it is how a single crate can come out priced like a
+        // car: stock of −19.55 plus 20 delivered leaves 0.45 on the book, and
+        // dividing the whole delivery's value by that sliver gives a nonsense
+        // unit cost that then prices every later issue and the reorder list.
+        const heldQty = Math.max(stock, 0);
+        const blendQty = heldQty + purchasedQty;
+        if (blendQty > 1e-9) avgCost = (heldQty * avgCost + purchasedCost) / blendQty;
         stock += purchasedQty;
-        value += purchasedCost;
-        // Only re-derive the average while stock is positive; a negative book
-        // stock would otherwise invert the cost.
-        if (stock > 1e-9) avgCost = value / stock;
-        else avgCost = purchasedCost / purchasedQty;
       }
 
       const usedQty = ev.used;
       const usedCost = usedQty * avgCost;
       stock -= usedQty;
-      value -= usedCost;
-      if (stock <= 1e-9) value = stock * avgCost; // keep value consistent at/below zero
+      // The average is the only thing carried forward, so value is always
+      // derived from it rather than accumulated separately and drifting.
+      value = stock * avgCost;
 
       rec.days.set(day, {
         day,

@@ -14,6 +14,7 @@ import * as catalog from './routes/catalog.js';
 import * as insights from './routes/insights.js';
 import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
+import * as mx from './routes/maintenance.js';
 import { PIN_TAKEN } from './routes/admin.js';
 
 /**
@@ -100,6 +101,39 @@ const ROUTES = [
   ['DELETE', '/api/locks/:id', 'users', admin.deleteLock],
 
   ['GET', '/api/audit', 'users', admin.auditTrail],
+
+  // ------------------------------------------------------------ maintenance --
+  // A separate store with its own permissions, so a technician can be given the
+  // issue screen and nothing else.
+  ['GET', '/api/mx/bootstrap', 'mx_issue', mx.bootstrap],
+
+  ['GET', '/api/mx/issues', 'mx_issue', mx.listIssues],
+  ['POST', '/api/mx/issues', 'mx_issue', mx.createIssue],
+  ['DELETE', '/api/mx/issues/:id', 'mx_issue', mx.deleteIssue],
+
+  ['GET', '/api/mx/purchases', 'mx_purchases', mx.listPurchases],
+  ['GET', '/api/mx/purchases/last-costs', 'mx_purchases', mx.lastCosts],
+  ['POST', '/api/mx/deliveries', 'mx_purchases', mx.createDelivery],
+  ['DELETE', '/api/mx/purchases/:id', 'mx_purchases', mx.deletePurchase],
+
+  ['GET', '/api/mx/stock', 'mx_stock', mx.stock],
+  ['POST', '/api/mx/counts', 'mx_stock', mx.saveCounts],
+
+  ['GET', '/api/mx/overview', 'mx_reports', mx.overview],
+  ['GET', '/api/mx/report', 'mx_reports', mx.report],
+  ['GET', '/api/mx/compare', 'mx_reports', mx.compare],
+  ['GET', '/api/mx/areas/:id/detail', 'mx_reports', mx.areaDetail],
+
+  ['GET', '/api/mx/areas', 'mx_issue', mx.listAreas],
+  ['POST', '/api/mx/areas', 'mx_setup', mx.createArea],
+  ['POST', '/api/mx/areas/range', 'mx_setup', mx.createAreaRange],
+  ['PUT', '/api/mx/areas/:id', 'mx_setup', mx.updateArea],
+  ['DELETE', '/api/mx/areas/:id', 'mx_setup', mx.deleteArea],
+
+  ['POST', '/api/mx/items', 'mx_setup', mx.createItem],
+  ['PUT', '/api/mx/items/:id', 'mx_setup', mx.updateItem],
+  ['DELETE', '/api/mx/items/:id', 'mx_setup', mx.deleteItem],
+  ['POST', '/api/mx/categories', 'mx_setup', mx.createCategory],
 ];
 
 function match(pattern, pathname) {

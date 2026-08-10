@@ -685,6 +685,98 @@ const SECTIONS = [
     ),
   },
 
+  // ---------------------------------------------------------------- maintenance --
+
+  {
+    id: 'mx-issue',
+    title: 'Issuing parts to a room',
+    permission: 'mx_issue',
+    lead: 'Three taps. Do it as you fit the part, not at the end of the day.',
+    render: () => h('div',
+      steps(
+        h('span', h('strong', 'Tap where you are working.'), ' Rooms and areas are listed; type in the '
+          + 'box to jump straight to one. If you are not working in a particular room, skip it.'),
+        h('span', h('strong', 'Tap each part you used.'), ' Tapping the same part again makes it two, '
+          + 'then three. For anything not on the everyday list, type its name in the search box.'),
+        h('span', h('strong', 'Tap Record issue.'), ' That is it. The room stays selected so the next '
+          + 'thing you fit in the same room is two taps.'),
+      ),
+      note('Quantities start at one.', 'Use the − and + buttons in the bar at the bottom, or type '
+        + 'straight into the box, only when it is not one.'),
+      note('The job number and note are optional.', 'They help later when somebody asks why a room '
+        + 'cost what it did, but a record with neither still tells the store what left the shelf.'),
+      warn('Record it when you fit it.', 'A part fitted on Tuesday and recorded on Friday makes the '
+        + 'stock figures wrong for three days, and by then nobody remembers which room it went to.'),
+    ),
+  },
+
+  {
+    id: 'mx-reports',
+    title: 'What the maintenance reports tell you',
+    permission: 'mx_reports',
+    lead: 'The kitchen reports ask what a guest cost. These ask what a place cost.',
+    render: () => h('div',
+      h('p', 'You cannot stop bulbs failing. You can find out that one room gets through four times '
+        + 'its share of them, and go and look at why.'),
+      readings(
+        ['Store — the opening screen',
+          'This month\u2019s spend, what the shelf is worth, how much needs ordering, and how much has '
+          + 'not moved in three months.',
+          'Read the alerts. Everything else on that screen is context for them.'],
+        ['Heavy places',
+          'A room or area consuming far more than the others, judged against the typical place rather '
+          + 'than against a budget. One expensive refurbishment does not make every other room look fine.',
+          'This is the finding. Open the room to see what keeps going into it.'],
+        ['“Went to the same place N times”',
+          'The same part issued to the same room on three or more separate days in the period.',
+          'Repeatedly replacing a part is patching, not fixing. It usually means a cause nobody has '
+          + 'dealt with — a socket that keeps blowing, a pipe that keeps leaking.'],
+        ['A room\u2019s own page',
+          'Everything ever issued to that one place: what, how often, and what it has cost month by month.',
+          'A part with several occasions is the one to look at first.'],
+        ['Store movement',
+          'What you bought in the period against what you actually issued.',
+          'Buying much more than you use is cash going onto a shelf. Month after month, it is worth '
+          + 'asking whether the order quantities are right.'],
+        ['Order list',
+          'Everything below its restock level, with how much to order and roughly what it will cost.',
+          'Negative stock never means the shelf is negative — it means a delivery was never recorded. '
+          + 'Add it under Bought and the figure corrects itself.'],
+        ['Not touched in three months',
+          'Parts sitting on the shelf that nothing has been done with.',
+          'Not necessarily wrong; some spares exist so you never need them urgently. But it tells you '
+          + 'how much cash is tied up in them.'],
+        ['Compare',
+          'Any two periods side by side — the rains against the dry months, before and after a rewiring.',
+          'If the two periods are different lengths the screen says so. Read the per-day figures then, '
+          + 'not the totals.'],
+      ),
+    ),
+  },
+
+  {
+    id: 'mx-setup',
+    title: 'Setting up the parts store',
+    permission: 'mx_setup',
+    lead: 'Two lists: the parts you keep, and the places you keep them for.',
+    render: () => h('div',
+      points(
+        h('span', h('strong', 'Add rooms a floor at a time.'), ' Give the first and last number and '
+          + 'they are all created at once. Running it twice is safe — rooms that already exist are '
+          + 'left alone.'),
+        h('span', h('strong', 'Mark the everyday parts.'), ' Those appear on the issue screen without '
+          + 'searching. Keep the list to the dozen or so things that genuinely go out every week, or '
+          + 'the screen stops being fast.'),
+        h('span', h('strong', 'Restock level'), ' is the point at which you want to be told to order '
+          + 'more. Leave it at zero for anything you buy only when a job needs it.'),
+        h('span', h('strong', 'On the shelf now'), ' is what is there the day you start. Get this '
+          + 'roughly right and the stock figures are useful from week one.'),
+      ),
+      note('Removing something keeps its history.', 'A part or a room that has been used is retired '
+        + 'rather than deleted, so past months still add up to what they actually cost.'),
+    ),
+  },
+
   {
     id: 'alerts-setup',
     title: 'Being told when a day is submitted',

@@ -11,6 +11,15 @@ export const PERMISSIONS = [
   { key: 'approvals', label: 'Approvals', detail: 'Accept or reject changes to days already submitted' },
   { key: 'setup', label: 'Setup', detail: 'Ingredients, categories and property settings' },
   { key: 'users', label: 'Users & data', detail: 'Manage people, notifications, locks and erase data' },
+
+  // Maintenance stores. Kept separate from the kitchen permissions so a
+  // technician can be given the issue screen and nothing else, and a cook is
+  // never handed the parts store by accident.
+  { key: 'mx_issue', label: 'Issue parts', detail: 'Record parts released to a room or area' },
+  { key: 'mx_reports', label: 'Maintenance reports', detail: 'What each room and area is costing' },
+  { key: 'mx_stock', label: 'Maintenance stock', detail: 'Parts on hand, restock list, physical counts' },
+  { key: 'mx_purchases', label: 'Maintenance purchases', detail: 'Record parts bought, with cost' },
+  { key: 'mx_setup', label: 'Maintenance setup', detail: 'The parts list, and the rooms and areas' },
 ];
 
 export const PERMISSION_KEYS = PERMISSIONS.map((p) => p.key);
@@ -27,6 +36,18 @@ export const ROLES = [
     label: 'Manager',
     detail: 'Records and reviews. Sees costs, stock and purchases, and approves changes.',
     defaults: ['entry', 'reports', 'stock', 'purchases', 'approvals'],
+  },
+  {
+    key: 'technician',
+    label: 'Technician',
+    detail: 'Issues parts to rooms. Sees no costs at all.',
+    defaults: ['mx_issue'],
+  },
+  {
+    key: 'maintenance_manager',
+    label: 'Maintenance manager',
+    detail: 'Runs the parts store: issues, stock, purchases and the room-by-room analysis.',
+    defaults: ['mx_issue', 'mx_reports', 'mx_stock', 'mx_purchases', 'mx_setup'],
   },
   {
     key: 'admin',

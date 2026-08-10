@@ -637,3 +637,117 @@ body:has(.entry-footer) .toasts[popover] { bottom: calc(4.75rem + env(safe-area-
   .compare-picker { grid-template-columns: 1fr; }
   .compare-picker > div:last-child { padding-left: 0; border-left: none; padding-top: .6rem; border-top: 2px dashed var(--border-strong); }
 }
+
+/* ------------------------------------------------------------- maintenance --
+   The issue screen is built for a thumb. Everything here is sized so a
+   technician standing in a corridor can hit it without looking twice. */
+
+.nav-divider {
+  align-self: center;
+  padding: 0 .35rem 0 .6rem;
+  margin-left: .25rem;
+  border-left: 1px solid var(--border-strong);
+  font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.mx-search {
+  width: 100%; padding: .55rem .7rem;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2); color: var(--text); font-size: .92rem;
+}
+
+.mx-chips { display: flex; flex-wrap: wrap; gap: .4rem; }
+.mx-chip {
+  padding: .5rem .8rem; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text); font-size: .88rem; font-weight: 550; cursor: pointer;
+  min-height: 40px;
+}
+.mx-chip:hover { border-color: var(--border-strong); }
+.mx-chip.on {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+
+.mx-grid {
+  display: grid; gap: .5rem; margin-top: .7rem;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+}
+.mx-tile {
+  position: relative;
+  display: flex; flex-direction: column; gap: .15rem; align-items: flex-start;
+  padding: .6rem .7rem; min-height: 62px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2); color: var(--text);
+  text-align: left; cursor: pointer;
+}
+.mx-tile:hover { border-color: var(--border-strong); }
+.mx-tile.on { border-color: var(--accent); background: var(--accent-soft); }
+.mx-tile-name { font-size: .87rem; font-weight: 600; line-height: 1.25; }
+.mx-tile-unit { font-size: .74rem; color: var(--text-faint); }
+.mx-tile-qty {
+  position: absolute; top: .4rem; right: .45rem;
+  min-width: 22px; height: 22px; padding: 0 .3rem;
+  display: grid; place-items: center;
+  border-radius: 999px; background: var(--accent); color: #fff;
+  font-size: .76rem; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+
+/* The basket follows you down the page: what you are about to record should
+   never be somewhere you have to scroll to find. */
+.mx-basket {
+  position: sticky; bottom: 0; z-index: 25;
+  margin: 1rem -.25rem 0;
+}
+.mx-basket-inner {
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  backdrop-filter: saturate(160%) blur(10px);
+  border: 1px solid var(--border-strong); border-radius: var(--radius);
+  box-shadow: 0 -6px 24px -14px rgba(16, 24, 40, .45);
+  padding: .7rem .85rem;
+  display: grid; gap: .6rem;
+}
+.mx-basket-lines { display: grid; gap: .35rem; max-height: 30vh; overflow-y: auto; }
+.mx-line {
+  display: grid; grid-template-columns: 1fr auto auto auto;
+  gap: .5rem; align-items: center; font-size: .88rem;
+}
+.mx-line-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mx-line-unit { color: var(--text-faint); font-size: .8rem; min-width: 34px; }
+
+.mx-step { display: flex; align-items: center; gap: .25rem; }
+.mx-step button {
+  width: 34px; height: 34px; padding: 0;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--surface-2); color: var(--text);
+  font-size: 1.05rem; font-weight: 700; cursor: pointer;
+}
+.mx-step input {
+  width: 62px; text-align: center; padding: .4rem .2rem;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.mx-basket-actions {
+  display: flex; align-items: center; justify-content: space-between; gap: .75rem;
+  flex-wrap: wrap;
+}
+.mx-basket-where { font-size: .9rem; }
+.mx-save { min-height: 44px; padding-inline: 1.2rem; }
+
+.mx-recent { display: grid; gap: .3rem; font-size: .86rem; }
+.mx-recent-row { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; }
+
+.mx-delivery-line {
+  display: grid; grid-template-columns: minmax(160px, 2fr) 1fr 1fr auto auto;
+  gap: .5rem; align-items: center; margin-bottom: .45rem;
+}
+
+@media (max-width: 720px) {
+  .mx-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+  .mx-delivery-line { grid-template-columns: 1fr 1fr; }
+  .mx-delivery-line select { grid-column: 1 / -1; }
+  .mx-basket-lines { max-height: 38vh; }
+}

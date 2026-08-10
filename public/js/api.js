@@ -122,6 +122,42 @@ export const api = {
   saveStockCounts: (body) => request('/api/stock-counts', { method: 'POST', body }),
   updateSettings: (body) => request('/api/settings', { method: 'PUT', body }),
 
+  // ------------------------------------------------------------ maintenance --
+  mxBootstrap: () => request('/api/mx/bootstrap'),
+  mxIssues: (params = {}) => request(`/api/mx/issues?${new URLSearchParams(params)}`),
+  mxCreateIssue: (body) => request('/api/mx/issues', { method: 'POST', body }),
+  mxDeleteIssue: (id) => request(`/api/mx/issues/${id}`, { method: 'DELETE' }),
+
+  mxPurchases: (from, to) => request(`/api/mx/purchases?${new URLSearchParams({
+    ...(from ? { from } : {}), ...(to ? { to } : {}),
+  })}`),
+  mxLastCosts: () => request('/api/mx/purchases/last-costs'),
+  mxCreateDelivery: (body) => request('/api/mx/deliveries', { method: 'POST', body }),
+  mxDeletePurchase: (id) => request(`/api/mx/purchases/${id}`, { method: 'DELETE' }),
+
+  mxStock: (asOf) => request(`/api/mx/stock${asOf ? `?asOf=${asOf}` : ''}`),
+  mxSaveCounts: (body) => request('/api/mx/counts', { method: 'POST', body }),
+
+  mxOverview: () => request('/api/mx/overview'),
+  mxReport: (from, to) => request(`/api/mx/report?${new URLSearchParams({
+    ...(from ? { from } : {}), ...(to ? { to } : {}),
+  })}`),
+  mxCompare: (a, b) => request(`/api/mx/compare?${new URLSearchParams({
+    aFrom: a.from, aTo: a.to, bFrom: b.from, bTo: b.to,
+  })}`),
+  mxAreaDetail: (id) => request(`/api/mx/areas/${id}/detail`),
+
+  mxAreas: () => request('/api/mx/areas'),
+  mxCreateArea: (body) => request('/api/mx/areas', { method: 'POST', body }),
+  mxCreateAreaRange: (body) => request('/api/mx/areas/range', { method: 'POST', body }),
+  mxUpdateArea: (id, body) => request(`/api/mx/areas/${id}`, { method: 'PUT', body }),
+  mxDeleteArea: (id) => request(`/api/mx/areas/${id}`, { method: 'DELETE' }),
+
+  mxCreateItem: (body) => request('/api/mx/items', { method: 'POST', body }),
+  mxUpdateItem: (id, body) => request(`/api/mx/items/${id}`, { method: 'PUT', body }),
+  mxDeleteItem: (id) => request(`/api/mx/items/${id}`, { method: 'DELETE' }),
+  mxCreateCategory: (body) => request('/api/mx/categories', { method: 'POST', body }),
+
   exportUrl: (type, from, to) =>
     `/api/export?${new URLSearchParams({ type, ...(from ? { from } : {}), ...(to ? { to } : {}) })}`,
 };
