@@ -532,3 +532,49 @@ test('an item used in only one period is still reported, not silently dropped', 
   assert.equal(empty.hasComparison, false);
   assert.equal(empty.comparable.bServedDays, 0);
 });
+
+test('a delivery landing on negative stock is not priced against the shortfall', () => {
+  // Book stock goes to −20 because a delivery was never keyed in. The next
+  // real delivery brings it to +5. The shortfall is not stock, so the new
+  // average must be the delivery's own price — not the whole delivery's value
+  // divided by the 5 units left showing.
+  const ledger = buildLedger({
+    ingredients: [{ ...INGREDIENTS[0], opening_stock: 0, default_unit_cost: 10 }],
+    purchases: [{ day: '2026-03-10', ingredient_id: 1, qty: 25, unit_cost: 30 }],
+    usage: [
+      { day: '2026-03-05', ingredient_id: 1, qty: 20 },
+      { day: '2026-03-11', ingredient_id: 1, qty: 1 },
+    ],
+  });
+
+  assert.equal(ledger.entry(1, '2026-03-10').closingStock, 5);
+  assert.equal(ledger.unitCostOn(1, '2026-03-10'), 30);
+  // The next issue is costed at the honest price, not an inflated one.
+  assert.equal(ledger.entry(1, '2026-03-11').usedCost, 30);
+  assert.equal(ledger.entry(1, '2026-03-11').closingStock, 4);
+});
+
+test('stock value never disagrees with the unit cost being reported', () => {
+  const ledger = buildLedger({
+    ingredients: [{ ...INGREDIENTS[0], opening_stock: 10, default_unit_cost: 5 }],
+    purchases: [
+      { day: '2026-03-04', ingredient_id: 1, qty: 40, unit_cost: 8 },
+      { day: '2026-03-09', ingredient_id: 1, qty: 30, unit_cost: 6 },
+    ],
+    usage: [
+      { day: '2026-03-03', ingredient_id: 1, qty: 30 }, // drives it negative
+      { day: '2026-03-05', ingredient_id: 1, qty: 5 },
+      { day: '2026-03-10', ingredient_id: 1, qty: 12 },
+    ],
+  });
+
+  for (const day of ['2026-03-03', '2026-03-04', '2026-03-05', '2026-03-09', '2026-03-10']) {
+    const entry = ledger.entry(1, day);
+    assert.equal(
+      Math.abs(entry.closingStock * entry.unitCost - ledger.stockOn(1, day) * ledger.unitCostOn(1, day)) < 0.01,
+      true,
+      `${day}: value and unit cost disagree`,
+    );
+    assert.ok(entry.unitCost >= 0 && entry.unitCost < 100, `${day}: unit cost ${entry.unitCost} is not plausible`);
+  }
+});

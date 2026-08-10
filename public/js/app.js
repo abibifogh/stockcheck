@@ -14,6 +14,13 @@ import { renderApprovals } from './views/approvals.js';
 import { openAccountDialog } from './views/account.js';
 import { renderGuide } from './views/guide.js';
 import { renderCompare } from './views/compare.js';
+import { renderMxIssue } from './views/mx-issue.js';
+import { renderMxOverview, renderMxReport } from './views/mx-reports.js';
+import { renderMxStock } from './views/mx-stock.js';
+import { renderMxPurchases } from './views/mx-purchases.js';
+import { renderMxSetup } from './views/mx-setup.js';
+import { renderMxArea } from './views/mx-area.js';
+import { renderMxCompare } from './views/mx-compare.js';
 
 export const state = {
   role: null,
@@ -37,6 +44,19 @@ const ROUTES = [
   { path: 'purchases', label: 'Purchases', permission: 'purchases', render: renderPurchases },
   { path: 'setup', label: 'Setup', permission: 'setup', render: renderSetup },
   { path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin },
+  // ------------------------------------------------------------ maintenance --
+  // A second store with its own screens. Grouped in the menu so somebody who
+  // works in both does not have to hunt for which "Stock" is which.
+  { path: 'mx-issue', label: 'Issue parts', permission: 'mx_issue', render: renderMxIssue, group: 'Maintenance' },
+  { path: 'mx-overview', label: 'Store', permission: 'mx_reports', render: renderMxOverview, group: 'Maintenance' },
+  { path: 'mx-report', label: 'Report', permission: 'mx_reports', render: renderMxReport, group: 'Maintenance' },
+  { path: 'mx-compare', label: 'Compare', permission: 'mx_reports', render: renderMxCompare, group: 'Maintenance' },
+  { path: 'mx-stock', label: 'Parts', permission: 'mx_stock', render: renderMxStock, group: 'Maintenance' },
+  { path: 'mx-purchases', label: 'Bought', permission: 'mx_purchases', render: renderMxPurchases, group: 'Maintenance' },
+  { path: 'mx-setup', label: 'Setup', permission: 'mx_setup', render: renderMxSetup, group: 'Maintenance' },
+  // Reached by clicking a room in the report rather than from the menu.
+  { path: 'mx-area', label: 'Room', permission: 'mx_reports', render: renderMxArea, hidden: true },
+
   // Open to everyone: the person most likely to need it is the one with the
   // fewest permissions.
   { path: 'guide', label: 'Help', permission: null, render: renderGuide },
@@ -59,7 +79,7 @@ function currentRoute() {
 
 /** Land people on the most useful screen they are actually allowed to open. */
 function defaultRoute() {
-  const preferred = ['overview', 'entry', 'stock', 'purchases', 'setup', 'admin'];
+  const preferred = ['overview', 'entry', 'mx-overview', 'mx-issue', 'stock', 'purchases', 'setup', 'admin'];
   return preferred.find((path) => allowed(ROUTES.find((r) => r.path === path))) ?? 'entry';
 }
 
@@ -94,10 +114,26 @@ export async function ensureCatalog(force = false) {
 }
 
 function shell(content) {
-  const nav = h('nav.nav', ROUTES.filter(allowed).map((route) => h('a', {
+  const visible = ROUTES.filter((r) => allowed(r) && !r.hidden);
+  const link = (route) => h('a', {
     href: `#/${route.path}`,
     class: currentRoute()?.path === route.path ? 'active' : '',
-  }, route.label)));
+  }, route.label);
+
+  const kitchen = visible.filter((r) => !r.group);
+  const maintenance = visible.filter((r) => r.group === 'Maintenance');
+
+  const nav = h('nav.nav',
+    kitchen.map(link),
+    // Only worth labelling when somebody can see both stores; a technician who
+    // only has the maintenance screens does not need to be told which they are.
+    maintenance.length
+      ? [
+        kitchen.length ? h('span.nav-divider', 'Maintenance') : null,
+        maintenance.map(link),
+      ]
+      : null,
+  );
 
   return h('div.shell',
     h('header.topbar',
