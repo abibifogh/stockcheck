@@ -304,3 +304,43 @@ test('an empty store reports nothing rather than dividing by zero', () => {
   assert.equal(report.current.costPerDay, null);
   assert.equal(report.deltas.cost, null);
 });
+
+// ------------------------------------------------------------- part details --
+
+test('part details are cleaned up rather than stored as typed', async () => {
+  const { readAttributes } = await import('../src/routes/maintenance.js');
+
+  assert.equal(readAttributes({ Size: '9W', Colour: 'Warm white' }),
+    '{"Size":"9W","Colour":"Warm white"}');
+
+  // Whitespace is not a value, and a row with only half of it filled in is
+  // somebody who started typing and thought better of it — not an error.
+  assert.equal(readAttributes({ Size: ' 9W ', Colour: '  ', '': 'orphan' }), '{"Size":"9W"}');
+
+  // Nothing at all is stored as nothing, not as an empty object.
+  assert.equal(readAttributes({}), null);
+  assert.equal(readAttributes(null), null);
+  assert.equal(readAttributes(''), null);
+  assert.equal(readAttributes({ Colour: '' }), null);
+
+  // A JSON string is accepted, since that is how it comes back out of the row.
+  assert.equal(readAttributes('{"Size":"9W"}'), '{"Size":"9W"}');
+});
+
+test('part details that would abuse the column are refused', async () => {
+  const { readAttributes } = await import('../src/routes/maintenance.js');
+
+  const tooMany = Object.fromEntries(Array.from({ length: 15 }, (_, i) => [`K${i}`, 'v']));
+  assert.throws(() => readAttributes(tooMany), /up to 12 details/);
+  assert.throws(() => readAttributes({ ['x'.repeat(45)]: 'v' }), /too long for a label/);
+  assert.throws(() => readAttributes({ Size: 'y'.repeat(90) }), /value for .* is too long/);
+  assert.throws(() => readAttributes(['a', 'b']), /could not be read/);
+  assert.throws(() => readAttributes('not json at all'), /could not be read/);
+});
+
+test('exactly twelve details is allowed; thirteen is not', async () => {
+  const { readAttributes } = await import('../src/routes/maintenance.js');
+  const twelve = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`K${i}`, 'v']));
+  assert.equal(Object.keys(JSON.parse(readAttributes(twelve))).length, 12);
+  assert.throws(() => readAttributes({ ...twelve, K12: 'v' }), /up to 12 details/);
+});

@@ -245,6 +245,40 @@ export async function saveCounts(ctx) {
 // Setup: items and places
 // ---------------------------------------------------------------------------
 
+/**
+ * The descriptive variables an administrator has put on a part.
+ *
+ * Free-form on purpose: every hotel tells its parts apart differently — one by
+ * wattage and colour temperature, another by thread size and material — and a
+ * fixed set of fields would fit neither. Bounded so the column cannot become a
+ * dumping ground, and stored as null rather than "{}" when empty so a part with
+ * no variables reads as having none.
+ */
+export function readAttributes(value) {
+  if (value == null || value === '') return null;
+
+  let raw = value;
+  if (typeof raw === 'string') {
+    try { raw = JSON.parse(raw); } catch { throw badRequest('The part details could not be read.'); }
+  }
+  if (typeof raw !== 'object' || Array.isArray(raw)) throw badRequest('The part details could not be read.');
+
+  const clean = {};
+  for (const [key, entry] of Object.entries(raw)) {
+    const label = String(key).trim();
+    const text = entry == null ? '' : String(entry).trim();
+    if (!label || !text) continue; // a half-filled row is not a variable
+    if (label.length > 40) throw badRequest(`“${label.slice(0, 20)}…” is too long for a label.`);
+    if (text.length > 80) throw badRequest(`The value for “${label}” is too long.`);
+    clean[label] = text;
+  }
+
+  const count = Object.keys(clean).length;
+  if (!count) return null;
+  if (count > 12) throw badRequest('A part can carry up to 12 details.');
+  return JSON.stringify(clean);
+}
+
 export async function createItem(ctx) {
   const body = await readJson(ctx.request);
   const name = str(body.name, 'Name', { required: true, max: 100 });
@@ -252,8 +286,8 @@ export async function createItem(ctx) {
 
   try {
     const row = await ctx.db.prepare(
-      `INSERT INTO mx_items (category_id, name, unit, par_level, opening_stock, default_unit_cost, is_common, note)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) RETURNING *`,
+      `INSERT INTO mx_items (category_id, name, unit, par_level, opening_stock, default_unit_cost, is_common, note, attributes)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) RETURNING *`,
     ).bind(
       body.categoryId ? Number(body.categoryId) : null,
       name, unit,
@@ -262,6 +296,7 @@ export async function createItem(ctx) {
       num(body.defaultUnitCost, 'Unit cost', { min: 0, max: 1000000, fallback: 0 }),
       body.isCommon ? 1 : 0,
       str(body.note, 'Note', { max: 300, fallback: '' }) || null,
+      readAttributes(body.attributes),
     ).first();
     await audit(ctx, 'mx.item.create', row.id, { name });
     return json({ item: row }, { status: 201 });
@@ -281,7 +316,8 @@ export async function updateItem(ctx, id) {
   try {
     const row = await ctx.db.prepare(
       `UPDATE mx_items SET category_id = ?2, name = ?3, unit = ?4, par_level = ?5,
-              opening_stock = ?6, default_unit_cost = ?7, is_common = ?8, active = ?9, note = ?10
+              opening_stock = ?6, default_unit_cost = ?7, is_common = ?8, active = ?9, note = ?10,
+              attributes = ?11
         WHERE id = ?1 RETURNING *`,
     ).bind(
       Number(id),
@@ -294,6 +330,7 @@ export async function updateItem(ctx, id) {
       body.isCommon ? 1 : 0,
       body.active === false ? 0 : 1,
       str(body.note, 'Note', { max: 300, fallback: '' }) || null,
+      readAttributes(body.attributes),
     ).first();
     if (!row) throw notFound('That item no longer exists.');
     await audit(ctx, 'mx.item.update', id, { name });

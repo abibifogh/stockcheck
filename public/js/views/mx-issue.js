@@ -1,5 +1,7 @@
 import { api } from '../api.js';
-import { fmtDay, fmtQty, h, mount, toast, todayISO } from '../util.js';
+import {
+  attributeSearchText, attributeSummary, fmtDay, fmtQty, h, mount, toast, todayISO,
+} from '../util.js';
 import { card } from './components.js';
 
 /**
@@ -90,8 +92,11 @@ export async function renderMxIssue(params = {}) {
 
   const drawItems = () => {
     const pool = showAll ? data.items : data.items.filter((i) => i.is_common);
+    // Searching matches the details as well as the name: somebody looking for
+    // the 9W bulb types "9W", not "LED Bulb".
     const shown = itemFilter
-      ? data.items.filter((i) => i.name.toLowerCase().includes(itemFilter))
+      ? data.items.filter((i) => i.name.toLowerCase().includes(itemFilter)
+        || attributeSearchText(i.attributes).includes(itemFilter))
       : pool;
 
     mount(itemHost,
@@ -106,9 +111,15 @@ export async function renderMxIssue(params = {}) {
         return h('button.mx-tile', {
           class: qty ? 'mx-tile on' : 'mx-tile',
           onclick: () => add(item),
-          title: `${item.name} (${item.unit})`,
+          title: [item.name, attributeSummary(item.attributes), `(${item.unit})`]
+          .filter(Boolean).join(' · '),
         },
           h('span.mx-tile-name', item.name),
+          // The variables are what tell two similar parts apart on a shelf, so
+          // they belong on the tile rather than behind a tap.
+          attributeSummary(item.attributes)
+            ? h('span.mx-tile-attrs', attributeSummary(item.attributes))
+            : null,
           h('span.mx-tile-unit', item.unit),
           qty ? h('span.mx-tile-qty', String(qty)) : null,
         );
@@ -136,7 +147,10 @@ export async function renderMxIssue(params = {}) {
         h('div.mx-basket-lines',
           lines.length
             ? lines.map(({ item, qty }) => h('div.mx-line',
-              h('span.mx-line-name', item.name),
+              h('span.mx-line-name', item.name,
+                attributeSummary(item.attributes)
+                  ? h('small.muted', ` ${attributeSummary(item.attributes)}`)
+                  : null),
               h('div.mx-step',
                 h('button', { onclick: () => add(item, -1) }, '−'),
                 h('input', {

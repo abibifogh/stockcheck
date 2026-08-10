@@ -1,0 +1,12 @@
+-- Descriptive variables on a part: size, colour, rating, material — whatever
+-- this hotel actually needs to tell two similar things apart.
+--
+-- Stored as one JSON object rather than a table of rows per attribute. There is
+-- no reporting on these and never should be: they exist so a technician grabs
+-- the right bulb, not so anybody can total spend by colour. A column keeps them
+-- attached to the part they describe and out of every join.
+--
+-- Safe to run more than once? No — SQLite has no "ADD COLUMN IF NOT EXISTS".
+-- Running it twice reports "duplicate column name: attributes", which is
+-- harmless and means it was already there.
+ALTER TABLE mx_items ADD COLUMN attributes TEXT;

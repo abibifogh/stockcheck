@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { fmtMoney, fmtQty, h, mount, toast } from '../util.js';
+import { attributeSummary, fmtMoney, fmtQty, h, mount, parseAttributes, toast } from '../util.js';
 import { card, table } from './components.js';
 
 /**
@@ -138,6 +138,7 @@ function itemsCard(data, reload) {
   const opening = h('input', { type: 'number', step: 'any', min: '0', placeholder: '0' });
   const cost = h('input', { type: 'number', step: 'any', min: '0', placeholder: '0' });
   const common = h('input', { type: 'checkbox' });
+  const attributes = attributeEditor(null, data.items);
 
   const add = async (event) => {
     if (!name.value.trim()) { toast('Give the part a name', 'bad'); return; }
@@ -151,6 +152,7 @@ function itemsCard(data, reload) {
         openingStock: opening.value || 0,
         defaultUnitCost: cost.value || 0,
         isCommon: common.checked,
+        attributes: attributes.value(),
       });
       toast('Part added', 'good');
       reload();
@@ -173,7 +175,10 @@ function itemsCard(data, reload) {
       h('label.field', h('span', 'Price each'), cost),
       h('label.field', h('span', 'Everyday part'), common),
     ),
-    h('button.btn-primary', { style: { marginTop: '.6rem' }, onclick: add }, 'Add part'),
+    h('div', { style: { marginTop: '.8rem', maxWidth: '520px' } },
+      h('div.stat-label', { style: { marginBottom: '.4rem' } }, 'Details (optional)'),
+      attributes.el),
+    h('button.btn-primary', { style: { marginTop: '.8rem' }, onclick: add }, 'Add part'),
 
     h('div', { style: { marginTop: '1.2rem' } },
       table([
@@ -182,7 +187,10 @@ function itemsCard(data, reload) {
           label: 'Part',
           format: (v, r) => h('div',
             h('div', v, r.is_common ? h('span.pill.info', { style: { marginLeft: '.4rem' } }, 'everyday') : null),
-            h('small.muted', data.categories.find((c) => c.id === r.category_id)?.name ?? 'Uncategorised'),
+            h('small.muted', [
+              data.categories.find((c) => c.id === r.category_id)?.name ?? 'Uncategorised',
+              attributeSummary(r.attributes),
+            ].filter(Boolean).join(' · ')),
           ),
         },
         { key: 'unit', label: 'Unit' },
@@ -212,6 +220,77 @@ function itemsCard(data, reload) {
   );
 }
 
+/**
+ * The variables an administrator puts on a part: size, colour, rating, whatever
+ * this hotel uses to tell two similar things apart.
+ *
+ * Labels are suggested from what is already in use rather than fixed, so the
+ * list stays consistent without anybody being told what a part is allowed to
+ * have. Free-form was the only honest choice — one hotel sorts bulbs by
+ * wattage and colour temperature, the next by fitting and lumens.
+ */
+function attributeEditor(initial, allItems) {
+  const rows = Object.entries(parseAttributes(initial)).map(([label, value]) => ({ label, value }));
+  const host = h('div', { style: { display: 'grid', gap: '.4rem' } });
+
+  // Labels already in use anywhere, so "Colour" does not become "colour".
+  const known = new Set();
+  for (const item of allItems ?? []) {
+    for (const label of Object.keys(parseAttributes(item.attributes))) known.add(label);
+  }
+  for (const suggestion of ['Size', 'Colour', 'Rating', 'Material', 'Fitting', 'Model', 'Finish']) {
+    known.add(suggestion);
+  }
+  const listId = `mx-attr-labels-${Math.random().toString(36).slice(2, 8)}`;
+  const datalist = h('datalist', { id: listId }, [...known].sort().map((l) => h('option', { value: l })));
+
+  const draw = () => {
+    mount(host,
+      datalist,
+      rows.length
+        ? rows.map((row, index) => h('div', {
+          style: { display: 'grid', gridTemplateColumns: '1fr 1.4fr auto', gap: '.4rem' },
+        },
+          h('input', {
+            type: 'text', placeholder: 'Detail (e.g. Size)', value: row.label,
+            list: listId, maxlength: 40,
+            oninput: (e) => { row.label = e.target.value; },
+          }),
+          h('input', {
+            type: 'text', placeholder: 'Value (e.g. 9W)', value: row.value, maxlength: 80,
+            oninput: (e) => { row.value = e.target.value; },
+          }),
+          h('button.btn-sm.btn-ghost', {
+            onclick: () => { rows.splice(index, 1); draw(); },
+          }, '✕'),
+        ))
+        : h('p.muted', { style: { fontSize: '.84rem', margin: 0 } },
+          'No details yet — add size, colour or anything else that tells this part '
+          + 'apart from a similar one.'),
+      h('button.btn-sm', {
+        style: { marginTop: '.2rem', justifySelf: 'start' },
+        onclick: () => { rows.push({ label: '', value: '' }); draw(); },
+      }, '+ Add a detail'),
+    );
+  };
+  draw();
+
+  return {
+    el: host,
+    // Half-filled rows are dropped rather than refused: somebody who started
+    // typing and thought better of it has not made a mistake worth a dialog.
+    value: () => {
+      const out = {};
+      for (const row of rows) {
+        const label = row.label.trim();
+        const value = row.value.trim();
+        if (label && value) out[label] = value;
+      }
+      return Object.keys(out).length ? out : null;
+    },
+  };
+}
+
 function editItem(item, data, reload) {
   const name = h('input', { type: 'text', value: item.name, maxlength: 100 });
   const unit = h('input', { type: 'text', value: item.unit, maxlength: 20 });
@@ -224,6 +303,7 @@ function editItem(item, data, reload) {
   const opening = h('input', { type: 'number', step: 'any', min: '0', value: String(item.opening_stock) });
   const cost = h('input', { type: 'number', step: 'any', min: '0', value: String(item.default_unit_cost) });
   const common = h('input', { type: 'checkbox', checked: Boolean(item.is_common) });
+  const attributes = attributeEditor(item.attributes, data.items);
   const error = h('p.form-error');
 
   const save = async (event) => {
@@ -237,6 +317,7 @@ function editItem(item, data, reload) {
         openingStock: opening.value || 0,
         defaultUnitCost: cost.value || 0,
         isCommon: common.checked,
+        attributes: attributes.value(),
         active: true,
       });
       toast('Saved', 'good');
@@ -263,6 +344,9 @@ function editItem(item, data, reload) {
     h('label.field', h('span', 'Opening stock'), opening),
     h('label.field', h('span', 'Price each'), cost),
     h('label.field', h('span', 'Show on the issue screen without searching'), common),
+    h('div', { style: { marginTop: '.7rem' } },
+      h('div.stat-label', { style: { marginBottom: '.4rem' } }, 'Details'),
+      attributes.el),
     error,
     h('div.btn-row', { style: { justifyContent: 'flex-end', marginTop: '.8rem' } },
       h('button', { onclick: () => dialog.close() }, 'Cancel'),

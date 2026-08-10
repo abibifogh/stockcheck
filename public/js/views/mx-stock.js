@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import { navigate } from '../app.js';
-import { fmtMoney, fmtNum, fmtQty, h, mount, toast, todayISO } from '../util.js';
+import { attributeSummary, fmtMoney, fmtNum, fmtQty, h, mount, toast, todayISO } from '../util.js';
 import { card, statTile, table } from './components.js';
 import { printButton } from '../print.js';
 
@@ -83,7 +83,7 @@ export async function renderMxStock() {
         note: 'Everything below its restock level, worst first',
       },
         table([
-          { key: 'name', label: 'Part', format: (v, r) => h('div', h('div', v), h('small.muted', r.categoryName)) },
+          { key: 'name', label: 'Part', format: (v, r) => h('div', h('div', v), h('small.muted', [r.categoryName, attributeSummary(r.attributes)].filter(Boolean).join(' · '))) },
           { key: 'stock', label: 'On shelf', align: 'right', format: (v, r) => fmtQty(v, r.unit) },
           { key: 'parLevel', label: 'Level', align: 'right', format: (v, r) => fmtQty(v, r.unit) },
           { key: 'suggestedOrder', label: 'Order', align: 'right', format: (v, r) => h('strong', fmtQty(v, r.unit)) },
@@ -103,7 +103,7 @@ export async function renderMxStock() {
       note: 'Type a figure in the last column to record a physical count',
     },
       table([
-        { key: 'name', label: 'Part', format: (v, r) => h('div', h('div', v), h('small.muted', r.categoryName)) },
+        { key: 'name', label: 'Part', format: (v, r) => h('div', h('div', v), h('small.muted', [r.categoryName, attributeSummary(r.attributes)].filter(Boolean).join(' · '))) },
         { key: 'stock', label: 'On shelf', align: 'right', format: (v, r) => fmtQty(v, r.unit) },
         { key: 'parLevel', label: 'Level', align: 'right', format: (v, r) => fmtQty(v, r.unit) },
         { key: 'unitCost', label: 'Each', align: 'right', format: (v) => fmtMoney(v, { withSymbol: false }) },
@@ -153,7 +153,7 @@ export async function renderMxStock() {
     data.idle.length
       ? card('Not touched in three months', { wide: true, note: 'Money standing still' },
         table([
-          { key: 'name', label: 'Part', format: (v, r) => h('div', h('div', v), h('small.muted', r.categoryName)) },
+          { key: 'name', label: 'Part', format: (v, r) => h('div', h('div', v), h('small.muted', [r.categoryName, attributeSummary(r.attributes)].filter(Boolean).join(' · '))) },
           { key: 'stock', label: 'On shelf', align: 'right', format: (v, r) => fmtQty(v, r.unit) },
           { key: 'value', label: 'Value', align: 'right', format: (v) => fmtMoney(v, { withSymbol: false }) },
         ], data.idle),
