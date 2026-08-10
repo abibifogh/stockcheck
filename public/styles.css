@@ -383,6 +383,10 @@ body:has(.entry-footer) .toasts { bottom: calc(4.75rem + env(safe-area-inset-bot
 
 @media (max-width: 720px) {
   .stat-value { font-size: 1.45rem; }
+  /* The guest counts scroll away with everything else on a phone. Pinned, they
+     ate a third of the screen under an already-tall header, leaving barely
+     enough room for the item list they are supposed to sit above. */
+  .entry-guests { position: static; }
 }
 
 

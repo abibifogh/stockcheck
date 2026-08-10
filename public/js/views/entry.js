@@ -25,9 +25,6 @@ export async function renderEntry(params) {
     outside: data.service.outside_guests,
     note: data.service.note || '',
   };
-  // Set by an administrator, shown here only so the kitchen can see what the
-  // outside guests are being charged. The server ignores anything sent for it.
-  const outsiderFee = Number(data.outsiderFee) || 0;
   const allowFillUsual = data.allowFillUsual !== false;
   const requireComplete = data.requireComplete !== false;
   const requiredIds = new Set(data.requiredIngredientIds || []);
@@ -153,15 +150,6 @@ export async function renderEntry(params) {
         counter(() => service.inhouse, (v) => { service.inhouse = v; })),
       h('label.field', h('span', 'Outside guests (paying)'),
         counter(() => service.outside, (v) => { service.outside = v; })),
-      h('label.field', h('span', 'Fee per outsider'),
-        h('div', {
-          style: {
-            padding: '.5rem .65rem', border: '1px dashed var(--border-strong)',
-            borderRadius: 'var(--radius-sm)', color: 'var(--text-dim)',
-            fontVariantNumeric: 'tabular-nums',
-          },
-          title: 'Set by your administrator',
-        }, `${state.settings.currency || 'GHS'} ${fmtNum(outsiderFee, 2)}`)),
       h('label.field', h('span', 'Note (optional)'),
         h('input', {
           type: 'text', placeholder: 'Buffet change, event, …', value: service.note,
