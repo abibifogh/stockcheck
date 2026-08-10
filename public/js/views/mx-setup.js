@@ -22,6 +22,7 @@ export async function renderMxSetup() {
       ),
     ),
     roomsCard(areas.areas, reload),
+    bulkPartsCard(data, reload),
     itemsCard(data, reload),
   );
 
@@ -121,6 +122,170 @@ function roomsCard(areas, reload) {
           }, 'Remove'),
         },
       ], areas, { empty: 'No rooms or areas yet.' })),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Bulk upload
+// ---------------------------------------------------------------------------
+
+/**
+ * Loading the parts list from a spreadsheet.
+ *
+ * Adding thirty-five parts one form at a time is how a store gets set up with
+ * eight of them. The template comes down pre-filled with whatever is already
+ * there, so the same file works to create the list, correct prices across the
+ * board, or re-level everything after a stocktake.
+ *
+ * Details are ordinary columns: a "Size" column makes every part in it have a
+ * size. That is how somebody would lay the sheet out anyway.
+ */
+function bulkPartsCard(data, reload) {
+  const fileInput = h('input', { type: 'file', accept: '.csv,text/csv' });
+  const existing = h('select',
+    h('option', { value: '0' }, 'Skip parts that are already in the list'),
+    h('option', { value: '1' }, 'Update parts that are already in the list'),
+  );
+
+  const resultHost = h('div');
+  let csvText = null;
+  let ready = false;
+
+  const applyBtn = h('button.btn-primary', {
+    disabled: true,
+    onclick: async (event) => {
+      if (!csvText || !ready) return;
+      if (!confirm('Import these parts now?')) return;
+      event.target.disabled = true;
+      try {
+        const result = await api.mxImportParts({
+          csv: csvText, apply: true, overwrite: existing.value === '1',
+        });
+        toast(`${result.created} added, ${result.updated} updated`, 'good');
+        reload();
+      } catch (err) {
+        toast(err.message, 'bad');
+        event.target.disabled = false;
+      }
+    },
+  }, 'Import for real');
+
+  const preview = async () => {
+    if (!csvText) { toast('Choose a file first', 'bad'); return; }
+    mount(resultHost, h('div.skeleton', { style: { height: '60px' } }));
+    try {
+      const result = await api.mxImportParts({
+        csv: csvText, apply: false, overwrite: existing.value === '1',
+      });
+      ready = result.canApply;
+      applyBtn.disabled = !ready;
+      mount(resultHost, previewReport(result));
+    } catch (err) {
+      ready = false;
+      applyBtn.disabled = true;
+      mount(resultHost, h('div.alert.high',
+        h('span.alert-icon', '⛔'),
+        h('div', h('div.alert-title', 'That file could not be read'), h('div.alert-detail', err.message))));
+    }
+  };
+
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    csvText = await file.text();
+    ready = false;
+    applyBtn.disabled = true;
+    preview();
+  });
+
+  return card('Load the parts list from a spreadsheet', {
+    wide: true,
+    note: 'For setting the store up, or changing a lot of parts at once',
+  },
+    h('div.btn-row', { style: { marginBottom: '.8rem' } },
+      h('a.btn.btn-sm', { href: api.mxPartsTemplateUrl(), download: '' }, '⬇ Download the template'),
+    ),
+    h('p.muted', { style: { fontSize: '.85rem' } },
+      'The template comes down with the parts you already have, so you can correct them in a '
+      + 'spreadsheet and load them back. Add rows for anything new.'),
+    h('p.muted', { style: { fontSize: '.85rem' } },
+      h('strong', 'Sizes, colours and the rest are just columns. '),
+      'Any column that is not one of the standard ones becomes a detail on the part — put “15W” '
+      + 'under a Size column and “Chrome” under a Colour column, and that is what you get. Leave a '
+      + 'cell blank and that part simply has no such detail.'),
+    h('div.field-row',
+      h('label.field', h('span', 'Your filled-in file'), fileInput),
+      h('label.field', h('span', 'If a part is already there'), existing),
+    ),
+    h('div.btn-row', h('button', { onclick: preview }, 'Check the file'), applyBtn),
+    h('div', { style: { marginTop: '.9rem' } }, resultHost),
+  );
+}
+
+function previewReport(result) {
+  const s = result.summary;
+
+  return h('div',
+    h('div.grid.grid-4', { style: { marginBottom: '.8rem' } },
+      h('div.stat', h('div.stat-label', 'Rows read'), h('div.stat-value', String(s.rowsRead))),
+      h('div.stat', h('div.stat-label', 'Will be added'),
+        h('div.stat-value', { style: { color: 'var(--good)' } }, String(s.willCreate))),
+      h('div.stat', h('div.stat-label', 'Will be updated'),
+        h('div.stat-value', { style: { color: s.willUpdate ? 'var(--c3)' : undefined } }, String(s.willUpdate))),
+      h('div.stat', h('div.stat-label', 'Left alone'), h('div.stat-value', String(s.willSkip))),
+    ),
+
+    s.detailColumns?.length
+      ? h('div.guide-note', { style: { marginTop: 0 } },
+        h('strong', 'Details found: '), s.detailColumns.join(', '),
+        '. Every value in those columns becomes a detail on that part.')
+      : h('div.guide-note', { style: { marginTop: 0 } },
+        h('strong', 'No detail columns. '),
+        'Add columns like Size or Colour to the spreadsheet if you want them.'),
+
+    s.newCategories?.length
+      ? h('div.guide-note', h('strong', 'New categories will be created: '), s.newCategories.join(', '))
+      : null,
+
+    s.errorCount
+      ? h('div.alert.high', { style: { marginTop: '.7rem' } },
+        h('span.alert-icon', '⛔'),
+        h('div',
+          h('div.alert-title', `${s.errorCount} ${s.errorCount === 1 ? 'problem' : 'problems'} to fix first`),
+          h('div.alert-detail', h('ul', { style: { margin: '.3rem 0 0', paddingLeft: '1.1rem' } },
+            s.errors.map((e) => h('li', e)))),
+        ))
+      : null,
+
+    s.willSkip && !s.errorCount
+      ? h('p.muted', { style: { fontSize: '.83rem' } },
+        `${s.willSkip} ${s.willSkip === 1 ? 'part is' : 'parts are'} already in the list and will be `
+        + 'left as they are. Choose “Update parts that are already in the list” above to change them.')
+      : null,
+
+    result.preview?.length
+      ? h('div', { style: { marginTop: '.8rem' } },
+        h('div.stat-label', { style: { marginBottom: '.4rem' } }, 'A sample of what will happen'),
+        table([
+          { key: 'line', label: 'Row', format: (v) => h('span.muted', String(v)) },
+          {
+            key: 'action',
+            label: '',
+            format: (v) => h(`span.pill.${v === 'create' ? 'good' : 'warn'}`, v === 'create' ? 'add' : 'update'),
+          },
+          { key: 'name', label: 'Part' },
+          { key: 'category', label: 'Category', format: (v) => v || h('span.muted', '—') },
+          { key: 'unit', label: 'Unit' },
+          { key: 'parLevel', label: 'Restock at', align: 'right' },
+          { key: 'openingStock', label: 'On shelf', align: 'right' },
+          { key: 'defaultUnitCost', label: 'Price each', align: 'right', format: (v) => fmtMoney(v, { withSymbol: false }) },
+          {
+            key: 'attributes',
+            label: 'Details',
+            format: (v) => (attributeSummary(v) ? h('span.muted', attributeSummary(v)) : '—'),
+          },
+        ], result.preview))
+      : null,
   );
 }
 

@@ -777,6 +777,28 @@ const SECTIONS = [
           + 'show under its name on the issue screen and in the stock list, and searching matches '
           + 'them, so somebody can type “9W” or “chrome” instead of hunting through the list.'),
       ),
+      h('h3', { style: { marginTop: '1.1rem' } }, 'Loading the whole list from a spreadsheet'),
+      h('p', 'Adding thirty parts one form at a time is how a store ends up with eight of them. '
+        + 'Download the template, fill it in, upload it, and check the preview before anything is '
+        + 'written.'),
+      steps(
+        h('span', h('strong', 'Download the template.'), ' It comes down with the parts you already '
+          + 'have, so the same file works whether you are setting up from nothing, correcting prices '
+          + 'across the board, or re-levelling after a stocktake.'),
+        h('span', h('strong', 'Sizes and colours are just columns.'), ' Any column that is not one of '
+          + 'the standard ones becomes a detail: put “15W” under a Size column and “Chrome” under a '
+          + 'Colour column and that is exactly what you get. A blank cell means that part has no such '
+          + 'detail. Add your own columns for anything you need.'),
+        h('span', h('strong', 'Upload it and read the preview.'), ' It tells you how many will be '
+          + 'added, how many updated, which detail columns it found, and any new categories it will '
+          + 'create. Nothing is written until you press Import.'),
+        h('span', h('strong', 'Choose what happens to parts already on the list.'), ' Skipped by '
+          + 'default, so an accidental re-upload changes nothing. Switch to “Update” when you mean '
+          + 'to correct them.'),
+      ),
+      warn('Mistakes stop the whole file.', 'A price that is not a number or a name that appears '
+        + 'twice is listed with its row number, and nothing imports until it is fixed. That is '
+        + 'deliberate — a half-imported list is harder to sort out than one that never went in.'),
       note('Removing something keeps its history.', 'A part or a room that has been used is retired '
         + 'rather than deleted, so past months still add up to what they actually cost.'),
     ),

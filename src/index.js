@@ -134,6 +134,8 @@ const ROUTES = [
   ['PUT', '/api/mx/items/:id', 'mx_setup', mx.updateItem],
   ['DELETE', '/api/mx/items/:id', 'mx_setup', mx.deleteItem],
   ['POST', '/api/mx/categories', 'mx_setup', mx.createCategory],
+  ['GET', '/api/mx/items/template', 'mx_setup', mx.partsTemplate],
+  ['POST', '/api/mx/items/import', 'mx_setup', mx.importParts],
 ];
 
 function match(pattern, pathname) {
