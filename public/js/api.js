@@ -159,6 +159,8 @@ export const api = {
   mxCreateCategory: (body) => request('/api/mx/categories', { method: 'POST', body }),
   mxPartsTemplateUrl: () => '/api/mx/items/template',
   mxImportParts: (body) => request('/api/mx/items/import', { method: 'POST', body }),
+  mxRemoveItems: (ids) => request('/api/mx/items/remove', { method: 'POST', body: { ids } }),
+  mxRemoveAreas: (ids) => request('/api/mx/areas/remove', { method: 'POST', body: { ids } }),
 
   exportUrl: (type, from, to) =>
     `/api/export?${new URLSearchParams({ type, ...(from ? { from } : {}), ...(to ? { to } : {}) })}`,

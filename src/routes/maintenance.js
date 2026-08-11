@@ -830,3 +830,85 @@ export async function importParts(ctx) {
 
   return json({ applied: true, created: toCreate.length, updated: toUpdate.length, summary });
 }
+
+// ---------------------------------------------------------------------------
+// Removing several at once
+// ---------------------------------------------------------------------------
+
+/** A list of row ids from the browser, cleaned up and bounded. */
+export function readIds(value) {
+  if (!Array.isArray(value)) throw badRequest('Nothing was selected.');
+  const ids = [...new Set(value.map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+  if (!ids.length) throw badRequest('Nothing was selected.');
+  if (ids.length > 500) throw badRequest('That is more than 500 at once.');
+  return ids;
+}
+
+/**
+ * Which of these ids have history behind them.
+ *
+ * Anything that has been issued, bought or worked in is retired rather than
+ * deleted — deleting would take its history with it and quietly rewrite what
+ * past months cost.
+ */
+async function withHistory(db, ids, queries) {
+  const holes = ids.map(() => '?').join(',');
+  const found = new Set();
+  for (const sql of queries) {
+    const rows = await db.prepare(sql.replace('__IN__', holes)).bind(...ids).all();
+    for (const row of rows.results ?? []) found.add(row.id);
+  }
+  return found;
+}
+
+/** Split a removal into "safe to delete" and "must be retired", then do both. */
+async function removeMany(ctx, { ids, table, historyQueries, action }) {
+  const keep = await withHistory(ctx.db, ids, historyQueries);
+  const retire = ids.filter((id) => keep.has(id));
+  const drop = ids.filter((id) => !keep.has(id));
+
+  // Counted from what the database actually changed rather than from what was
+  // asked for: an id that no longer exists must not be reported as removed.
+  let retired = 0;
+  let deleted = 0;
+
+  if (retire.length) {
+    const result = await ctx.db.prepare(
+      `UPDATE ${table} SET active = 0 WHERE id IN (${retire.map(() => '?').join(',')}) AND active = 1`,
+    ).bind(...retire).run();
+    retired = result.meta?.changes ?? retire.length;
+  }
+  if (drop.length) {
+    const result = await ctx.db.prepare(
+      `DELETE FROM ${table} WHERE id IN (${drop.map(() => '?').join(',')})`,
+    ).bind(...drop).run();
+    deleted = result.meta?.changes ?? drop.length;
+  }
+
+  await audit(ctx, action, null, { deleted, retired });
+  return json({ ok: true, deleted, retired });
+}
+
+export async function removeItems(ctx) {
+  const ids = readIds((await readJson(ctx.request)).ids);
+  return removeMany(ctx, {
+    ids,
+    table: 'mx_items',
+    action: 'mx.items.remove',
+    historyQueries: [
+      'SELECT DISTINCT item_id AS id FROM mx_issues WHERE item_id IN (__IN__)',
+      'SELECT DISTINCT item_id AS id FROM mx_purchases WHERE item_id IN (__IN__)',
+      'SELECT DISTINCT item_id AS id FROM mx_counts WHERE item_id IN (__IN__)',
+    ],
+  });
+}
+
+export async function removeAreas(ctx) {
+  const ids = readIds((await readJson(ctx.request)).ids);
+  return removeMany(ctx, {
+    ids,
+    table: 'mx_areas',
+    action: 'mx.areas.remove',
+    historyQueries: ['SELECT DISTINCT area_id AS id FROM mx_issues WHERE area_id IN (__IN__)'],
+  });
+}

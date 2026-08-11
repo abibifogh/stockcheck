@@ -790,3 +790,17 @@ body:has(.entry-footer) .toasts[popover] { bottom: calc(4.75rem + env(safe-area-
   font-size: .75rem; color: var(--accent);
   line-height: 1.2; margin-top: -.05rem;
 }
+
+/* A bar that appears once rows are ticked, so what you are about to remove and
+   the button that removes it are never in different parts of the page. */
+.bulk-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: .6rem;
+  padding: .55rem .8rem; margin-bottom: .6rem;
+  border: 1px solid var(--accent); border-radius: var(--radius-sm);
+  background: var(--accent-soft); color: var(--accent);
+  font-size: .88rem; font-weight: 600;
+}
+
+td.tick, th.tick { width: 34px; padding-right: 0; }
+td.tick input, th.tick input { cursor: pointer; }

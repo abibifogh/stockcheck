@@ -30,6 +30,98 @@ export async function renderMxSetup() {
 }
 
 // ---------------------------------------------------------------------------
+// Selecting several rows
+// ---------------------------------------------------------------------------
+
+/**
+ * Tick boxes down the side of a table, and a bar that appears when anything is
+ * ticked.
+ *
+ * Clearing out a hotel's worth of rooms one confirm dialog at a time is the
+ * sort of chore that gets abandoned half way, leaving a list that is worse than
+ * either the old one or the new one.
+ *
+ * The header box is three-state on purpose: ticked when everything is, dashed
+ * when only some are, so it says what it will do before you press it.
+ */
+function selection(rows, onChange) {
+  const chosen = new Set();
+  const boxes = new Map();
+  let headBox = null;
+
+  const refresh = () => {
+    if (headBox) {
+      headBox.checked = chosen.size > 0 && chosen.size === rows.length;
+      headBox.indeterminate = chosen.size > 0 && chosen.size < rows.length;
+    }
+    onChange(chosen);
+  };
+
+  return {
+    chosen,
+    clear: () => { chosen.clear(); for (const box of boxes.values()) box.checked = false; refresh(); },
+
+    headerBox: () => {
+      headBox = h('input', {
+        type: 'checkbox',
+        title: 'Select all',
+        onchange: (e) => {
+          chosen.clear();
+          if (e.target.checked) for (const row of rows) chosen.add(row.id);
+          for (const [id, box] of boxes) box.checked = chosen.has(id);
+          refresh();
+        },
+      });
+      return headBox;
+    },
+
+    rowBox: (row) => {
+      const box = h('input', {
+        type: 'checkbox',
+        checked: chosen.has(row.id),
+        onchange: (e) => {
+          if (e.target.checked) chosen.add(row.id);
+          else chosen.delete(row.id);
+          refresh();
+        },
+      });
+      boxes.set(row.id, box);
+      return box;
+    },
+  };
+}
+
+/** The bar that appears once something is ticked. */
+function selectionBar({ noun, onRemove, onClear }) {
+  const label = h('span');
+  const bar = h('div.bulk-bar', { style: { display: 'none' } },
+    label,
+    h('div.btn-row',
+      h('button.btn-sm', { onclick: onClear }, 'Clear'),
+      h('button.btn-sm.btn-danger', { onclick: onRemove }, 'Remove selected'),
+    ),
+  );
+
+  return {
+    el: bar,
+    update: (chosen) => {
+      bar.style.display = chosen.size ? '' : 'none';
+      label.textContent = `${chosen.size} ${chosen.size === 1 ? noun : `${noun}s`} selected`;
+    },
+  };
+}
+
+/** One place to say what happened, since deleting and retiring both can. */
+function describeRemoval(result, noun) {
+  const parts = [];
+  if (result.deleted) parts.push(`${result.deleted} removed`);
+  if (result.retired) {
+    parts.push(`${result.retired} retired — ${result.retired === 1 ? 'it has' : 'they have'} history worth keeping`);
+  }
+  return parts.join(', ') || `No ${noun}s were changed`;
+}
+
+// ---------------------------------------------------------------------------
 // Rooms and areas
 // ---------------------------------------------------------------------------
 
@@ -74,6 +166,26 @@ function roomsCard(areas, reload) {
   const rooms = areas.filter((a) => a.kind === 'room');
   const places = areas.filter((a) => a.kind === 'area');
 
+  const picked = selection(areas, (chosen) => bar.update(chosen));
+  const bar = selectionBar({
+    noun: 'place',
+    onClear: () => picked.clear(),
+    onRemove: async (event) => {
+      const ids = [...picked.chosen];
+      if (!confirm(`Remove ${ids.length} ${ids.length === 1 ? 'place' : 'places'}? `
+        + 'Any that have had parts issued to them are retired instead, so their history survives.')) return;
+      event.target.disabled = true;
+      try {
+        const result = await api.mxRemoveAreas(ids);
+        toast(describeRemoval(result, 'place'), 'good');
+        reload();
+      } catch (err) {
+        toast(err.message, 'bad');
+        event.target.disabled = false;
+      }
+    },
+  });
+
   return card('Rooms and areas', {
     wide: true,
     note: `${rooms.length} rooms · ${places.length} other areas`,
@@ -98,7 +210,9 @@ function roomsCard(areas, reload) {
     h('button.btn-sm', { style: { marginTop: '.6rem' }, onclick: addOne }, 'Add'),
 
     h('div', { style: { marginTop: '1.2rem' } },
+      bar.el,
       table([
+        { key: 'id', label: picked.headerBox(), cls: 'tick', format: (_v, row) => picked.rowBox(row) },
         { key: 'name', label: 'Name' },
         { key: 'kind', label: 'Kind', format: (v) => h(`span.pill.${v === 'room' ? 'info' : ''}`, v) },
         { key: 'block', label: 'Block', format: (v) => v || h('span.muted', '—') },
@@ -327,6 +441,26 @@ function itemsCard(data, reload) {
     }
   };
 
+  const picked = selection(data.items, (chosen) => bar.update(chosen));
+  const bar = selectionBar({
+    noun: 'part',
+    onClear: () => picked.clear(),
+    onRemove: async (event) => {
+      const ids = [...picked.chosen];
+      if (!confirm(`Remove ${ids.length} ${ids.length === 1 ? 'part' : 'parts'}? `
+        + 'Any that have been issued or bought are retired instead, so past months still add up.')) return;
+      event.target.disabled = true;
+      try {
+        const result = await api.mxRemoveItems(ids);
+        toast(describeRemoval(result, 'part'), 'good');
+        reload();
+      } catch (err) {
+        toast(err.message, 'bad');
+        event.target.disabled = false;
+      }
+    },
+  });
+
   return card('The parts list', {
     wide: true,
     note: 'Everyday parts appear on the issue screen without searching',
@@ -346,7 +480,9 @@ function itemsCard(data, reload) {
     h('button.btn-primary', { style: { marginTop: '.8rem' }, onclick: add }, 'Add part'),
 
     h('div', { style: { marginTop: '1.2rem' } },
+      bar.el,
       table([
+        { key: 'id', label: picked.headerBox(), cls: 'tick', format: (_v, row) => picked.rowBox(row) },
         {
           key: 'name',
           label: 'Part',

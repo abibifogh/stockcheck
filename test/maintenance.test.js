@@ -390,3 +390,28 @@ test('the everyday-part column accepts the ways people write yes', async () => {
     assert.equal(yesish(no), false, `${JSON.stringify(no)} should not mean yes`);
   }
 });
+
+// ----------------------------------------------------------- bulk removal --
+
+test('a selection sent from the browser is cleaned before it touches anything', async () => {
+  const { readIds } = await import('../src/routes/maintenance.js');
+
+  assert.deepEqual(readIds([3, 1, 2]), [3, 1, 2]);
+  // Checkbox values arrive as strings, and a row ticked twice is still one row.
+  assert.deepEqual(readIds(['4', 4, '5']), [4, 5]);
+
+  // Anything that is not a real row id is dropped rather than passed to SQL.
+  assert.deepEqual(readIds([1, 'x', null, -2, 0, 1.5, NaN]), [1]);
+});
+
+test('an empty or impossible selection is refused rather than guessed at', async () => {
+  const { readIds } = await import('../src/routes/maintenance.js');
+
+  for (const bad of [[], ['x'], [0], [-1], null, undefined, 'all', 42, {}]) {
+    assert.throws(() => readIds(bad), /Nothing was selected/, `${JSON.stringify(bad)} should be refused`);
+  }
+
+  assert.throws(() => readIds(Array.from({ length: 501 }, (_, i) => i + 1)), /more than 500/);
+  // Exactly at the limit is fine.
+  assert.equal(readIds(Array.from({ length: 500 }, (_, i) => i + 1)).length, 500);
+});

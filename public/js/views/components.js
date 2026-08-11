@@ -52,7 +52,7 @@ export function table(columns, rows, { rowClass = null, empty = 'No data yet.' }
   return h('div.table-wrap',
     h('table',
       h('thead', h('tr', columns.map((c) =>
-        h(`th${c.align === 'right' ? '.num' : ''}`, c.label)))),
+        h(`th${c.align === 'right' ? '.num' : ''}${c.cls ? `.${c.cls}` : ''}`, c.label)))),
       h('tbody', rows.map((row) => h('tr', { class: rowClass ? rowClass(row) : '' },
         columns.map((c) => {
           const value = row[c.key];

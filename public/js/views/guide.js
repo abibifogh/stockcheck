@@ -799,8 +799,12 @@ const SECTIONS = [
       warn('Mistakes stop the whole file.', 'A price that is not a number or a name that appears '
         + 'twice is listed with its row number, and nothing imports until it is fixed. That is '
         + 'deliberate — a half-imported list is harder to sort out than one that never went in.'),
+      note('Removing several at once.', 'Tick the boxes down the left of either list and a bar '
+        + 'appears with “Remove selected”. The box in the heading takes the lot. Useful after a '
+        + 'bulk upload with a mistake in it, or when a floor closes.'),
       note('Removing something keeps its history.', 'A part or a room that has been used is retired '
-        + 'rather than deleted, so past months still add up to what they actually cost.'),
+        + 'rather than deleted, so past months still add up to what they actually cost. Remove a '
+        + 'mixed batch and it tells you how many of each: “4 removed, 1 retired”.'),
     ),
   },
 
