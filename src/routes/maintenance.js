@@ -1,6 +1,7 @@
 import {
-  badRequest, json, notFound, num, readJson, rethrowConstraint, str,
+  badRequest, csvResponse, json, notFound, num, readJson, rethrowConstraint, str,
 } from '../lib/http.js';
+import { parseCsv } from './importing.js';
 import {
   compare as compareRanges, loadDataset, overview as overviewReport, periodReport, stockReport,
 } from '../lib/maintenance.js';
@@ -572,4 +573,260 @@ export async function areaDetail(ctx, id) {
       note: i.note,
     })),
   });
+}
+
+// ---------------------------------------------------------------------------
+// Bulk upload of parts
+// ---------------------------------------------------------------------------
+
+/**
+ * The fixed columns. Anything else in the header becomes a detail, so a
+ * spreadsheet with Size and Colour columns produces parts with a size and a
+ * colour — which is how somebody would lay it out anyway without being told.
+ */
+const PART_COLUMNS = {
+  name: ['name', 'part', 'item', 'partname', 'itemname'],
+  category: ['category', 'group'],
+  unit: ['unit', 'measuredin', 'measure', 'uom'],
+  parLevel: ['restocklevel', 'parlevel', 'par', 'reorderlevel', 'minimum'],
+  openingStock: ['onshelfnow', 'openingstock', 'opening', 'instock', 'quantity', 'qty'],
+  defaultUnitCost: ['priceeach', 'unitcost', 'price', 'cost'],
+  isCommon: ['everydaypart', 'everyday', 'common'],
+  note: ['note', 'notes', 'comment'],
+};
+
+export function columnKey(heading) {
+  const flat = String(heading ?? '').replace(/\(.*?\)/g, '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+  for (const [key, aliases] of Object.entries(PART_COLUMNS)) {
+    if (aliases.includes(flat)) return key;
+  }
+  return null;
+}
+
+export function yesish(value) {
+  return ['1', 'y', 'yes', 'true', 'x', 'everyday'].includes(String(value ?? '').trim().toLowerCase());
+}
+
+/** A spreadsheet to fill in, pre-loaded with what is already there. */
+export async function partsTemplate(ctx) {
+  const [items, categories] = await Promise.all([
+    ctx.db.prepare('SELECT * FROM mx_items WHERE active = 1 ORDER BY name').all(),
+    ctx.db.prepare('SELECT name FROM mx_categories ORDER BY sort_order, name').all(),
+  ]);
+
+  const rows = items.results ?? [];
+
+  // Detail columns come from what this hotel already uses, so the template
+  // matches its own vocabulary rather than imposing one.
+  const detailLabels = [];
+  for (const row of rows) {
+    let parsed = {};
+    try { parsed = row.attributes ? JSON.parse(row.attributes) : {}; } catch { parsed = {}; }
+    for (const label of Object.keys(parsed)) {
+      if (!detailLabels.includes(label)) detailLabels.push(label);
+    }
+  }
+  for (const suggested of ['Size', 'Colour']) {
+    if (!detailLabels.includes(suggested)) detailLabels.push(suggested);
+  }
+
+  const header = [
+    'Name', 'Category', 'Unit', 'Restock level', 'On shelf now', 'Price each',
+    'Everyday part', 'Note', ...detailLabels,
+  ];
+
+  const out = [header];
+  for (const row of rows) {
+    let parsed = {};
+    try { parsed = row.attributes ? JSON.parse(row.attributes) : {}; } catch { parsed = {}; }
+    const category = (categories.results ?? []).length
+      ? (await ctx.db.prepare('SELECT name FROM mx_categories WHERE id = ?').bind(row.category_id).first())?.name ?? ''
+      : '';
+    out.push([
+      row.name, category, row.unit, row.par_level, row.opening_stock,
+      row.default_unit_cost, row.is_common ? 'yes' : '', row.note ?? '',
+      ...detailLabels.map((label) => parsed[label] ?? ''),
+    ]);
+  }
+
+  if (!rows.length) {
+    out.push(['LED Bulb 15W', 'Electrical', 'pcs', 20, 0, 30, 'yes', 'example row — delete before importing',
+      ...detailLabels.map((l) => (l === 'Size' ? '15W' : l === 'Colour' ? 'Daylight' : ''))]);
+  }
+
+  return csvResponse('maintenance-parts-template.csv', out);
+}
+
+/**
+ * Read a filled-in spreadsheet.
+ *
+ * Nothing is written unless `apply` is set, so the preview and the real import
+ * run exactly the same code and cannot disagree about what will happen.
+ */
+export async function importParts(ctx) {
+  const body = await readJson(ctx.request);
+  const apply = body.apply === true;
+  const overwrite = body.overwrite === true;
+
+  const rows = parseCsv(body.csv ?? '');
+  if (rows.length < 2) throw badRequest('That file has no rows in it.');
+
+  const header = rows[0];
+  const mapped = header.map(columnKey);
+  if (!mapped.includes('name')) {
+    throw badRequest('That file needs a “Name” column. Download the template and fill that in.');
+  }
+  if (rows.length > 1001) throw badRequest('That is more than 1000 parts in one file.');
+
+  const [existingItems, existingCategories] = await Promise.all([
+    ctx.db.prepare('SELECT id, name FROM mx_items').all(),
+    ctx.db.prepare('SELECT id, name FROM mx_categories').all(),
+  ]);
+  const byName = new Map((existingItems.results ?? []).map((r) => [r.name.trim().toLowerCase(), r]));
+  const categoryByName = new Map((existingCategories.results ?? []).map((r) => [r.name.trim().toLowerCase(), r]));
+
+  const errors = [];
+  const newCategories = new Set();
+  const toCreate = [];
+  const toUpdate = [];
+  const skipped = [];
+  const seen = new Set();
+
+  for (let i = 1; i < rows.length; i++) {
+    const line = i + 1; // what the spreadsheet calls this row
+    const row = rows[i];
+    const get = (key) => {
+      const at = mapped.indexOf(key);
+      return at === -1 ? '' : String(row[at] ?? '').trim();
+    };
+
+    const name = get('name');
+    if (!name) { errors.push(`Row ${line}: no name.`); continue; }
+    if (name.length > 100) { errors.push(`Row ${line}: that name is too long.`); continue; }
+    if (/^example row/i.test(get('note'))) continue; // the template's own sample
+
+    const key = name.toLowerCase();
+    if (seen.has(key)) { errors.push(`Row ${line}: “${name}” appears more than once in this file.`); continue; }
+    seen.add(key);
+
+    const number = (value, label) => {
+      if (value === '') return 0;
+      const n = Number(String(value).replace(/[, ]/g, ''));
+      if (!Number.isFinite(n) || n < 0) { errors.push(`Row ${line}: ${label} “${value}” is not a number.`); return null; }
+      return n;
+    };
+
+    const parLevel = number(get('parLevel'), 'restock level');
+    const openingStock = number(get('openingStock'), 'opening stock');
+    const unitCost = number(get('defaultUnitCost'), 'price');
+    if (parLevel == null || openingStock == null || unitCost == null) continue;
+
+    // Every unrecognised column becomes a detail on the part.
+    const details = {};
+    for (let c = 0; c < header.length; c++) {
+      if (mapped[c]) continue;
+      const label = String(header[c] ?? '').trim();
+      const value = String(row[c] ?? '').trim();
+      if (!label || !value) continue;
+      if (label.length > 40 || value.length > 80) {
+        errors.push(`Row ${line}: the “${label.slice(0, 20)}” detail is too long.`);
+        continue;
+      }
+      details[label] = value;
+    }
+    if (Object.keys(details).length > 12) {
+      errors.push(`Row ${line}: more than 12 details.`);
+      continue;
+    }
+
+    const categoryName = get('category');
+    if (categoryName && !categoryByName.has(categoryName.toLowerCase())) newCategories.add(categoryName);
+
+    const record = {
+      line,
+      name,
+      categoryName: categoryName || null,
+      unit: get('unit') || 'pcs',
+      parLevel,
+      openingStock,
+      defaultUnitCost: unitCost,
+      isCommon: yesish(get('isCommon')),
+      note: get('note') || null,
+      attributes: Object.keys(details).length ? JSON.stringify(details) : null,
+    };
+
+    const already = byName.get(key);
+    if (!already) toCreate.push(record);
+    else if (overwrite) toUpdate.push({ ...record, id: already.id });
+    else skipped.push(record);
+  }
+
+  const summary = {
+    rowsRead: rows.length - 1,
+    willCreate: toCreate.length,
+    willUpdate: toUpdate.length,
+    willSkip: skipped.length,
+    newCategories: [...newCategories],
+    detailColumns: header.filter((_, c) => !mapped[c]).map((x) => String(x).trim()).filter(Boolean),
+    errors: errors.slice(0, 25),
+    errorCount: errors.length,
+  };
+
+  const preview = [...toCreate.slice(0, 10), ...toUpdate.slice(0, 10)].map((r) => ({
+    line: r.line,
+    name: r.name,
+    category: r.categoryName,
+    unit: r.unit,
+    parLevel: r.parLevel,
+    openingStock: r.openingStock,
+    defaultUnitCost: r.defaultUnitCost,
+    attributes: r.attributes,
+    action: r.id ? 'update' : 'create',
+  }));
+
+  if (!apply) {
+    return json({
+      applied: false,
+      summary,
+      preview,
+      canApply: (toCreate.length + toUpdate.length) > 0 && errors.length === 0,
+    });
+  }
+
+  if (errors.length) throw badRequest('Fix the problems listed in the preview first.');
+  if (!toCreate.length && !toUpdate.length) throw badRequest('There is nothing in that file to import.');
+
+  // Categories first, so the parts that reference them have something to point
+  // at, and re-read to pick up the ids.
+  if (newCategories.size) {
+    await ctx.db.batch([...newCategories].map((name) => ctx.db.prepare(
+      'INSERT OR IGNORE INTO mx_categories (name, sort_order) VALUES (?, 500)',
+    ).bind(name)));
+    const after = await ctx.db.prepare('SELECT id, name FROM mx_categories').all();
+    categoryByName.clear();
+    for (const row of after.results ?? []) categoryByName.set(row.name.trim().toLowerCase(), row);
+  }
+
+  const categoryId = (name) => (name ? categoryByName.get(name.toLowerCase())?.id ?? null : null);
+
+  const statements = [
+    ...toCreate.map((r) => ctx.db.prepare(
+      `INSERT INTO mx_items (category_id, name, unit, par_level, opening_stock, default_unit_cost, is_common, note, attributes)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
+    ).bind(categoryId(r.categoryName), r.name, r.unit, r.parLevel, r.openingStock,
+      r.defaultUnitCost, r.isCommon ? 1 : 0, r.note, r.attributes)),
+    ...toUpdate.map((r) => ctx.db.prepare(
+      `UPDATE mx_items SET category_id = ?2, unit = ?3, par_level = ?4, opening_stock = ?5,
+              default_unit_cost = ?6, is_common = ?7, note = ?8, attributes = ?9, active = 1
+        WHERE id = ?1`,
+    ).bind(r.id, categoryId(r.categoryName), r.unit, r.parLevel, r.openingStock,
+      r.defaultUnitCost, r.isCommon ? 1 : 0, r.note, r.attributes)),
+  ];
+
+  await ctx.db.batch(statements);
+  await audit(ctx, 'mx.items.import', null, {
+    created: toCreate.length, updated: toUpdate.length, categories: [...newCategories],
+  });
+
+  return json({ applied: true, created: toCreate.length, updated: toUpdate.length, summary });
 }

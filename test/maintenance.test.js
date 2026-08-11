@@ -344,3 +344,49 @@ test('exactly twelve details is allowed; thirteen is not', async () => {
   assert.equal(Object.keys(JSON.parse(readAttributes(twelve))).length, 12);
   assert.throws(() => readAttributes({ ...twelve, K12: 'v' }), /up to 12 details/);
 });
+
+// -------------------------------------------------------------- bulk upload --
+
+test('spreadsheet headings are matched however they were typed', async () => {
+  const { columnKey } = await import('../src/routes/maintenance.js');
+
+  // The template's own wording.
+  assert.equal(columnKey('Name'), 'name');
+  assert.equal(columnKey('Restock level'), 'parLevel');
+  assert.equal(columnKey('On shelf now'), 'openingStock');
+  assert.equal(columnKey('Price each'), 'defaultUnitCost');
+  assert.equal(columnKey('Everyday part'), 'isCommon');
+
+  // What somebody typing their own sheet would plausibly write instead.
+  assert.equal(columnKey('part'), 'name');
+  assert.equal(columnKey('ITEM NAME'), 'name');
+  assert.equal(columnKey('Unit (kg)'), 'unit');
+  assert.equal(columnKey('re-order level'), 'parLevel');
+  assert.equal(columnKey('  Qty  '), 'openingStock');
+  assert.equal(columnKey('Unit Cost'), 'defaultUnitCost');
+
+  // Anything unrecognised is a detail column, which is the whole mechanism.
+  assert.equal(columnKey('Size'), null);
+  assert.equal(columnKey('Colour'), null);
+  assert.equal(columnKey('Fitting'), null);
+  assert.equal(columnKey(''), null);
+  assert.equal(columnKey(undefined), null);
+});
+
+test('a column called Size is never mistaken for a real field', async () => {
+  const { columnKey } = await import('../src/routes/maintenance.js');
+  // Guards against an alias list that grows until it swallows a detail name.
+  for (const label of ['Size', 'Colour', 'Color', 'Material', 'Finish', 'Rating', 'Model', 'Voltage']) {
+    assert.equal(columnKey(label), null, `${label} must stay a detail column`);
+  }
+});
+
+test('the everyday-part column accepts the ways people write yes', async () => {
+  const { yesish } = await import('../src/routes/maintenance.js');
+  for (const yes of ['yes', 'Yes', 'YES', 'y', '1', 'true', 'x', ' everyday ']) {
+    assert.equal(yesish(yes), true, `${JSON.stringify(yes)} should mean yes`);
+  }
+  for (const no of ['', 'no', 'n', '0', 'false', undefined, null, 'maybe']) {
+    assert.equal(yesish(no), false, `${JSON.stringify(no)} should not mean yes`);
+  }
+});

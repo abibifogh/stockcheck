@@ -157,6 +157,8 @@ export const api = {
   mxUpdateItem: (id, body) => request(`/api/mx/items/${id}`, { method: 'PUT', body }),
   mxDeleteItem: (id) => request(`/api/mx/items/${id}`, { method: 'DELETE' }),
   mxCreateCategory: (body) => request('/api/mx/categories', { method: 'POST', body }),
+  mxPartsTemplateUrl: () => '/api/mx/items/template',
+  mxImportParts: (body) => request('/api/mx/items/import', { method: 'POST', body }),
 
   exportUrl: (type, from, to) =>
     `/api/export?${new URLSearchParams({ type, ...(from ? { from } : {}), ...(to ? { to } : {}) })}`,
