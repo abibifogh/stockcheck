@@ -276,6 +276,14 @@ export async function getNotifications(ctx) {
     devices: devices.results ?? [],
     pushLog: pushLog.results ?? [],
     recipients: parseRecipients(settings.notify_recipients),
+    // The bed check has its own audience — the people who care that a dorm bed
+    // is unlabelled are rarely the people who care what the eggs cost — but it
+    // shares the sender and the site address, which are properties of the
+    // installation rather than of either report.
+    housekeeping: {
+      enabled: settings.hk_notify_on_submit !== '0',
+      recipients: parseRecipients(settings.hk_notify_recipients),
+    },
     from: settings.email_from || '',
     siteUrl: settings.site_url || '',
     // The key itself is never returned — only whether one is present.
@@ -287,13 +295,18 @@ export async function getNotifications(ctx) {
 export async function updateNotifications(ctx) {
   const body = await readJson(ctx.request);
 
-  const recipients = Array.isArray(body.recipients)
-    ? body.recipients.map((r) => String(r).trim()).filter(Boolean)
-    : parseRecipients(body.recipients);
+  const readList = (value, label) => {
+    const list = Array.isArray(value)
+      ? value.map((r) => String(r).trim()).filter(Boolean)
+      : parseRecipients(value);
+    const bad = list.filter((r) => !isEmail(r));
+    if (bad.length) throw badRequest(`${label}: not a valid email address: ${bad[0]}`);
+    if (list.length > 25) throw badRequest(`${label}: that is a lot of recipients — 25 is the limit`);
+    return list;
+  };
 
-  const invalid = recipients.filter((r) => !isEmail(r));
-  if (invalid.length) throw badRequest(`Not a valid email address: ${invalid[0]}`);
-  if (recipients.length > 25) throw badRequest('That is a lot of recipients — 25 is the limit');
+  const recipients = readList(body.recipients, 'Daily email');
+  const hkRecipients = readList(body.hkRecipients ?? [], 'Bed check email');
 
   const from = str(body.from, 'From address', { max: 200, fallback: '' }) || '';
   if (from && !isEmail(from.replace(/^.*<([^>]+)>.*$/, '$1'))) {
@@ -307,6 +320,7 @@ export async function updateNotifications(ctx) {
 
   const enabled = bool(body.enabled, true) ? '1' : '0';
   const pushEnabled = bool(body.pushEnabled, true) ? '1' : '0';
+  const hkEnabled = bool(body.hkEnabled, true) ? '1' : '0';
 
   await ctx.db.batch([
     setting(ctx.db, 'notify_on_submit', enabled),
@@ -314,10 +328,14 @@ export async function updateNotifications(ctx) {
     setting(ctx.db, 'email_from', from),
     setting(ctx.db, 'site_url', siteUrl.replace(/\/+$/, '')),
     setting(ctx.db, 'push_on_submit', pushEnabled),
+    setting(ctx.db, 'hk_notify_on_submit', hkEnabled),
+    setting(ctx.db, 'hk_notify_recipients', JSON.stringify(hkRecipients)),
   ]);
 
   await audit(ctx, 'notifications.update', null, {
-    enabled, pushEnabled, recipients: recipients.length,
+    enabled, pushEnabled, hkEnabled,
+    recipients: recipients.length,
+    hkRecipients: hkRecipients.length,
   });
   return getNotifications(ctx);
 }
@@ -370,7 +388,21 @@ export async function dataSummary(ctx) {
        (SELECT MAX(day) FROM service_days) AS last_day`,
   ).first();
 
-  return json({ counts: row ?? {}, confirmPhrase: CONFIRM_PHRASE });
+  // Tolerated missing, so the screen still loads on an installation that has
+  // the new code but not yet the new tables.
+  const housekeeping = await ctx.db.prepare(
+    `SELECT
+       (SELECT COUNT(*) FROM hk_rounds) AS rounds,
+       (SELECT COUNT(*) FROM hk_checks) AS bed_checks,
+       (SELECT COUNT(*) FROM hk_rooms)  AS dorm_rooms,
+       (SELECT COUNT(*) FROM hk_beds)   AS beds`,
+  ).first().catch(() => null);
+
+  return json({
+    counts: { ...(row ?? {}), ...(housekeeping ?? {}) },
+    housekeeping: Boolean(housekeeping),
+    confirmPhrase: CONFIRM_PHRASE,
+  });
 }
 
 /**
@@ -426,10 +458,28 @@ export async function eraseData(ctx) {
     statements.push(ctx.db.prepare(`DELETE FROM ${table}${where}`).bind(...binds));
   }
 
+  // The bed check goes with the rest of the recorded activity, but only where
+  // its tables exist: a batch is all-or-nothing, and one missing table would
+  // take the whole erase down with it.
+  const hasHousekeeping = await ctx.db.prepare('SELECT 1 FROM hk_checks LIMIT 1')
+    .first().then(() => true).catch(() => false);
+
+  if (hasHousekeeping) {
+    for (const table of ['hk_checks', 'hk_rounds']) {
+      const { where, binds } = range('day');
+      statements.push(ctx.db.prepare(`DELETE FROM ${table}${where}`).bind(...binds));
+    }
+  }
+
   if (scope === 'everything') {
     // Ingredients first — categories are referenced by them.
     statements.push(ctx.db.prepare('DELETE FROM ingredients'));
     statements.push(ctx.db.prepare('DELETE FROM categories'));
+    // Same order downstairs: beds are referenced by the rooms they sit in.
+    if (hasHousekeeping) {
+      statements.push(ctx.db.prepare('DELETE FROM hk_beds'));
+      statements.push(ctx.db.prepare('DELETE FROM hk_rooms'));
+    }
   }
 
   statements.push(

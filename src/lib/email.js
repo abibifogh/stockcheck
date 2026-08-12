@@ -1,4 +1,6 @@
 import { dailyInsights, loadDataset } from './analytics.js';
+import { dayReport, loadDataset as loadHousekeeping, periodReport } from './housekeeping.js';
+import { addDays } from '../util/dates.js';
 
 /**
  * Notification email for a submitted day sheet.
@@ -217,6 +219,216 @@ export async function notifyDaySubmitted(db, env, { day, submittedBy, resubmissi
 
     const html = renderDailyEmail({
       insight,
+      propertyName,
+      siteUrl: settings.site_url?.trim() || '',
+      submittedBy,
+    });
+
+    await sendEmail({ apiKey: env.RESEND_API_KEY, from, to: recipients, subject, html });
+    await log('sent', null, recipients);
+  } catch (err) {
+    await log('failed', err?.message || String(err));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The dorm bed check
+// ---------------------------------------------------------------------------
+
+/**
+ * The round email.
+ *
+ * Written as a findings list rather than a status report. The reader is a
+ * manager on a phone who wants one thing from it: which beds to go and look at
+ * before lunch. So the untagged beds come first, in full, with their room and
+ * bed name — not a count, because a count cannot be acted on — and everything
+ * else is arranged underneath it.
+ */
+export function renderRoundEmail({ report, trend, propertyName, siteUrl, submittedBy }) {
+  const t = report.totals;
+
+  const dateLabel = new Date(`${report.day}T12:00:00Z`).toLocaleDateString('en-GB', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC',
+  });
+
+  const stat = (label, value, sub = '', colour = '#14181f') => `
+    <td style="padding:10px 14px;background:#f6f7f9;border-radius:10px;vertical-align:top">
+      <div style="font:600 11px/1.4 Arial,sans-serif;color:#5b6472;text-transform:uppercase;letter-spacing:.06em">${label}</div>
+      <div style="font:700 20px/1.3 Arial,sans-serif;color:${colour};margin-top:2px">${value}</div>
+      ${sub ? `<div style="font:400 12px/1.4 Arial,sans-serif;color:#5b6472">${sub}</div>` : ''}
+    </td>`;
+
+  const findingRow = (finding, colour, what) => `
+    <tr><td style="padding:8px 12px;border-left:3px solid ${colour};background:#fafbfc">
+      <div style="font:700 13px/1.4 Arial,sans-serif;color:#14181f">
+        ${escapeHtml(finding.room)} · ${escapeHtml(finding.bed)}
+      </div>
+      <div style="font:400 12px/1.5 Arial,sans-serif;color:#5b6472">
+        ${what}${finding.note ? ` — “${escapeHtml(finding.note)}”` : ''}${finding.checkedBy ? ` · checked by ${escapeHtml(finding.checkedBy)}` : ''}
+      </div>
+    </td></tr>`;
+
+  const untagged = report.findings.filter((f) => f.severity === 'untagged');
+  const unexpected = report.findings.filter((f) => f.severity === 'unexpected');
+  const emptyBooked = report.findings.filter((f) => f.severity === 'empty_booked');
+
+  const section = (title, rows) => (rows.length ? `
+  <tr><td style="padding:16px 24px 0">
+    <div style="font:700 14px Arial,sans-serif;color:#14181f;margin-bottom:8px">${title}</div>
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+      ${rows.join('<tr><td style="height:6px"></td></tr>')}
+    </table>
+  </td></tr>` : '');
+
+  const gaps = t.unchecked
+    ? `<tr><td style="padding:16px 24px 0">
+         <div style="padding:10px 12px;background:#fdf1e0;border-radius:8px;font:400 13px Arial,sans-serif;color:#8a5a06">
+           ${t.unchecked} of ${t.expected} beds were not answered for. The figures above cover only the
+           ${t.checked} that were.
+         </div>
+       </td></tr>`
+    : '';
+
+  const roomRows = report.rooms
+    .filter((room) => room.totals.issues > 0 || room.totals.checked < room.beds.length)
+    .map((room) => `
+      <tr>
+        <td style="padding:6px 8px;border-bottom:1px solid #e6e9ee;font:400 13px Arial,sans-serif;color:#14181f">${escapeHtml(room.name)}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #e6e9ee;font:400 13px Arial,sans-serif;color:#5b6472;text-align:right">${room.totals.checked}/${room.beds.length} checked</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #e6e9ee;font:600 13px Arial,sans-serif;color:${room.totals.issues ? '#c62f42' : '#12855b'};text-align:right">
+          ${room.totals.issues ? `${room.totals.issues} to look at` : 'clear'}
+        </td>
+      </tr>`).join('');
+
+  return `
+<div style="margin:0;padding:24px 12px;background:#eef1f5">
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:14px;overflow:hidden">
+  <tr><td style="padding:20px 24px;background:#14181f">
+    <div style="font:700 17px/1.3 Arial,sans-serif;color:#ffffff">🛏 ${escapeHtml(propertyName)}</div>
+    <div style="font:400 13px/1.4 Arial,sans-serif;color:#9aa5b5">Dorm bed check — ${dateLabel}</div>
+  </td></tr>
+
+  <tr><td style="padding:18px 24px 4px">
+    <table role="presentation" cellpadding="0" cellspacing="6" width="100%"><tr>
+      ${stat('No name tag', num(t.untagged), t.untagged ? 'occupied, nothing says who' : 'every occupied bed labelled', t.untagged ? '#c62f42' : '#12855b')}
+      ${stat('Unexpected', num(t.unexpected), 'occupied, rostered free', t.unexpected ? '#c62f42' : '#14181f')}
+    </tr><tr>
+      ${stat('Beds checked', `${num(t.checked)}${t.expected ? ` / ${num(t.expected)}` : ''}`, t.coverage == null ? '' : `${t.coverage}% of the property`)}
+      ${stat('Occupied', num(t.occupied), t.tagRate == null ? 'nothing occupied' : `${t.tagRate}% carried a tag`)}
+    </tr></table>
+  </td></tr>
+
+  ${gaps}
+
+  ${section('Occupied with no name tag', untagged.map((f) => findingRow(f, '#c62f42', 'Occupied, no name tag')))}
+  ${section('Occupied but rostered free', unexpected.map((f) => findingRow(f, '#b96a06', `Found occupied${f.expectedNote ? ` — the roster expected ${escapeHtml(f.expectedNote)}` : ', the roster says this bed is free'}`)))}
+  ${section('Booked but found empty', emptyBooked.map((f) => findingRow(f, '#2f6df6', `Empty${f.expectedNote ? ` — ${escapeHtml(f.expectedNote)} was expected` : ', though the roster has it occupied'}`)))}
+
+  ${!report.findings.length ? `
+  <tr><td style="padding:16px 24px 0">
+    <div style="padding:10px 12px;background:#e2f5ec;border-radius:8px;font:400 13px Arial,sans-serif;color:#12855b">
+      Every bed checked was as it should be — occupied beds labelled, free beds empty.
+    </div>
+  </td></tr>` : ''}
+
+  ${roomRows ? `
+  <tr><td style="padding:18px 24px 0">
+    <div style="font:700 14px Arial,sans-serif;color:#14181f;margin-bottom:6px">Rooms wanting attention</div>
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%">${roomRows}</table>
+  </td></tr>` : ''}
+
+  ${report.notes.length ? `
+  <tr><td style="padding:18px 24px 0">
+    <div style="font:700 14px Arial,sans-serif;color:#14181f;margin-bottom:6px">What housekeeping wrote down</div>
+    <div style="font:400 13px/1.6 Arial,sans-serif;color:#5b6472">
+      ${report.notes.slice(0, 12).map((n) => `<strong style="color:#14181f">${escapeHtml(n.room)} · ${escapeHtml(n.bed)}:</strong> ${escapeHtml(n.note)}`).join('<br>')}
+    </div>
+  </td></tr>` : ''}
+
+  <tr><td style="padding:16px 24px 0">
+    <div style="font:400 13px/1.6 Arial,sans-serif;color:#5b6472">
+      <strong style="color:#14181f">Against the last 30 days:</strong>
+      ${num(trend.untagged)} untagged and ${num(trend.unexpected)} unexpected in total,
+      ${trend.tagRate == null ? 'with nothing occupied' : `${trend.tagRate}% of occupied beds labelled`}.<br>
+      <strong style="color:#14181f">Walked by:</strong>
+      ${report.people.length ? report.people.map((p) => `${escapeHtml(p.name)} (${p.checks})`).join(', ') : '—'}.<br>
+      ${submittedBy ? `<strong style="color:#14181f">Submitted by:</strong> ${escapeHtml(submittedBy)}.` : ''}
+      ${report.round?.note ? `<br><strong style="color:#14181f">Note:</strong> ${escapeHtml(report.round.note)}` : ''}
+    </div>
+  </td></tr>
+
+  ${siteUrl ? `
+  <tr><td style="padding:20px 24px">
+    <a href="${escapeAttr(siteUrl)}/#/hk-report?from=${report.day}&to=${report.day}"
+       style="display:inline-block;padding:10px 18px;background:#2f6df6;color:#ffffff;border-radius:8px;font:600 14px Arial,sans-serif;text-decoration:none">
+      Open the full check
+    </a>
+  </td></tr>` : '<tr><td style="height:20px"></td></tr>'}
+
+  <tr><td style="padding:14px 24px;background:#f6f7f9;font:400 11px/1.5 Arial,sans-serif;color:#8b95a5">
+    Sent automatically when the day's bed check was submitted.
+    An administrator can change who receives these under Users &amp; data → Notifications.
+  </td></tr>
+</table>
+</div>`;
+}
+
+/**
+ * Build and send the notification for one round, recording the outcome either
+ * way. Never throws — the caller is a background task, and a mail provider
+ * having a bad morning must not surface as a failed round.
+ */
+export async function notifyRoundSubmitted(db, env, { day, submittedBy, resubmission }) {
+  const log = (status, detail, recipients = []) => db.prepare(
+    'INSERT INTO email_log (kind, day, recipients, status, detail) VALUES (?, ?, ?, ?, ?)',
+  ).bind('hk_round', day, recipients.join(', '), status, detail ? String(detail).slice(0, 500) : null)
+    .run()
+    .catch(() => {});
+
+  try {
+    const settingsRows = await db.prepare('SELECT key, value FROM settings').all();
+    const settings = Object.fromEntries((settingsRows.results ?? []).map((r) => [r.key, r.value]));
+
+    if (settings.hk_notify_on_submit === '0') return;
+
+    // Its own list, falling back to the daily list. The two audiences overlap
+    // in a small property and diverge in a large one; falling back means an
+    // installation that never opened the housekeeping settings still gets its
+    // findings somewhere rather than nowhere.
+    const recipients = parseRecipients(settings.hk_notify_recipients).length
+      ? parseRecipients(settings.hk_notify_recipients)
+      : parseRecipients(settings.notify_recipients);
+
+    if (!recipients.length) {
+      await log('skipped', 'No recipients configured');
+      return;
+    }
+    if (!env.RESEND_API_KEY) {
+      await log('failed', 'RESEND_API_KEY is not set on the Worker');
+      return;
+    }
+
+    const from = settings.email_from?.trim();
+    if (!from) {
+      await log('failed', 'No "from" address configured in Notifications');
+      return;
+    }
+
+    const ds = await loadHousekeeping(db);
+    const report = dayReport(ds, day);
+    const trend = periodReport(ds, addDays(day, -29), day).current;
+
+    const propertyName = settings.property_name || 'Hostel';
+    const t = report.totals;
+    const subject = `${propertyName} — bed check ${day}: `
+      + (t.untagged ? `${t.untagged} without a name tag` : 'all occupied beds labelled')
+      + (t.unexpected ? `, ${t.unexpected} unexpected` : '')
+      + (t.unchecked ? ` · ${t.unchecked} beds not checked` : '')
+      + (resubmission ? ' (updated)' : '');
+
+    const html = renderRoundEmail({
+      report,
+      trend,
       propertyName,
       siteUrl: settings.site_url?.trim() || '',
       submittedBy,

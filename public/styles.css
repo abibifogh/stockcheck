@@ -790,3 +790,168 @@ body:has(.entry-footer) .toasts[popover] { bottom: calc(4.75rem + env(safe-area-
   font-size: .75rem; color: var(--accent);
   line-height: 1.2; margin-top: -.05rem;
 }
+
+/* ------------------------------------------------------- housekeeping -- */
+/* The bed check is used one-handed, walking, on a phone. Every target on it is
+   sized for a thumb rather than a cursor, and the answers a housekeeper has
+   already given stay legible at arm's length. */
+
+.hk-page { padding-bottom: 128px; }
+
+.hk-rooms { display: grid; gap: .8rem; }
+.hk-room { padding: 0; overflow: hidden; }
+
+.hk-room-head {
+  display: flex; align-items: center; gap: .6rem; width: 100%;
+  padding: .85rem 1rem; border: none; background: transparent;
+  text-align: left; border-radius: 0; font-size: 1rem;
+}
+.hk-room-head:hover { background: var(--surface-2); }
+.hk-room-name { display: flex; flex-direction: column; line-height: 1.25; flex: 1; min-width: 0; }
+.hk-room-name small { font-size: .75rem; font-weight: 500; }
+.hk-room-sum { display: flex; gap: .35rem; align-items: center; flex-wrap: wrap; }
+.hk-room-all {
+  font-size: .74rem; font-weight: 650; padding: .25rem .55rem; border-radius: 999px;
+  background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--border);
+  white-space: nowrap; cursor: pointer;
+}
+.hk-room-all:hover { border-color: var(--border-strong); color: var(--text); }
+.hk-caret { color: var(--text-faint); transition: transform .15s; transform: rotate(-90deg); }
+.hk-room-head.open .hk-caret { transform: rotate(0deg); }
+
+.hk-beds { border-top: 1px solid var(--border); }
+.hk-bed { padding: .6rem 1rem; border-bottom: 1px solid var(--border); }
+.hk-bed:last-child { border-bottom: none; }
+.hk-bed.answered.free { background: color-mix(in srgb, var(--surface-2) 60%, transparent); }
+.hk-bed.answered.occupied { background: color-mix(in srgb, var(--accent-soft) 45%, transparent); }
+/* An occupied bed that has not yet answered the name tag question is the one
+   state this screen must not let anybody walk away from. */
+.hk-bed.asking { background: var(--warn-soft); box-shadow: inset 3px 0 var(--warn); }
+
+.hk-bed-main { display: flex; align-items: center; gap: .6rem; }
+.hk-bed-label { display: flex; flex-direction: column; flex: 1; min-width: 0; line-height: 1.25; }
+.hk-bed-label small { font-size: .72rem; }
+.hk-note-dot { color: var(--accent); font-size: .8rem; }
+
+.hk-choices { display: flex; gap: .4rem; }
+.hk-choice, .hk-tag {
+  min-height: 44px; min-width: 84px; padding: .4rem .8rem;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface); color: var(--text-dim);
+  font-size: .9rem; font-weight: 620;
+}
+.hk-choice:hover, .hk-tag:hover { border-color: var(--border-strong); }
+.hk-choice.free.on { background: var(--surface-3); color: var(--text); border-color: var(--border-strong); }
+.hk-choice.occupied.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.hk-tag.yes.on { background: var(--good); border-color: var(--good); color: #fff; }
+.hk-tag.no.on { background: var(--bad); border-color: var(--bad); color: #fff; }
+
+.hk-note-btn {
+  border: 1px solid var(--border); background: transparent; color: var(--text-faint);
+  min-height: 44px; width: 42px; border-radius: var(--radius-sm); font-size: .95rem;
+}
+.hk-note-btn:hover { color: var(--text); border-color: var(--border-strong); }
+
+.hk-followup {
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  margin-top: .5rem; padding-left: .1rem;
+}
+.hk-followup-q { font-size: .88rem; font-weight: 600; color: var(--text-dim); flex: 1; min-width: 150px; }
+
+.hk-note { margin-top: .5rem; }
+.hk-note-input { font-size: .88rem; }
+
+.hk-footer {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 35;
+  padding: .7rem clamp(.75rem, 3vw, 1.5rem);
+  padding-bottom: calc(.7rem + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--border);
+}
+.hk-footer-inner {
+  display: flex; gap: .6rem; align-items: center; flex-wrap: wrap;
+  max-width: 1320px; margin: 0 auto; width: 100%;
+}
+.hk-footer-text { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 150px; }
+.hk-progress { font-weight: 680; font-variant-numeric: tabular-nums; }
+.hk-status { font-size: .82rem; color: var(--text-dim); }
+.hk-status.good { color: var(--good); }
+.hk-status.bad { color: var(--bad); }
+.hk-status.warn { color: var(--warn); }
+.hk-submit { min-height: 46px; padding-inline: 1.3rem; flex: 0 0 auto; }
+
+.hk-recent { display: flex; flex-wrap: wrap; gap: .4rem; }
+
+@media (max-width: 560px) {
+  .hk-bed-main { flex-wrap: wrap; }
+  .hk-bed-label { flex: 1 1 100%; margin-bottom: .35rem; }
+  .hk-choice, .hk-tag { flex: 1; min-width: 0; }
+  .hk-choices { flex: 1; }
+  .hk-submit { flex: 1 1 100%; }
+}
+
+/* ---- what the findings look like everywhere they are shown ------------- */
+
+.sev-clear      { --hk-sev: var(--good); }
+.sev-untagged   { --hk-sev: var(--bad); }
+.sev-unexpected { --hk-sev: var(--warn); }
+.sev-empty      { --hk-sev: var(--accent); }
+.sev-unchecked  { --hk-sev: var(--surface-3); }
+
+.hk-chips { display: flex; flex-wrap: wrap; gap: .45rem; }
+.hk-chip {
+  display: flex; flex-direction: column; align-items: flex-start; gap: .1rem;
+  padding: .45rem .7rem; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--surface);
+  border-left: 4px solid var(--hk-sev, var(--good));
+  font-size: .87rem; font-weight: 600; line-height: 1.2;
+}
+.hk-chip small { font-size: .72rem; color: var(--text-faint); font-weight: 500; }
+.hk-chip:hover { border-color: var(--border-strong); border-left-color: var(--hk-sev, var(--good)); }
+
+.hk-findings { display: grid; gap: .4rem; margin-top: .9rem; }
+.hk-finding {
+  display: flex; flex-wrap: wrap; gap: .5rem; align-items: baseline;
+  font-size: .88rem; padding: .4rem .55rem; border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.hk-notes { display: grid; gap: .35rem; font-size: .86rem; }
+.hk-note-row { display: flex; flex-wrap: wrap; gap: .45rem; align-items: baseline; }
+
+/* ---- the room-by-day heatmap ------------------------------------------ */
+/* Rooms down the side, days across. Squares rather than a chart: the useful
+   act is hovering one to find out what happened, and ninety days of them still
+   has to fit on a laptop. */
+
+.hk-heat-wrap { overflow-x: auto; margin: 0 -1.1rem; padding: 0 1.1rem .3rem; }
+.hk-heat {
+  display: grid; grid-template-columns: minmax(96px, max-content) 1fr;
+  gap: 3px; min-width: 420px; align-items: center;
+}
+.hk-heat-corner { min-height: 18px; }
+.hk-heat-days, .hk-heat-cells {
+  /* The column count is per-period, so it is set on the row itself. */
+  display: grid; gap: 3px;
+}
+.hk-heat-day { font-size: .68rem; color: var(--text-faint); white-space: nowrap; overflow: visible; }
+.hk-heat-room { font-size: .82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hk-heat-room-btn {
+  border: none; background: transparent; color: var(--text); padding: .1rem 0;
+  font-size: .82rem; text-align: left; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.hk-heat-room-btn:hover { color: var(--accent); text-decoration: underline; }
+.hk-heat-cell {
+  height: 18px; border-radius: 3px;
+  background: var(--hk-sev, var(--good));
+}
+.hk-heat-cell.sev-clear { background: color-mix(in srgb, var(--good) 62%, transparent); }
+.hk-heat-cell.sev-unchecked { background: var(--surface-3); }
+
+.hk-key {
+  width: 10px; height: 10px; border-radius: 3px; display: inline-block;
+  background: var(--hk-sev, var(--good));
+}
+.hk-key.sev-clear { background: color-mix(in srgb, var(--good) 62%, transparent); }

@@ -150,6 +150,13 @@ function keepInView(toc, link) {
 function greeting() {
   if (can('users')) return 'Everything, including setting the system up and looking after it';
   if (can('reports')) return 'Recording the morning, and reading what it tells you';
+  // Somebody who only walks the dorms should not be greeted with a page about
+  // the kitchen.
+  if (can('hk_check') && !can('entry')) {
+    return can('hk_reports')
+      ? 'Walking the dorms, and reading what the checks tell you'
+      : 'Walking the dorms and checking the beds — that is all you need';
+  }
   return 'Recording the morning — that is all you need';
 }
 
@@ -804,6 +811,132 @@ const SECTIONS = [
     ),
   },
 
+  // --------------------------------------------------------------- housekeeping --
+
+  {
+    id: 'hk-check',
+    title: 'Walking the dorms: the bed check',
+    permission: 'hk_check',
+    lead: 'Two questions per bed. It should take about as long as it takes to look at the bed.',
+    render: () => h('div',
+      steps(
+        h('span', h('strong', 'Open the room you are standing in.'), ' Rooms are listed down the '
+          + 'screen. The first one with beds still to answer for is already open; tap any other '
+          + 'room’s name to open it.'),
+        h('span', h('strong', 'For each bed, tap Free or Occupied.'), ' Occupied means somebody is '
+          + 'using it — bedding disturbed, bags, belongings — whether or not they are in it now.'),
+        h('span', h('strong', 'If you tapped Occupied, answer the name tag question.'), ' Yes or No. '
+          + 'That is the whole reason for the round: an occupied bed with nothing on it to say whose '
+          + 'it is, is the thing your manager needs to know about.'),
+        h('span', h('strong', 'When you have finished the property, tap Submit the round.'), ' That '
+          + 'sends the summary to whoever needs it.'),
+      ),
+      note('An empty room is one tap.', 'Use “All free” on the room’s title bar to mark every '
+        + 'bed in it free at once, then correct any that are not.'),
+      note('Your answers save themselves.', 'You do not have to press anything as you go. The bar at '
+        + 'the bottom counts the beds you have answered for and says when everything is saved.'),
+      note('Add a note whenever something is odd.', 'The ✎ button beside a bed takes a line of text — '
+        + '"bag on the frame, nobody about", "tag has fallen off". These reach your manager with the '
+        + 'round, and they are usually the most useful part of it.'),
+      warn('An occupied bed is not saved until the tag question is answered.', 'The bed stays '
+        + 'highlighted and the bar at the bottom counts how many are waiting. If you leave them, they '
+        + 'are reported as beds nobody checked, which is not the same as beds that were fine.'),
+      faq(
+        ['I made a mistake on a bed.',
+          h('p', 'Tap the answer you gave again to clear it, then give the right one. If the round '
+            + 'has already been submitted you can still change it — use the earlier rounds at the '
+            + 'foot of the screen — and submitting again sends a corrected summary.')],
+        ['Somebody else is doing the first floor.',
+          h('p', 'That is fine. There is one round per day and you can both fill in different parts '
+            + 'of it at the same time. Each bed records who answered for it.')],
+        ['The signal dropped while I was in the basement.',
+          h('p', 'Keep going. The screen says “not saved” and keeps trying on its own; as soon as '
+            + 'there is signal again everything you tapped goes through.')],
+        ['I could not get into a room.',
+          h('p', 'Leave its beds unanswered and submit anyway — it will ask you to confirm. The '
+            + 'report shows that room as not checked, which is exactly what happened. Add a note if '
+            + 'you know why.')],
+      ),
+    ),
+  },
+
+  {
+    id: 'hk-reports',
+    title: 'What the bed check tells you',
+    permission: 'hk_reports',
+    lead: 'Everything on these screens is arranged around one number: occupied beds with no name tag.',
+    render: () => h('div',
+      readings(
+        ['Occupied, no name tag',
+          'Beds somebody is sleeping in that carry nothing to say who. Counted only against beds that '
+          + 'were actually checked and found occupied.',
+          'This is the finding. The email that goes out at the end of each round lists every one of '
+          + 'them by room and bed — walk them.'],
+        ['Tag compliance',
+          'The share of occupied beds that were labelled. Measured against occupied beds, not against '
+          + 'every bed, so a quiet week with empty dorms cannot flatter it.',
+          'It is the figure to put on a wall. Compare it in points against the period before, which is '
+          + 'what the report shows.'],
+        ['Occupied unexpectedly',
+          'A bed the roster said would be free, found occupied.',
+          'Either a booking never reached the front desk, or that bed was never sold. Both are worth '
+          + 'knowing before the guest leaves.'],
+        ['Booked but found empty',
+          'The reverse: a bed the roster had somebody in, found empty.',
+          'Usually a guest who left early. If it keeps happening in one room, check the register '
+          + 'against the room.'],
+        ['Not checked',
+          'A bed or a whole room nobody answered for. Shown in grey on the room-by-day squares.',
+          'A grey row is not a clean room, it is a room nobody opened — and it deserves as much '
+          + 'attention as a red one.'],
+        ['Every room, every day',
+          'One square per room per day, coloured by the worst thing found in it that day.',
+          'Read the rows: a room that keeps going red has a pattern, and hovering a square says what '
+          + 'happened. Click a room’s name for everything ever found in it.'],
+        ['Beds found untagged more than once',
+          'The same bed, repeatedly unlabelled.',
+          'One bed doing this over and over is rarely a guest problem. It is usually a habit on one '
+          + 'shift, or a frame that has nowhere to attach a tag.'],
+        ['Who walked the rounds',
+          'How many beds each person answered for, and what they found.',
+          'Somebody who never finds anything, on the same floors where everybody else does, is worth '
+          + 'a quiet word.'],
+      ),
+      note('Coverage keeps the rest honest.', 'Every rate on the page is calculated from the beds that '
+        + 'were checked. Coverage tells you how much of the property that was, so a perfect week on a '
+        + 'quarter of the beds cannot be mistaken for a perfect week.'),
+    ),
+  },
+
+  {
+    id: 'hk-setup',
+    title: 'Setting up the dorms and the roster',
+    permission: 'hk_setup',
+    lead: 'Rooms and beds are set up once. The roster is the part you keep up to date.',
+    render: () => h('div',
+      steps(
+        h('span', h('strong', 'Add each dorm room with its beds.'), ' Say how many beds and they are '
+          + 'numbered for you — six beds gives you Bed 1 to Bed 6. Rename any of them afterwards to '
+          + 'match what is painted on the frame, because that is what the housekeeper is looking at.'),
+        h('span', h('strong', 'Set what the roster expects of each bed.'), ' Should be free, should be '
+          + 'occupied, or not tracked. You can set a whole room at once and then change the few that '
+          + 'differ.'),
+        h('span', h('strong', 'Save the room.'), ' One button saves the bed names and the roster '
+          + 'together.'),
+      ),
+      note('“Not tracked” is a real answer.', 'A bed left as not tracked is still checked and still '
+        + 'has to carry a name tag. It simply raises no surprise either way. Only beds you have told '
+        + 'the system about can be reported as occupied when they should have been free.'),
+      note('The roster is never shown to the housekeeper.', 'Somebody who can see what the answer is '
+        + 'supposed to be before they answer is not really checking. It appears on the reports, and on '
+        + 'the setup screen, and nowhere else.'),
+      note('Changing the roster does not rewrite the past.', 'Every check keeps its own copy of what '
+        + 'was expected at the time, so tonight’s bookings cannot change what last Tuesday found.'),
+      note('Closing a room keeps its history.', 'A room or bed that has ever been checked is closed '
+        + 'rather than deleted, so past rounds still add up.'),
+    ),
+  },
+
   {
     id: 'alerts-setup',
     title: 'Being told when a day is submitted',
@@ -830,6 +963,12 @@ const SECTIONS = [
         + 'will not work, and that is Apple’s rule rather than a fault in this system.'),
       note('Each device is separate.', 'Your phone and your office computer are two permissions. '
         + 'Turn it on in each place you want to be told. Turning it off on one leaves the others alone.'),
+      can('hk_reports')
+        ? note('The bed check has its own email.', 'It goes out the moment a round is submitted and '
+          + 'lists every occupied bed found without a name tag, by room and bed, along with anything '
+          + 'found where the roster said it should not be. It has its own list of recipients under '
+          + 'Users & data → Email alerts; left empty, it goes to the same people as the morning sheet.')
+        : null,
       can('users')
         ? note('What you can see under Users & data.', 'The “Phone alerts” panel lists every device '
           + 'being alerted and who it belongs to, lets you retire a phone that has been lost or '

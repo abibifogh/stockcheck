@@ -15,6 +15,7 @@ import * as insights from './routes/insights.js';
 import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
 import * as mx from './routes/maintenance.js';
+import * as hk from './routes/housekeeping.js';
 import { PIN_TAKEN } from './routes/admin.js';
 
 /**
@@ -136,6 +137,29 @@ const ROUTES = [
   ['POST', '/api/mx/categories', 'mx_setup', mx.createCategory],
   ['GET', '/api/mx/items/template', 'mx_setup', mx.partsTemplate],
   ['POST', '/api/mx/items/import', 'mx_setup', mx.importParts],
+
+  // ----------------------------------------------------------- housekeeping --
+  // The dorm bed check. `hk_check` reaches the round and nothing else, so a
+  // housekeeper's PIN opens one screen: the beds, and the two questions.
+  ['GET', '/api/hk/bootstrap', 'hk_check', hk.bootstrap],
+  ['POST', '/api/hk/checks', 'hk_check', hk.saveChecks],
+  ['POST', '/api/hk/rounds/:day/submit', 'hk_check', hk.submitRound],
+  ['GET', '/api/hk/rounds', 'hk_reports', hk.listRounds],
+  ['GET', '/api/hk/day', 'hk_reports', hk.getDay],
+
+  ['GET', '/api/hk/overview', 'hk_reports', hk.overview],
+  ['GET', '/api/hk/report', 'hk_reports', hk.report],
+  ['GET', '/api/hk/rooms/:id/detail', 'hk_reports', hk.roomReport],
+  ['GET', '/api/hk/export', 'hk_reports', hk.exportCsv],
+
+  ['GET', '/api/hk/rooms', 'hk_setup', hk.listRooms],
+  ['POST', '/api/hk/rooms', 'hk_setup', hk.createRoom],
+  ['PUT', '/api/hk/rooms/:id', 'hk_setup', hk.updateRoom],
+  ['DELETE', '/api/hk/rooms/:id', 'hk_setup', hk.deleteRoom],
+  ['POST', '/api/hk/beds', 'hk_setup', hk.createBed],
+  ['PUT', '/api/hk/beds/:id', 'hk_setup', hk.updateBed],
+  ['DELETE', '/api/hk/beds/:id', 'hk_setup', hk.deleteBed],
+  ['POST', '/api/hk/roster', 'hk_setup', hk.saveRoster],
 ];
 
 function match(pattern, pathname) {

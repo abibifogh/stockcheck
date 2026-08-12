@@ -6,6 +6,12 @@ Cooks record what was used each morning in under a minute. Everything else —
 cost per guest, week-on-week comparisons, monthly reporting, stock levels and
 reorder lists — is derived from that one sheet plus the delivery log.
 
+Alongside it are two other rounds that work the same way — a few taps from
+somebody with no time, and the analysis derived from them: a **maintenance
+parts store**, and a **dorm bed check** for hostel rooms. Each has its own
+screens and its own permissions, so a housekeeper's PIN opens the bed check and
+nothing else.
+
 Runs entirely on Cloudflare: a single Worker serves both the app and the API,
 with a D1 (SQLite) database behind it. Deploys from GitHub on every push to
 `main`.
@@ -49,6 +55,52 @@ indistinguishable from "we forgot" and silently drags every average down.
 | **Stock** | Book stock, days of cover, reorder list, physical-count variances. |
 | **Purchases** | Delivery log — multi-line, supplier picked from a list, unit costs pre-filled from the last price paid. |
 
+### For housekeeping — the dorm bed check
+
+A separate round, with its own screens, its own permissions and its own email.
+It answers one question the breakfast side cannot: **is every occupied bed in
+the dorms labelled, and is anything occupied that should not be?**
+
+- **Two questions per bed.** The housekeeper opens a room, taps **Free** or
+  **Occupied** for each bed, and — only for an occupied bed — answers **does it
+  have a name tag?** Any bed can carry a note. Nothing else is asked, and
+  nothing is typed unless there is something to say.
+- **One tap for an empty room.** "All free" answers every bed in a dorm at
+  once; correct the ones that differ.
+- **Answers save themselves** as they are given, retry on their own when the
+  signal drops in a stairwell, and are pushed if the phone is locked mid-round.
+  The round is finished with one **Submit** at the end, which is what sends the
+  email.
+- **One round per day, shared.** Two housekeepers can walk different floors at
+  the same time; every bed records who answered for it.
+- **An occupied bed is not saved until the tag question is answered.** It stays
+  highlighted and is counted in the bar at the foot of the screen, because "we
+  did not finish this bed" and "this bed was fine" must never look alike.
+
+The manager's side is built around the findings rather than the activity:
+
+| View | Answers |
+|---|---|
+| **Dorms** | Where the property stands today: rooms as coloured chips, today's findings in full, and the last 30 days of untagged beds. |
+| **Report** | A period, against the period before it — untagged beds, tag compliance, unexpected occupancy, coverage, and who walked what. Exports to CSV. |
+| **Every room, every day** | A room-by-day grid, one square per room per day, coloured by the worst thing found. Grey means nobody checked, which is treated as loudly as red. |
+| **A room's own page** | Every check ever made in one dorm, bed by bed, with its notes and its history. |
+| **Setup** | The rooms and their beds, and the roster: what the front desk expects of each bed. |
+
+**The roster** is what turns "this bed is occupied" into "this bed should have
+been empty". Each bed is marked *should be free*, *should be occupied* or *not
+tracked*; a bed left untracked is still checked and still needs a name tag, it
+simply raises no surprise either way. It is never shown to the person doing the
+round — somebody who knows the expected answer before they look is not checking
+— and every check keeps its own copy of what was expected at the time, so
+editing tonight's roster cannot rewrite what last Tuesday found.
+
+**The email** goes out the moment a round is submitted, to its own list of
+recipients (falling back to the daily list if you have not set one). It leads
+with every untagged bed by room and bed name, because a count is not something
+anybody can act on, then the unexpected occupancy, the rooms with gaps, and
+whatever housekeeping wrote down.
+
 ### For the administrator
 
 | Feature | What it does |
@@ -56,8 +108,8 @@ indistinguishable from "we forgot" and silently drags every average down.
 | **People** | Individual accounts with their own list of sections they can open, enforced on the server rather than just hidden in the menu. Administrators sign in with an email address and password; cooks and managers use a PIN. |
 | **Closed periods** | Lock a date range once it has been reported on. Nothing inside it can be added, changed or deleted — by anyone, including an administrator, until it is reopened. |
 | **Bulk entry** | Download a spreadsheet template, fill in a backlog, upload it. Always previews before it writes. |
-| **Daily email** | A summary of each submitted day, with the analysis, to whichever addresses you choose. |
-| **Erase data** | Clear a trial run before going live, with a typed confirmation. Keeps people, settings and the ingredient list. |
+| **Email alerts** | A summary of each submitted day sheet, and of each submitted bed check, to whichever addresses you choose — two separate lists, one sender. |
+| **Erase data** | Clear a trial run before going live, with a typed confirmation. Removes day sheets, deliveries, counts and bed check rounds; keeps people, settings, the ingredient list and the dorm layout. |
 
 ---
 
@@ -173,7 +225,7 @@ it reaches everything. Once you have an administrator account with an email
 address and password, you can switch the recovery PIN off entirely under
 **Setup → Emergency access**.
 
-### 4b. Turning on the daily email (optional)
+### 4b. Turning on email (optional)
 
 Email goes out through [Resend](https://resend.com), which is free at this
 volume. Three steps:
@@ -187,9 +239,11 @@ volume. Three steps:
    npx wrangler secret put RESEND_API_KEY
    ```
 
-3. In the app, go to **Users & data → Daily email**, set the "from" address to
+3. In the app, go to **Users & data → Email alerts**, set the "from" address to
    something at your verified domain, add the recipients, and press **Send a
-   test now**. The result appears in the log underneath.
+   test now**. The result appears in the log underneath. The dorm bed check has
+   its own recipient list on the same panel; leave it empty and its findings go
+   to the same people as the morning sheet.
 
 Without this the app works perfectly; it simply does not send email, and says
 so on that screen.
@@ -282,11 +336,12 @@ src/
     analytics.js      Daily / weekly / monthly / stock analysis
     auth.js           PIN login, signed session cookies
     http.js           JSON responses, input validation
+    housekeeping.js   The dorm bed check: findings, coverage, room-by-day
   routes/             API handlers
   util/               Date and statistics helpers
 public/               Frontend — plain ES modules, no build step
 migrations/           Database schema
-test/                 Analytics tests
+test/                 Analytics and route tests
 ```
 
 There is no frontend build step and no runtime dependencies. The charts are
@@ -312,7 +367,18 @@ without a database, which is what `test/analytics.test.js` does.
 - **Timezone matters.** The `timezone` setting decides which calendar day a
   morning belongs to. Set it in Setup before the kitchen starts recording.
 - **Retired, not deleted.** An ingredient with history is retired rather than
-  removed, so past reports stay correct.
+  removed, so past reports stay correct. The same applies to a dorm room or a
+  bed that has ever been checked.
+- **A free bed is never a missing name tag.** The tag question is only asked of
+  an occupied bed, and its absence is stored as "not asked" rather than "no".
+  Tag compliance is therefore measured against occupied beds, never against
+  every bed — otherwise an empty week would look like a triumph.
+- **Not checked is not the same as clean.** A bed nobody answered for, or a room
+  nobody opened, is reported as a gap in its own right and shown in grey on the
+  room-by-day grid. Coverage sits beside every other figure so a spotless week
+  on a quarter of the beds cannot be mistaken for a spotless week.
+- **The roster is snapshotted onto each check.** Editing tonight's expected
+  occupancy cannot change which of last week's beds counted as a surprise.
 - **Two ways to sign in, chosen by role.** A PIN is right for a cook at a
   tablet with flour on their hands. It is not right for an account that can see
   every cost, manage people and erase data, so administrators use an email

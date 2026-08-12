@@ -20,6 +20,13 @@ export const PERMISSIONS = [
   { key: 'mx_stock', label: 'Maintenance stock', detail: 'Parts on hand, restock list, physical counts' },
   { key: 'mx_purchases', label: 'Maintenance purchases', detail: 'Record parts bought, with cost' },
   { key: 'mx_setup', label: 'Maintenance setup', detail: 'The parts list, and the rooms and areas' },
+
+  // Housekeeping. Separate again, and for the same reason: the housekeeper who
+  // walks the dorms every morning should be handed the bed check and nothing
+  // else — not the roster she is checking against, and certainly not the costs.
+  { key: 'hk_check', label: 'Bed check', detail: 'Walk the dorms and record each bed' },
+  { key: 'hk_reports', label: 'Housekeeping reports', detail: 'Name tags, surprise occupancy, room by room' },
+  { key: 'hk_setup', label: 'Housekeeping setup', detail: 'Dorm rooms, beds, and who is expected in them' },
 ];
 
 export const PERMISSION_KEYS = PERMISSIONS.map((p) => p.key);
@@ -48,6 +55,18 @@ export const ROLES = [
     label: 'Maintenance manager',
     detail: 'Runs the parts store: issues, stock, purchases and the room-by-room analysis.',
     defaults: ['mx_issue', 'mx_reports', 'mx_stock', 'mx_purchases', 'mx_setup'],
+  },
+  {
+    key: 'housekeeper',
+    label: 'Housekeeper',
+    detail: 'Walks the dorms and records the beds. Sees nothing else.',
+    defaults: ['hk_check'],
+  },
+  {
+    key: 'housekeeping_manager',
+    label: 'Housekeeping manager',
+    detail: 'Runs the bed check: the round, the reports, and the roster of who is expected where.',
+    defaults: ['hk_check', 'hk_reports', 'hk_setup'],
   },
   {
     key: 'admin',

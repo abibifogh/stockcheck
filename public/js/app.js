@@ -21,6 +21,10 @@ import { renderMxPurchases } from './views/mx-purchases.js';
 import { renderMxSetup } from './views/mx-setup.js';
 import { renderMxArea } from './views/mx-area.js';
 import { renderMxCompare } from './views/mx-compare.js';
+import { renderHkCheck } from './views/hk-check.js';
+import { renderHkOverview, renderHkReport } from './views/hk-reports.js';
+import { renderHkRoom } from './views/hk-room.js';
+import { renderHkSetup } from './views/hk-setup.js';
 
 export const state = {
   role: null,
@@ -57,6 +61,15 @@ const ROUTES = [
   // Reached by clicking a room in the report rather than from the menu.
   { path: 'mx-area', label: 'Room', permission: 'mx_reports', render: renderMxArea, hidden: true },
 
+  // ----------------------------------------------------------- housekeeping --
+  // The bed check comes first in its section because it is the only screen a
+  // housekeeper opens, and it is opened every single morning.
+  { path: 'hk-check', label: 'Bed check', permission: 'hk_check', render: renderHkCheck, group: 'Housekeeping' },
+  { path: 'hk-overview', label: 'Dorms', permission: 'hk_reports', render: renderHkOverview, group: 'Housekeeping' },
+  { path: 'hk-report', label: 'Report', permission: 'hk_reports', render: renderHkReport, group: 'Housekeeping' },
+  { path: 'hk-setup', label: 'Setup', permission: 'hk_setup', render: renderHkSetup, group: 'Housekeeping' },
+  { path: 'hk-room', label: 'Dorm room', permission: 'hk_reports', render: renderHkRoom, hidden: true },
+
   // Open to everyone: the person most likely to need it is the one with the
   // fewest permissions.
   { path: 'guide', label: 'Help', permission: null, render: renderGuide },
@@ -79,7 +92,12 @@ function currentRoute() {
 
 /** Land people on the most useful screen they are actually allowed to open. */
 function defaultRoute() {
-  const preferred = ['overview', 'entry', 'mx-overview', 'mx-issue', 'stock', 'purchases', 'setup', 'admin'];
+  const preferred = [
+    // Reports before the entry screens, so somebody who runs a section lands on
+    // its dashboard and somebody who only fills it in lands on the form.
+    'overview', 'entry', 'hk-overview', 'hk-check', 'mx-overview', 'mx-issue',
+    'stock', 'purchases', 'setup', 'admin',
+  ];
   return preferred.find((path) => allowed(ROUTES.find((r) => r.path === path))) ?? 'entry';
 }
 
@@ -325,7 +343,15 @@ function resetSession() {
   state.catalog = null;
 }
 
-const ROLE_LABELS = { cook: 'Kitchen', manager: 'Manager', admin: 'Administrator' };
+const ROLE_LABELS = {
+  cook: 'Kitchen',
+  manager: 'Manager',
+  admin: 'Administrator',
+  technician: 'Technician',
+  maintenance_manager: 'Maintenance',
+  housekeeper: 'Housekeeping',
+  housekeeping_manager: 'Housekeeping manager',
+};
 function roleLabel(role) {
   return ROLE_LABELS[role] || 'Signed in';
 }

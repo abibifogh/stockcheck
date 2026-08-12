@@ -632,25 +632,42 @@ function notificationsCard(data, reload) {
     placeholder: 'https://breakfast.niceoperation.com',
   });
 
-  const recipients = [...data.recipients];
-  const listHost = h('div', { style: { display: 'grid', gap: '.4rem' } });
-
-  const paintRecipients = () => {
-    mount(listHost, recipients.length
-      ? recipients.map((address, index) => h('div', {
-        style: { display: 'grid', gridTemplateColumns: '1fr auto', gap: '.4rem' },
-      },
-        h('input', {
-          type: 'email', value: address,
-          oninput: (e) => { recipients[index] = e.target.value.trim(); },
-        }),
-        h('button.btn-sm.btn-ghost', {
-          onclick: () => { recipients.splice(index, 1); paintRecipients(); },
-        }, '✕'),
-      ))
-      : h('p.muted', { style: { fontSize: '.85rem', margin: 0 } }, 'No recipients yet — nobody will be emailed.'));
+  // Two audiences, one list widget. The morning sheet and the dorm bed check go
+  // to different people in most properties, and to the same people in a small
+  // one — which is why the second list falls back to the first when it is left
+  // empty rather than quietly sending nothing.
+  const addressList = (addresses, emptyText) => {
+    const host = h('div', { style: { display: 'grid', gap: '.4rem' } });
+    const paint = () => {
+      mount(host, addresses.length
+        ? addresses.map((address, index) => h('div', {
+          style: { display: 'grid', gridTemplateColumns: '1fr auto', gap: '.4rem' },
+        },
+          h('input', {
+            type: 'email', value: address,
+            oninput: (e) => { addresses[index] = e.target.value.trim(); },
+          }),
+          h('button.btn-sm.btn-ghost', {
+            onclick: () => { addresses.splice(index, 1); paint(); },
+          }, '✕'),
+        ))
+        : h('p.muted', { style: { fontSize: '.85rem', margin: 0 } }, emptyText));
+    };
+    paint();
+    return { host, add: () => { addresses.push(''); paint(); } };
   };
-  paintRecipients();
+
+  const recipients = [...data.recipients];
+  const hkRecipients = [...(data.housekeeping?.recipients ?? [])];
+
+  const daily = addressList(recipients, 'No recipients yet — nobody will be emailed.');
+  const beds = addressList(hkRecipients,
+    'Nobody named — the bed check will go to the daily email list above.');
+
+  const hkEnabled = h('select',
+    h('option', { value: '1', selected: data.housekeeping?.enabled !== false }, 'Send an email when a bed check is submitted'),
+    h('option', { value: '0', selected: data.housekeeping?.enabled === false }, 'Do not send bed check emails'),
+  );
 
   const providerWarning = data.providerConfigured
     ? null
@@ -671,6 +688,9 @@ function notificationsCard(data, reload) {
         recipients: recipients.filter(Boolean),
         from: from.value.trim(),
         siteUrl: siteUrl.value.trim(),
+        pushEnabled: data.pushEnabled,
+        hkEnabled: hkEnabled.value === '1',
+        hkRecipients: hkRecipients.filter(Boolean),
       });
       toast('Notification settings saved', 'good');
       reload();
@@ -695,23 +715,35 @@ function notificationsCard(data, reload) {
     }
   };
 
-  return card('Daily email', {
-    note: 'Sent when the kitchen submits a day, with that morning’s analysis',
+  return card('Email alerts', {
+    note: 'Sent the moment a day sheet or a bed check is submitted',
     wide: true,
   },
     providerWarning,
     h('div.field-row',
-      h('label.field', h('span', 'When to send'), enabled),
       h('label.field', h('span', 'From address'), from),
       h('label.field', h('span', 'Site address (for the link in the email)'), siteUrl),
     ),
-    h('div', { style: { marginTop: '.4rem' } },
-      h('div.stat-label', { style: { marginBottom: '.4rem' } }, 'Send to'),
-      listHost,
-      h('button.btn-sm', {
-        style: { marginTop: '.5rem' },
-        onclick: () => { recipients.push(''); paintRecipients(); },
-      }, '+ Add recipient'),
+
+    h('div', { style: { marginTop: '.9rem' } },
+      h('div.stat-label', { style: { marginBottom: '.4rem' } }, 'The morning breakfast sheet'),
+      h('div.field-row', h('label.field', h('span', 'When to send'), enabled)),
+      h('div', { style: { marginTop: '.5rem' } },
+        daily.host,
+        h('button.btn-sm', { style: { marginTop: '.5rem' }, onclick: daily.add }, '+ Add recipient'),
+      ),
+    ),
+
+    h('div', { style: { marginTop: '1.1rem' } },
+      h('div.stat-label', { style: { marginBottom: '.4rem' } }, 'The dorm bed check'),
+      h('div.field-row', h('label.field', h('span', 'When to send'), hkEnabled)),
+      h('div', { style: { marginTop: '.5rem' } },
+        beds.host,
+        h('button.btn-sm', { style: { marginTop: '.5rem' }, onclick: beds.add }, '+ Add recipient'),
+      ),
+      h('p.muted', { style: { fontSize: '.82rem', marginTop: '.5rem', marginBottom: 0 } },
+        'This email lists every occupied bed found without a name tag, by room and bed, '
+        + 'along with anything found where the roster said it should not be.'),
     ),
     h('div.btn-row', { style: { marginTop: '1rem' } },
       h('button.btn-primary', { onclick: save }, 'Save'),
@@ -768,6 +800,8 @@ function pushCard(data, reload) {
         from: data.from,
         siteUrl: data.siteUrl,
         pushEnabled: enabled.value === '1',
+        hkEnabled: data.housekeeping?.enabled ?? true,
+        hkRecipients: data.housekeeping?.recipients ?? [],
       });
       toast('Alert settings saved', 'good');
       reload();
