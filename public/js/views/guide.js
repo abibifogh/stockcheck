@@ -224,9 +224,10 @@ const SECTIONS = [
       h('p', 'It depends on whether the day has been submitted yet.'),
       points(
         h('span', h('strong', 'Not submitted yet:'), ' just change it and submit as usual.'),
-        h('span', h('strong', 'Already submitted:'), ' change it and submit again. Your correction does '
-          + 'not overwrite anything — it is sent to a manager, who sees exactly what would change and '
-          + 'accepts or rejects it. Until they accept it, the original figures stand.'),
+        h('span', h('strong', 'Already submitted:'), ' the sheet opens empty. That is deliberate — a '
+          + 'correction is meant to be counted again, not nudged. Fill it in afresh and submit. '
+          + 'Nothing is overwritten: it goes to a manager, who sees exactly what would change and '
+          + 'accepts or rejects it, and until they accept it the original figures stand.'),
         h('span', h('strong', 'An older day:'), ' use the date arrows at the top to go back. If the day '
           + 'is in a closed period you will see a padlock message, and an administrator has to reopen it.'),
       ),
