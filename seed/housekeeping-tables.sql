@@ -53,11 +53,15 @@ INSERT OR IGNORE INTO hk_rooms (name, block, sort_order) VALUES
   ('Dorm B', 'Ground floor', 20),
   ('Dorm C', 'First floor',  30),
   ('Dorm D', 'First floor',  40);
-INSERT INTO hk_beds (room_id, label, sort_order)
-  SELECT r.id, 'Bed ' || n.v, n.v * 10
-    FROM hk_rooms r
-    JOIN (SELECT 1 AS v UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5 UNION SELECT 6) n
-   WHERE r.name IN ('Dorm A', 'Dorm B', 'Dorm C', 'Dorm D')
-     AND NOT EXISTS (
-       SELECT 1 FROM hk_beds b WHERE b.room_id = r.id AND b.label = 'Bed ' || n.v
-     );
+INSERT OR IGNORE INTO hk_beds (room_id, label, sort_order)
+  SELECT id, 'Bed 1', 10 FROM hk_rooms WHERE name IN ('Dorm A', 'Dorm B', 'Dorm C', 'Dorm D');
+INSERT OR IGNORE INTO hk_beds (room_id, label, sort_order)
+  SELECT id, 'Bed 2', 20 FROM hk_rooms WHERE name IN ('Dorm A', 'Dorm B', 'Dorm C', 'Dorm D');
+INSERT OR IGNORE INTO hk_beds (room_id, label, sort_order)
+  SELECT id, 'Bed 3', 30 FROM hk_rooms WHERE name IN ('Dorm A', 'Dorm B', 'Dorm C', 'Dorm D');
+INSERT OR IGNORE INTO hk_beds (room_id, label, sort_order)
+  SELECT id, 'Bed 4', 40 FROM hk_rooms WHERE name IN ('Dorm A', 'Dorm B', 'Dorm C', 'Dorm D');
+INSERT OR IGNORE INTO hk_beds (room_id, label, sort_order)
+  SELECT id, 'Bed 5', 50 FROM hk_rooms WHERE name IN ('Dorm A', 'Dorm B', 'Dorm C', 'Dorm D');
+INSERT OR IGNORE INTO hk_beds (room_id, label, sort_order)
+  SELECT id, 'Bed 6', 60 FROM hk_rooms WHERE name IN ('Dorm A', 'Dorm B', 'Dorm C', 'Dorm D');
