@@ -309,6 +309,22 @@ That SQL file is the migration with every comment stripped out, because the D1
 console rejects a paste it reads as comments alone — it is otherwise identical,
 and safe to run twice.
 
+Four things bite when setting this up through the dashboard, all of them once:
+
+- **Root directory** means the folder inside the repository, and the answer is
+  `/`. It is not where the branch name goes; a branch name there fails the build
+  with "root directory not found".
+- **The deploy command must keep its `-c wrangler.housekeeping.toml`.** Without
+  it, `wrangler deploy` reads `wrangler.toml` and deploys the *breakfast* Worker
+  instead — a build that succeeds while doing the wrong thing, which is worse
+  than one that fails.
+- **The import form does not ask which branch to build**, so it takes the
+  repository's default. If the config file lives on another branch, set the
+  branch under Settings → Build first.
+- **"Retry build" replays the same snapshot**, so it cannot pick up a branch you
+  changed afterwards. Start a fresh build, or push a commit, and check the build
+  is labelled with the branch you meant.
+
 Deploying creates `housekeeping.niceoperation.com`, its DNS record and its
 certificate, the zone already being on Cloudflare. If the hostname is not ready,
 comment out the `[[routes]]` block in `wrangler.housekeeping.toml` for the first
