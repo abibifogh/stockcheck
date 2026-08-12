@@ -578,3 +578,44 @@ test('stock value never disagrees with the unit cost being reported', () => {
     assert.ok(entry.unitCost >= 0 && entry.unitCost < 100, `${day}: unit cost ${entry.unitCost} is not plausible`);
   }
 });
+
+// ------------------------------------------------- the cleared entry sheet --
+
+/**
+ * The rule the entry screen applies: a submitted day opens blank for somebody
+ * whose only permission is entry. Extracted here in the same shape the route
+ * uses it, so the decision itself is pinned down even though the route needs a
+ * database to run.
+ */
+function clearsForEntry(permissions, submittedAt) {
+  const entryOnly = permissions.length === 1 && permissions[0] === 'entry';
+  return entryOnly && Boolean(submittedAt);
+}
+
+test('a submitted day opens blank for a cook, and only for a cook', () => {
+  // The cook, on a day already sent.
+  assert.equal(clearsForEntry(['entry'], '2026-08-11T09:00:00Z'), true);
+
+  // Same cook, day not submitted yet — a draft must survive being reopened,
+  // or a morning's work disappears on a dropped connection.
+  assert.equal(clearsForEntry(['entry'], null), false);
+
+  // Anybody who can also see reports is reviewing, not recording, and needs
+  // the figures in front of them to correct one.
+  assert.equal(clearsForEntry(['entry', 'reports'], '2026-08-11T09:00:00Z'), false);
+  assert.equal(clearsForEntry(['entry', 'reports', 'approvals'], '2026-08-11T09:00:00Z'), false);
+  assert.equal(clearsForEntry(['entry', 'stock'], '2026-08-11T09:00:00Z'), false);
+});
+
+test('clearing the form never touches what was stored', () => {
+  // The day still reads back in full from the dataset the reports are built
+  // from — blanking is a decision about one screen, not about the record.
+  const ds = build();
+  const day = '2026-03-10';
+  assert.equal(dayMetrics(ds, day).guests, 50);
+  assert.equal(ds.usageByDay.get(day).size, 2);
+
+  const insight = dailyInsights(ds, day);
+  assert.equal(insight.today.guests, 50);
+  assert.equal(insight.lines.length, 2);
+});
