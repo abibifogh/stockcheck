@@ -9,11 +9,28 @@
   <link rel="stylesheet" href="/styles.css" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍳</text></svg>" />
   <link rel="manifest" href="/manifest.webmanifest" />
+  <script>
+    // Two Workers serve these same files: the breakfast site, and the
+    // housekeeping site at housekeeping.niceoperation.com. The tab title, the
+    // favicon and — the one that matters — the identity a phone records when
+    // somebody adds the page to their home screen are all settled before any
+    // module loads, so the decision is made here, inline, by the same rule
+    // public/js/brand.js uses.
+    if (/housekeeping/.test(location.hostname)) {
+      document.documentElement.dataset.app = 'housekeeping';
+      document.title = 'Bed Check · Nice Operation';
+      document.querySelector('link[rel="manifest"]').href = '/manifest.housekeeping.webmanifest';
+      document.querySelector('link[rel="icon"]').href =
+        "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛏</text></svg>";
+    }
+  </script>
 </head>
 <body>
   <div id="app" class="app-loading">
     <div class="boot">
-      <div class="boot-mark">🍳</div>
+      <!-- Set in CSS, so the housekeeping site does not flash a frying pan
+           while it loads. -->
+      <div class="boot-mark" aria-hidden="true"></div>
       <p>Loading…</p>
     </div>
   </div>

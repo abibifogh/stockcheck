@@ -25,6 +25,7 @@ import { renderHkCheck } from './views/hk-check.js';
 import { renderHkOverview, renderHkReport } from './views/hk-reports.js';
 import { renderHkRoom } from './views/hk-room.js';
 import { renderHkSetup } from './views/hk-setup.js';
+import { BRAND } from './brand.js';
 
 export const state = {
   role: null,
@@ -92,12 +93,16 @@ function currentRoute() {
 
 /** Land people on the most useful screen they are actually allowed to open. */
 function defaultRoute() {
-  const preferred = [
-    // Reports before the entry screens, so somebody who runs a section lands on
-    // its dashboard and somebody who only fills it in lands on the form.
-    'overview', 'entry', 'hk-overview', 'hk-check', 'mx-overview', 'mx-issue',
-    'stock', 'purchases', 'setup', 'admin',
-  ];
+  // Reports before the entry screens, so somebody who runs a section lands on
+  // its dashboard and somebody who only fills it in lands on the form. On the
+  // housekeeping address the bed check comes first whoever you are — an
+  // administrator who typed housekeeping.niceoperation.com did not mean to
+  // arrive at the breakfast overview.
+  const preferred = BRAND.app === 'housekeeping'
+    ? ['hk-overview', 'hk-check', 'overview', 'entry', 'mx-overview', 'mx-issue',
+      'stock', 'purchases', 'setup', 'admin']
+    : ['overview', 'entry', 'hk-overview', 'hk-check', 'mx-overview', 'mx-issue',
+      'stock', 'purchases', 'setup', 'admin'];
   return preferred.find((path) => allowed(ROUTES.find((r) => r.path === path))) ?? 'entry';
 }
 
@@ -216,9 +221,9 @@ function shell(content) {
     h('header.topbar',
       menuButton,
       h('div.brand',
-        h('span.brand-mark', '🍳'),
+        h('span.brand-mark', BRAND.mark),
         h('div',
-          state.settings.property_name || 'Breakfast Control',
+          state.settings.property_name || BRAND.name,
           h('span.brand-sub', state.name ? `${state.name} · ${roleLabel(state.role)}` : roleLabel(state.role)),
         ),
       ),

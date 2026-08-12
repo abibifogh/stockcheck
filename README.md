@@ -12,9 +12,13 @@ parts store**, and a **dorm bed check** for hostel rooms. Each has its own
 screens and its own permissions, so a housekeeper's PIN opens the bed check and
 nothing else.
 
-Runs entirely on Cloudflare: a single Worker serves both the app and the API,
-with a D1 (SQLite) database behind it. Deploys from GitHub on every push to
-`main`.
+Runs entirely on Cloudflare: a Worker serves both the app and the API, with a
+D1 (SQLite) database behind it. Deploys from GitHub on every push to `main`.
+
+The dorm bed check has its own address, **housekeeping.niceoperation.com**,
+served by a second Worker from this same code and the same database — separate
+deployments, so neither site can take the other down. See *The housekeeping
+site* under Setup.
 
 ---
 
@@ -267,6 +271,51 @@ certificate automatically — no manual CNAME needed.
 To use a different hostname (say the apex, or `kitchen.niceoperation.com`), edit
 the `pattern` in `wrangler.toml` and redeploy.
 
+### 6b. The housekeeping site (housekeeping.niceoperation.com)
+
+The dorm bed check runs at its own address, from a **separate Worker** built
+from this same code. Deploying it cannot disturb the breakfast site: different
+Worker, different deployment, its own config in `wrangler.housekeeping.toml`.
+`wrangler.toml` is not involved and never needs re-deploying for it.
+
+The two share **one database**, so people, PINs, permissions and settings are
+entered once and work on both. They do **not** share secrets — every Worker
+holds its own — so this one needs its own:
+
+```bash
+# Its own session key. Different from the breakfast site's; the two sites are
+# different hostnames, so a cookie was never going to cross between them anyway.
+openssl rand -base64 32 | npx wrangler secret put SESSION_SECRET -c wrangler.housekeeping.toml
+
+# Optional but wise: the emergency way back in, if every account is locked out.
+npx wrangler secret put MANAGER_PIN -c wrangler.housekeeping.toml
+
+# Only if the bed check should email its findings.
+npx wrangler secret put RESEND_API_KEY -c wrangler.housekeeping.toml
+```
+
+Then deploy it:
+
+```bash
+npm run db:migrate            # once, if 0007 has not been applied yet
+npm run deploy:housekeeping
+```
+
+Deploying creates `housekeeping.niceoperation.com`, its DNS record and its
+certificate, the zone already being on Cloudflare. If the hostname is not ready,
+comment out the `[[routes]]` block in `wrangler.housekeeping.toml` for the first
+deploy and test on the `*.workers.dev` address it prints.
+
+Both sites serve the same screens and the same permissions decide what anybody
+can open; what the housekeeping address changes is what it calls itself. It is
+titled **Bed Check**, carries a 🛏 rather than a 🍳, installs to a phone's home
+screen under its own name and icon, and opens on the bed check rather than the
+breakfast overview. A housekeeper never has to know the other site exists.
+
+To make the two genuinely independent — separate people, separate everything —
+point `database_id` in `wrangler.housekeeping.toml` at a second D1 database and
+run the migrations against that instead.
+
 ### 7. Automatic deploys from GitHub
 
 Add two repository secrets under **Settings → Secrets and variables →
@@ -279,6 +328,13 @@ Actions**:
 
 After that, every push to `main` runs the tests and — only if they pass —
 applies migrations and deploys.
+
+The workflow deploys the **breakfast** Worker only. The housekeeping site is
+deployed with `npm run deploy:housekeeping` when its code changes, which is
+deliberate: the two are separate deployments precisely so one cannot take the
+other down. Add a second `deploy` step with
+`command: deploy -c wrangler.housekeeping.toml` if you would rather both went
+out together.
 
 ---
 
@@ -341,6 +397,9 @@ src/
   util/               Date and statistics helpers
 public/               Frontend — plain ES modules, no build step
 migrations/           Database schema
+wrangler.toml         The breakfast site
+wrangler.housekeeping.toml
+                      The housekeeping site: same code, own Worker and hostname
 test/                 Analytics and route tests
 ```
 

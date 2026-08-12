@@ -397,7 +397,11 @@ body:has(.entry-footer) .toasts { bottom: calc(4.75rem + env(safe-area-inset-bot
 
 /* ---------------------------------------------------------------- misc --- */
 .boot { min-height: 100dvh; display: grid; place-content: center; text-align: center; color: var(--text-dim); gap: .5rem; }
+/* Set here rather than in the markup, so the housekeeping site never flashes
+   the breakfast icon on the way in. */
 .boot-mark { font-size: 2.5rem; }
+.boot-mark::after { content: '🍳'; }
+:root[data-app="housekeeping"] .boot-mark::after { content: '🛏'; }
 .empty { text-align: center; padding: 2rem 1rem; color: var(--text-faint); }
 .empty h3 { color: var(--text-dim); margin-bottom: .35rem; }
 .muted { color: var(--text-faint); }

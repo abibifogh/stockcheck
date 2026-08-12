@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
+    "dev:housekeeping": "wrangler dev -c wrangler.housekeeping.toml",
     "deploy": "wrangler deploy",
+    "deploy:housekeeping": "wrangler deploy -c wrangler.housekeeping.toml",
     "db:create": "wrangler d1 create breakfast",
     "db:migrate": "wrangler d1 migrations apply breakfast --remote",
     "db:migrate:local": "wrangler d1 migrations apply breakfast --local",
