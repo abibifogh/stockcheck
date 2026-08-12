@@ -301,6 +301,14 @@ npm run db:migrate            # once, if 0007 has not been applied yet
 npm run deploy:housekeeping
 ```
 
+**Without a terminal**, the same two steps are done in the dashboard: paste
+`seed/housekeeping-tables.sql` into **D1 → breakfast → Console** to create the
+tables, and create the Worker through **Workers → Create → Import a repository**
+with the deploy command `npx wrangler deploy -c wrangler.housekeeping.toml`.
+That SQL file is the migration with every comment stripped out, because the D1
+console rejects a paste it reads as comments alone — it is otherwise identical,
+and safe to run twice.
+
 Deploying creates `housekeeping.niceoperation.com`, its DNS record and its
 certificate, the zone already being on Cloudflare. If the hostname is not ready,
 comment out the `[[routes]]` block in `wrangler.housekeeping.toml` for the first
