@@ -78,6 +78,38 @@ export const ROLES = [
 
 const ROLE_MAP = new Map(ROLES.map((r) => [r.key, r]));
 
+/**
+ * What a given site is allowed to hand out.
+ *
+ * On a housekeeping-only deployment, offering somebody "Daily entry" or
+ * "Maintenance purchases" would be offering them a screen that does not exist
+ * there. So the People form is given the housekeeping permissions and the roles
+ * built from them, and nothing else.
+ *
+ * Administrator is kept everywhere: it is the role that can manage people, and
+ * a site with no way to appoint one is a site nobody can look after.
+ */
+const HOUSEKEEPING_KEYS = ['hk_check', 'hk_reports', 'hk_setup'];
+
+export function permissionsFor(site) {
+  if (site !== 'housekeeping') return PERMISSIONS;
+  return PERMISSIONS.filter((p) => HOUSEKEEPING_KEYS.includes(p.key));
+}
+
+export function rolesFor(site) {
+  if (site !== 'housekeeping') return ROLES;
+  return ROLES
+    .filter((r) => r.key === 'admin' || r.defaults.some((d) => HOUSEKEEPING_KEYS.includes(d)))
+    .map((role) => ({
+      ...role,
+      // An administrator here administers this site, so their defaults are this
+      // site's sections rather than every section in the codebase.
+      defaults: role.key === 'admin'
+        ? [...HOUSEKEEPING_KEYS, 'users']
+        : role.defaults.filter((d) => HOUSEKEEPING_KEYS.includes(d)),
+    }));
+}
+
 export function isRole(value) {
   return ROLE_MAP.has(value);
 }

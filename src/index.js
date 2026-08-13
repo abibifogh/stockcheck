@@ -4,6 +4,7 @@ import {
   throttleReset, tokenTtl, userForCredentials, userForPin, verifyPasswordKey,
 } from './lib/auth.js';
 import { effectivePermissions } from './lib/permissions.js';
+import { servesPath, siteOf } from './lib/site.js';
 import {
   HttpError, badRequest, forbidden, isMissingTable, json, readJson, str, unauthorized,
 } from './lib/http.js';
@@ -160,6 +161,7 @@ const ROUTES = [
   ['PUT', '/api/hk/beds/:id', 'hk_setup', hk.updateBed],
   ['DELETE', '/api/hk/beds/:id', 'hk_setup', hk.deleteBed],
   ['POST', '/api/hk/roster', 'hk_setup', hk.saveRoster],
+  ['PUT', '/api/hk/settings', 'hk_setup', hk.updateSettings],
 ];
 
 function match(pattern, pathname) {
@@ -230,6 +232,13 @@ async function route(request, env, url, executionContext) {
   }
   if (!env.DB) {
     return json({ error: 'Server not configured: no database binding.' }, { status: 503 });
+  }
+
+  // A housekeeping deployment serves the bed check and the things every site
+  // needs — signing in, people, notifications. The breakfast and maintenance
+  // API is simply not there.
+  if (!servesPath(siteOf(env), url.pathname)) {
+    return json({ error: 'Unknown endpoint' }, { status: 404 });
   }
 
   const method = request.method === 'HEAD' ? 'GET' : request.method;

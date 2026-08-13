@@ -520,6 +520,48 @@ export async function deleteBed(ctx, id) {
 }
 
 /**
+ * The handful of settings a housekeeping-only site still needs.
+ *
+ * On the full site these live in the breakfast Setup screen, which a
+ * housekeeping deployment does not have — so the two that matter travel with
+ * the dorms instead. The property's name is on every screen and on every email;
+ * the timezone decides which calendar day a round belongs to, and getting it
+ * wrong files the morning's check against yesterday.
+ */
+export async function updateSettings(ctx) {
+  const body = await readJson(ctx.request);
+  const statements = [];
+
+  if (body.propertyName !== undefined) {
+    statements.push(setting(ctx.db, 'property_name', str(body.propertyName, 'Property name', { max: 100, fallback: '' }) || ''));
+  }
+  if (body.timezone !== undefined) {
+    const zone = str(body.timezone, 'Timezone', { max: 60, fallback: '' }) || 'Africa/Accra';
+    try {
+      new Intl.DateTimeFormat('en', { timeZone: zone });
+    } catch {
+      throw badRequest('That is not a timezone this system recognises.');
+    }
+    statements.push(setting(ctx.db, 'timezone', zone));
+  }
+
+  if (!statements.length) throw badRequest('Nothing to save.');
+  await ctx.db.batch(statements);
+  await audit(ctx, 'hk.settings.update', null, { keys: statements.length });
+
+  const rows = await ctx.db.prepare(
+    "SELECT key, value FROM settings WHERE key IN ('property_name','timezone')",
+  ).all();
+  return json({ settings: Object.fromEntries((rows.results ?? []).map((r) => [r.key, r.value])) });
+}
+
+function setting(db, key, value) {
+  return db.prepare(
+    'INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?2',
+  ).bind(key, value);
+}
+
+/**
  * Set what the front desk expects of each bed tonight.
  *
  * Kept as a bulk save because it is filled in the way it is read — a whole room

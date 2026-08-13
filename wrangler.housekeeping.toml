@@ -9,19 +9,15 @@
 #
 # What is shared and what is not:
 #
-#   Shared      the D1 database. One set of people, PINs, permissions and
-#               settings across both sites, so a housekeeper is added once and
-#               a manager does not carry two passwords. The bed check's own
-#               tables (hk_*) are additive — the breakfast Worker neither reads
-#               nor notices them.
+# Nothing at all is shared. Its own database, so its own people, its own
+# settings and its own history: deleting a housekeeper here cannot affect the
+# breakfast site, and the two lists of staff never have to agree. Its own
+# secrets too, because Workers never share those — this one needs its own
+# SESSION_SECRET, and its own RESEND_API_KEY if it is to send email.
 #
-#   Not shared  secrets. Every Worker holds its own, so this one needs its own
-#               SESSION_SECRET (and RESEND_API_KEY, if the bed check is to send
-#               email). See the README.
-#
-# If you ever want the two properly independent — separate people, separate
-# everything — point `database_id` at a second D1 database and run the
-# migrations against that instead.
+# `APP_SITE` is what makes this deployment housekeeping-only: the breakfast and
+# maintenance screens are absent from the menu, absent from the guide, absent
+# from the roles you can hand out, and their API answers 404 here.
 
 name = "niceoperation-housekeeping"
 main = "src/index.js"
@@ -35,13 +31,13 @@ run_worker_first = ["/api/*"]
 
 [[d1_databases]]
 binding = "DB"
-database_name = "breakfast"
-# The same database the breakfast site uses. Migrations are applied once,
-# against this database, by either site's deploy — they are the same tables.
-database_id = "9862ed78-69f0-4dfe-a36f-7fe3bd9020c1"
+database_name = "housekeeping"
+# Its own database, separate from the breakfast site's in every way.
+database_id = "b323f536-08ba-4db1-a3d2-6f848c503d6f"
 
 [vars]
 APP_NAME = "Nice Operation · Housekeeping"
+APP_SITE = "housekeeping"
 
 # Comment this block out for the very first deploy if the hostname does not
 # exist yet and Cloudflare refuses the route; you will get a *.workers.dev

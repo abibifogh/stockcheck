@@ -1,4 +1,5 @@
 import { can, state } from '../app.js';
+import { BRAND } from '../brand.js';
 import { h, mount } from '../util.js';
 
 /**
@@ -10,7 +11,7 @@ import { h, mount } from '../util.js';
  * nobody reads twice. Everything here is filtered by what you can actually do.
  */
 export async function renderGuide() {
-  const sections = SECTIONS.filter((s) => !s.permission || can(s.permission));
+  const sections = SECTIONS.filter((s) => onThisSite(s.id) && (!s.permission || can(s.permission)));
 
   // Each contents entry is paired with its section, so the list can follow
   // the reader down the page.
@@ -145,6 +146,22 @@ function keepInView(toc, link) {
   const item = link.getBoundingClientRect();
   if (item.top < box.top) toc.scrollTop -= box.top - item.top + 8;
   else if (item.bottom > box.bottom) toc.scrollTop += item.bottom - box.bottom + 8;
+}
+
+/**
+ * The sections a housekeeping-only site keeps.
+ *
+ * Everything else in this guide explains the breakfast unit or the parts store,
+ * and on that site they do not exist. Filtering by permission is not enough:
+ * an administrator holds every permission, and would otherwise be handed a
+ * manual for two systems they cannot open.
+ */
+const HOUSEKEEPING_SECTIONS = new Set([
+  'hk-check', 'hk-reports', 'hk-setup', 'account', 'people', 'problems',
+]);
+
+function onThisSite(id) {
+  return BRAND.app !== 'housekeeping' || HOUSEKEEPING_SECTIONS.has(id);
 }
 
 function greeting() {

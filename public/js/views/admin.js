@@ -3,15 +3,21 @@ import { state } from '../app.js';
 import { prepareNewPassword } from '../crypto.js';
 import { fmtDay, fmtNum, h, mount, toast, todayISO } from '../util.js';
 import { card, table } from './components.js';
+import { BRAND } from '../brand.js';
 
 /** Administrator screen: who can use the system, notifications, and data. */
 export async function renderAdmin() {
+  // Closed periods, bulk entry and the list of recorded days all belong to the
+  // breakfast unit. On a housekeeping-only site they are not merely hidden —
+  // the endpoints behind them are not served — so they are not asked for.
+  const full = BRAND.app !== 'housekeeping';
+
   const [users, notifications, summary, locks, days] = await Promise.all([
     api.users(),
     api.notifications(),
     api.dataSummary(),
-    api.locks(),
-    api.recentDays(60),
+    full ? api.locks() : Promise.resolve({ locks: [] }),
+    full ? api.recentDays(60) : Promise.resolve({ days: [] }),
   ]);
 
   const host = h('div');
@@ -21,15 +27,19 @@ export async function renderAdmin() {
     h('div.page-head',
       h('div',
         h('h1', 'Users & data'),
-        h('div.sub', 'Who can sign in, what they can see, closed periods and bulk entry'),
+        h('div.sub', full
+          ? 'Who can sign in, what they can see, closed periods and bulk entry'
+          : 'Who can sign in, what they can see, and who hears about a round'),
       ),
     ),
     usersCard(users, reload),
-    locksCard(locks.locks || [], reload),
-    importCard(reload),
-    submissionsCard(days.days || [], reload),
+    full ? locksCard(locks.locks || [], reload) : null,
+    full ? importCard(reload) : null,
+    full ? submissionsCard(days.days || [], reload) : null,
     notificationsCard(notifications, reload),
-    pushCard(notifications, reload),
+    // Phone alerts announce a submitted day sheet, which this site does not
+    // have. Showing the panel would be offering a switch that does nothing.
+    full ? pushCard(notifications, reload) : null,
     eraseCard(summary, reload),
   );
   return host;
@@ -716,7 +726,9 @@ function notificationsCard(data, reload) {
   };
 
   return card('Email alerts', {
-    note: 'Sent the moment a day sheet or a bed check is submitted',
+    note: BRAND.app === 'housekeeping'
+      ? 'Sent the moment a bed check is submitted'
+      : 'Sent the moment a day sheet or a bed check is submitted',
     wide: true,
   },
     providerWarning,
@@ -725,7 +737,7 @@ function notificationsCard(data, reload) {
       h('label.field', h('span', 'Site address (for the link in the email)'), siteUrl),
     ),
 
-    h('div', { style: { marginTop: '.9rem' } },
+    BRAND.app === 'housekeeping' ? null : h('div', { style: { marginTop: '.9rem' } },
       h('div.stat-label', { style: { marginBottom: '.4rem' } }, 'The morning breakfast sheet'),
       h('div.field-row', h('label.field', h('span', 'When to send'), enabled)),
       h('div', { style: { marginTop: '.5rem' } },

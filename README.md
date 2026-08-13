@@ -336,9 +336,22 @@ titled **Bed Check**, carries a 🛏 rather than a 🍳, installs to a phone's h
 screen under its own name and icon, and opens on the bed check rather than the
 breakfast overview. A housekeeper never has to know the other site exists.
 
-To make the two genuinely independent — separate people, separate everything —
-point `database_id` in `wrangler.housekeeping.toml` at a second D1 database and
-run the migrations against that instead.
+### The two sites are independent
+
+They share no database and no secrets. The housekeeping site has its own D1
+database, so its own people, its own settings and its own history: deleting a
+housekeeper there cannot affect the breakfast site, and the two lists of staff
+never have to agree.
+
+`APP_SITE = "housekeeping"` is what makes that deployment housekeeping-only.
+The breakfast and maintenance screens are absent from its menu, absent from its
+guide, absent from the roles you can hand out on it — and their API answers 404
+there rather than quietly operating on an empty database. `test/site.test.js`
+holds that line.
+
+To set up its database, paste `seed/housekeeping-database.sql` into the new
+database's console. It is every migration that site needs, comments stripped,
+without the parts store it does not serve — and safe to run twice.
 
 ### 7. Automatic deploys from GitHub
 

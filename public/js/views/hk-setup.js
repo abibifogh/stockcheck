@@ -12,7 +12,7 @@ import { card, table } from './components.js';
  * person who adds a bed is looking straight at the column that makes it useful.
  */
 export async function renderHkSetup() {
-  const data = await api.hkRooms();
+  const [data, me] = await Promise.all([api.hkRooms(), api.me()]);
   const host = h('div');
   const reload = async () => mount(host, await renderHkSetup());
 
@@ -26,6 +26,7 @@ export async function renderHkSetup() {
       ),
     ),
 
+    propertyCard(me.settings ?? {}),
     addRoomCard(reload),
 
     ...data.rooms.map((room) => roomCard(room, reload)),
@@ -38,6 +39,47 @@ export async function renderHkSetup() {
   );
 
   return host;
+}
+
+/**
+ * What this property is called, and where it is.
+ *
+ * On the full site these live in the breakfast setup screen; here that screen
+ * does not exist, and both matter too much to leave unreachable. The name is on
+ * every page and every email. The timezone decides which day a round belongs
+ * to — set it wrong and this morning's check files itself against yesterday.
+ */
+function propertyCard(settings) {
+  const name = h('input', {
+    type: 'text', value: settings.property_name ?? '', maxlength: 100,
+    placeholder: 'e.g. Abibifogh Hostel',
+  });
+  const timezone = h('input', {
+    type: 'text', value: settings.timezone ?? 'Africa/Accra', maxlength: 60,
+    placeholder: 'Africa/Accra',
+  });
+
+  const save = async (event) => {
+    event.target.disabled = true;
+    try {
+      await api.hkUpdateSettings({
+        propertyName: name.value.trim(),
+        timezone: timezone.value.trim() || 'Africa/Accra',
+      });
+      toast('Saved — reload to see the new name at the top', 'good');
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+    event.target.disabled = false;
+  };
+
+  return card('This property', { note: 'Shown at the top of every screen and on every email' },
+    h('div.field-row',
+      h('label.field', h('span', 'Name'), name),
+      h('label.field', h('span', 'Timezone'), timezone),
+      h('div.field', h('span', ' '), h('button.btn-primary', { onclick: save }, 'Save')),
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------

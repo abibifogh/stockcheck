@@ -186,6 +186,7 @@ export const api = {
   hkUpdateBed: (id, body) => request(`/api/hk/beds/${id}`, { method: 'PUT', body }),
   hkDeleteBed: (id) => request(`/api/hk/beds/${id}`, { method: 'DELETE' }),
   hkSaveRoster: (body) => request('/api/hk/roster', { method: 'POST', body }),
+  hkUpdateSettings: (body) => request('/api/hk/settings', { method: 'PUT', body }),
 
   exportUrl: (type, from, to) =>
     `/api/export?${new URLSearchParams({ type, ...(from ? { from } : {}), ...(to ? { to } : {}) })}`,

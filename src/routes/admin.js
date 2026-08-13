@@ -3,9 +3,10 @@ import {
   getPepper, hashPin, isReservedPin, normaliseEmail, storedPassword,
 } from '../lib/auth.js';
 import {
-  PERMISSIONS, PERMISSION_KEYS, ROLES, effectivePermissions, isRole,
+  PERMISSION_KEYS, effectivePermissions, isRole, permissionsFor, rolesFor,
 } from '../lib/permissions.js';
-import { isEmail, notifyDaySubmitted, parseRecipients } from '../lib/email.js';
+import { siteOf } from '../lib/site.js';
+import { isEmail, notifyDaySubmitted, notifyRoundSubmitted, parseRecipients } from '../lib/email.js';
 import { isDay } from '../util/dates.js';
 
 const PIN_RE = /^\d{4,10}$/;
@@ -115,10 +116,14 @@ export async function listUsers(ctx) {
     'SELECT * FROM users ORDER BY active DESC, role, name',
   ).all();
 
+  // Only what this site can actually offer — see permissionsFor().
+  const site = siteOf(ctx.env);
+
   return json({
     users: (rows.results ?? []).map(publicUser),
-    roles: ROLES,
-    permissions: PERMISSIONS,
+    roles: rolesFor(site),
+    permissions: permissionsFor(site),
+    site,
     recovery: await recoveryStatus(ctx),
   });
 }
@@ -340,8 +345,26 @@ export async function updateNotifications(ctx) {
   return getNotifications(ctx);
 }
 
-/** Send the most recent day's email now, so the admin can prove it works. */
+/** Send the most recent email now, so the admin can prove it works. */
 export async function testNotification(ctx) {
+  // On a housekeeping site there is no day sheet to send. The proof somebody
+  // wants there is that a bed check reaches an inbox.
+  if (siteOf(ctx.env) === 'housekeeping') {
+    const round = await ctx.db.prepare('SELECT day FROM hk_rounds ORDER BY day DESC LIMIT 1').first();
+    if (!round) throw badRequest('There are no bed checks recorded yet to send a summary for.');
+
+    await notifyRoundSubmitted(ctx.db, ctx.env, {
+      day: round.day,
+      submittedBy: `${ctx.session.user.name} (test)`,
+      resubmission: false,
+    });
+
+    const sent = await ctx.db.prepare(
+      "SELECT * FROM email_log WHERE kind = 'hk_round' ORDER BY at DESC LIMIT 1",
+    ).first();
+    return json({ ok: sent?.status === 'sent', result: sent });
+  }
+
   const latest = await ctx.db.prepare(
     'SELECT day FROM service_days ORDER BY day DESC LIMIT 1',
   ).first();
