@@ -1032,3 +1032,50 @@ td.tick input, th.tick input { cursor: pointer; }
   .bake-name { flex: 1 1 100%; }
   .bake-row .mx-step { margin-left: auto; }
 }
+
+/* --------------------------------------------------- category filtering --
+   A stock list of forty items is a list nobody reads to the bottom. The chips
+   narrow it; grouping breaks it into sections with a subtotal on each, which
+   is the only way "the dairy is half the store" becomes visible. */
+
+.filter-chips {
+  display: flex; flex-wrap: wrap; gap: .35rem;
+  margin: 0 0 .8rem;
+}
+.filter-chips .mx-chip {
+  min-height: 34px; padding: .35rem .7rem; font-size: .82rem; font-weight: 550;
+}
+/* The grouping toggle is a different kind of thing from the category chips, so
+   it is set apart rather than sitting in the row as another category. */
+.filter-toggle { margin-left: auto; }
+.filter-toggle.on { background: var(--surface-3); border-color: var(--border-strong); color: var(--text); }
+
+tbody.group-head th {
+  /* A <th> inside the body, so it inherits the column-header styling: small,
+     faint and shouted in capitals. A category is a name, not a label, so all
+     three are turned back off. */
+  position: static; z-index: auto;
+  padding: .6rem .5rem .45rem;
+  text-align: left; font-size: .85rem;
+  text-transform: none; letter-spacing: normal;
+  color: var(--text);
+  background: var(--surface-2);
+  border-top: 1px solid var(--border-strong);
+  border-bottom: 1px solid var(--border);
+  white-space: normal;
+}
+tbody.group-head:first-of-type th { border-top: 0; }
+.group-name { font-weight: 700; letter-spacing: -.01em; }
+.group-note { color: var(--text-faint); font-weight: 500; margin-left: .5rem; font-size: .78rem; }
+
+@media (max-width: 640px) {
+  .filter-toggle { margin-left: 0; }
+  .group-note { display: block; margin-left: 0; }
+}
+
+@media print {
+  /* Whatever is on screen is what prints, but the chips are controls and a
+     printed page has nothing to press. */
+  .filter-chips { display: none !important; }
+  tbody.group-head th { background: transparent; }
+}

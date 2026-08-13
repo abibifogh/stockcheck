@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { state } from '../app.js';
 import { fmtDay, fmtMoney, fmtNum, h, mount, toast, todayISO } from '../util.js';
-import { card, exportButton, statTile, table } from './components.js';
+import { card, exportButton, groupedTable, statTile, table } from './components.js';
 
 const STATUS_PILL = {
   negative: ['bad', 'Negative'],
@@ -86,9 +86,15 @@ export async function renderStock(params) {
     countForm(reload),
   );
 
-  const allCard = card('Full stock position', { note: `As at ${fmtDay(data.asOf)}`, wide: true },
-    table([
-      { key: 'name', label: 'Ingredient', format: (v, r) => h('div', h('div', v), h('small.muted', r.categoryName)) },
+  const allCard = card('Full stock position', {
+    note: `As at ${fmtDay(data.asOf)} · tap a category to narrow the list`,
+    wide: true,
+  },
+    groupedTable([
+      // The category has moved out from under the name: when the list is
+      // grouped it is already the heading, and when it is filtered it is the
+      // chip you just pressed. Repeating it on every row was noise.
+      { key: 'name', label: 'Ingredient' },
       { key: 'stock', label: 'On hand', align: 'right', format: (v, r) => `${fmtNum(v, 2)} ${r.unit}` },
       { key: 'value', label: 'Value', align: 'right', format: (v) => fmtMoney(v, { withSymbol: false }) },
       { key: 'unitCost', label: 'Unit cost', align: 'right', format: (v) => fmtMoney(v, { withSymbol: false }) },
@@ -96,7 +102,17 @@ export async function renderStock(params) {
       { key: 'daysCover', label: 'Days cover', align: 'right', format: (v) => (v == null ? '—' : fmtNum(v, 1)) },
       { key: 'parLevel', label: 'Par', align: 'right', format: (v, r) => (v ? `${fmtNum(v, 2)} ${r.unit}` : '—') },
       { key: 'status', label: 'Status', format: (v) => h(`span.pill.${STATUS_PILL[v][0]}`, STATUS_PILL[v][1]) },
-    ], data.rows, { empty: 'No active ingredients yet.' }),
+    ], data.rows, {
+      empty: 'No active ingredients yet.',
+      storageKey: 'stock',
+      label: 'ingredient',
+      // What a section is worth is the reason to group at all: "the dairy is
+      // half the store" is a fact you cannot see in a flat list.
+      summarise: (rows) => `${rows.length} ${rows.length === 1 ? 'ingredient' : 'ingredients'} · `
+        + `${fmtMoney(rows.reduce((n, r) => n + r.value, 0))}`
+        + (rows.some((r) => r.status !== 'ok')
+          ? ` · ${rows.filter((r) => r.status !== 'ok').length} need attention` : ''),
+    }),
   );
 
   mount(host,

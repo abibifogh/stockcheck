@@ -694,6 +694,13 @@ const SECTIONS = [
           + 'use. Under three days is flagged.'),
         h('span', h('strong', 'Record a physical count —'), ' what you actually counted on the shelf.'),
       ),
+      note('Narrowing the list, and grouping it.',
+        'Above the full stock table is a row of categories. Tap one and the list shows only that — '
+        + 'useful when you are standing in front of one shelf. “Group by category” instead breaks '
+        + 'the whole list into sections with what each is worth beside its name, which is the only '
+        + 'way to see that the dairy is half the store. The system remembers whether you like it '
+        + 'grouped; it deliberately does not remember a category, because coming back tomorrow to a '
+        + 'screen showing four items out of forty is how somebody concludes the data has gone.'),
       warn('Count the store once a month.', 'Everything else in this system is built on what people '
         + 'said they used. A physical count is the only thing that reveals waste, over-portioning and '
         + 'loss. The difference between the count and the book figure is the honest number.'),
@@ -850,6 +857,12 @@ const SECTIONS = [
       h('p', 'The book works out what should be on the shelf: what you bought, less what was issued. '
         + 'Reality drifts from that — things get taken without being recorded, a delivery is keyed in '
         + 'twice, something breaks in the store. Counting is how you put it right.'),
+      note('Count one shelf at a time.',
+        'The parts list has a row of categories above it. Tap Plumbing and you get the plumbing, '
+        + 'which is usually one shelf — or press “Group by category” to keep everything on screen '
+        + 'in sections, each with how many parts it holds and what they are worth. Figures you have '
+        + 'already typed are kept when you switch between categories, so you can work round the '
+        + 'store and submit once at the end.'),
       steps(
         h('span', h('strong', 'Count the shelf'), ' and type the figures into the “Counted” column on '
           + 'the Parts screen. You do not have to do the whole store; count what you counted.'),

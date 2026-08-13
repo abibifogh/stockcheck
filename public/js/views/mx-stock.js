@@ -3,7 +3,7 @@ import { can, navigate } from '../app.js';
 import {
   attributeSummary, fmtDay, fmtMoney, fmtNum, fmtQty, h, mount, toast, todayISO,
 } from '../util.js';
-import { card, statTile, table } from './components.js';
+import { card, groupedTable, statTile, table } from './components.js';
 import { printButton } from '../print.js';
 
 /**
@@ -115,10 +115,19 @@ export async function renderMxStock() {
 
     card('Everything in the store', {
       wide: true,
-      note: 'Type a figure in the last column to record a physical count',
+      note: 'Tap a category to narrow the list · type a figure in the last column to count',
     },
-      table([
-        { key: 'name', label: 'Part', format: (v, r) => h('div', h('div', v), h('small.muted', [r.categoryName, attributeSummary(r.attributes)].filter(Boolean).join(' · '))) },
+      groupedTable([
+        // The category comes off the row: grouped it is the heading, filtered
+        // it is the chip you just pressed. The part's own details stay, since
+        // those are what tell two similar parts apart.
+        {
+          key: 'name',
+          label: 'Part',
+          format: (v, r) => (attributeSummary(r.attributes)
+            ? h('div', h('div', v), h('small.muted', attributeSummary(r.attributes)))
+            : v),
+        },
         { key: 'stock', label: 'On shelf', align: 'right', format: (v, r) => fmtQty(v, r.unit) },
         { key: 'parLevel', label: 'Level', align: 'right', format: (v, r) => fmtQty(v, r.unit) },
         { key: 'unitCost', label: 'Each', align: 'right', format: (v) => fmtMoney(v, { withSymbol: false }) },
@@ -130,10 +139,16 @@ export async function renderMxStock() {
           key: 'itemId',
           label: 'Counted',
           align: 'right',
+          // Filtering redraws these boxes, so each one has to read back what
+          // has already been typed. Without this a figure entered under one
+          // category would vanish from the screen the moment somebody looked
+          // at another — while still being counted, which is worse than
+          // losing it.
           format: (id) => h('input', {
             type: 'number', step: 'any', min: '0',
             style: { width: '80px' },
             placeholder: '—',
+            value: counts.has(id) ? String(counts.get(id)) : '',
             oninput: (e) => {
               const v = Number(e.target.value);
               if (e.target.value === '' || !Number.isFinite(v)) counts.delete(id);
@@ -141,7 +156,18 @@ export async function renderMxStock() {
             },
           }),
         },
-      ], data.rows, { rowClass: (r) => (r.status === 'negative' ? 'row-bad' : '') }),
+      ], data.rows, {
+        rowClass: (r) => (r.status === 'negative' ? 'row-bad' : ''),
+        storageKey: 'mx-stock',
+        label: 'part',
+        // Counting is done a shelf at a time, and a shelf is usually a
+        // category — so what a section holds and is worth is exactly what
+        // somebody standing in the store wants beside its name.
+        summarise: (rows) => `${rows.length} ${rows.length === 1 ? 'part' : 'parts'} · `
+          + `${fmtMoney(rows.reduce((n, r) => n + r.value, 0))}`
+          + (rows.some((r) => r.status !== 'ok')
+            ? ` · ${rows.filter((r) => r.status !== 'ok').length} to order` : ''),
+      }),
       h('div.btn-row', { style: { marginTop: '.9rem' } },
         h('button.btn-primary', { onclick: saveCounts }, 'Save today’s count'),
       ),
