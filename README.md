@@ -488,6 +488,7 @@ src/
   routes/             API handlers
   util/               Date and statistics helpers
 public/               Frontend — plain ES modules, no build step
+                      Icons are generated: node scripts/build-icons.mjs
 migrations/           Database schema
 wrangler.toml         The breakfast site
 wrangler.housekeeping.toml

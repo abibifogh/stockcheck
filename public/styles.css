@@ -89,6 +89,12 @@ html, body {
   line-height: 1.5;
   -webkit-text-size-adjust: 100%;
   -webkit-font-smoothing: antialiased;
+  /* A double tap on a phone zooms the page in and leaves it there. Nothing
+     here wants that: every control is a single tap, and somebody tapping a bed
+     twice — because they were not sure the first one took — should get two
+     taps, not a magnifying glass they now have to undo. Pinch to zoom still
+     works, so nobody is stuck with type they cannot read. */
+  touch-action: manipulation;
 }
 
 h1, h2, h3, h4 { margin: 0; font-weight: 650; letter-spacing: -0.015em; }
@@ -179,10 +185,14 @@ a { color: var(--accent); }
 .card-head h2, .card-head h3 { display: flex; align-items: center; gap: .5rem; }
 .card-note { color: var(--text-faint); font-size: .8rem; font-weight: 450; }
 
+/* `min(…, 100%)` rather than a bare width: on a narrow phone a column with a
+   fixed minimum is wider than the screen, and the whole page ends up sliding
+   sideways under the thumb. The minimum has to be allowed to give way. */
 .grid { display: grid; gap: 1rem; }
-.grid-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
-.grid-3 { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-.grid-4 { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.grid > * { min-width: 0; }
+.grid-2 { grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); }
+.grid-3 { grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); }
+.grid-4 { grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); }
 
 /* ---------------------------------------------------------------- stats -- */
 .stat {
@@ -295,7 +305,7 @@ input:focus, select:focus, textarea:focus {
 }
 label.field { display: block; margin-bottom: .7rem; }
 label.field > span { display: block; font-size: .78rem; font-weight: 620; color: var(--text-dim); margin-bottom: .25rem; }
-.field-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .7rem; }
+.field-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: .7rem; }
 
 .seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 2px; }
 .seg button { border: none; background: transparent; border-radius: 999px; padding: .32rem .8rem; font-size: .82rem; color: var(--text-dim); }
@@ -326,7 +336,7 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
   border-radius: var(--radius); padding: .85rem; margin-bottom: 1rem;
   box-shadow: var(--shadow);
 }
-.guest-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .7rem; }
+.guest-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr)); gap: .7rem; }
 
 .counter { display: flex; align-items: stretch; gap: .35rem; }
 .counter input {
@@ -346,7 +356,7 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 }
 .cat-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 
-.item-list { display: grid; gap: .5rem; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); }
+.item-list { display: grid; gap: .5rem; grid-template-columns: repeat(auto-fill, minmax(min(290px, 100%), 1fr)); }
 .item {
   display: grid; grid-template-columns: 1fr auto; gap: .5rem .7rem; align-items: center;
   background: var(--surface); border: 1px solid var(--border);
@@ -452,6 +462,21 @@ body:has(.entry-footer) .toasts { bottom: calc(4.75rem + env(safe-area-inset-bot
     display: block; position: fixed; inset: var(--topbar-h) 0 0 0;
     background: rgba(8, 12, 20, .4); z-index: 40;
   }
+}
+
+/* --------------------------------------------------------------- touch --
+   iOS zooms the whole page in whenever a field with text smaller than 16px is
+   focused, and it does not zoom back out when the field is left. Every screen
+   here has fields on it, so on a touch screen the controls are 16px and the
+   page stays where it was put. The tap targets go up with them: a housekeeper
+   is working one-handed, standing up, in a dorm. */
+@media (pointer: coarse) {
+  input, select, textarea { font-size: 16px; }
+  button, .btn { min-height: 40px; }
+  .btn-sm { min-height: 34px; }
+  /* Table cells stay dense — a 16px box in a numeric column would push the
+     table wider than the phone, and it is already scrolling sideways. */
+  td input, td select { font-size: 16px; padding: .35rem .4rem; }
 }
 
 @media (max-width: 720px) {
@@ -736,7 +761,7 @@ body:has(.entry-footer) .toasts[popover] { bottom: calc(4.75rem + env(safe-area-
 
 .mx-grid {
   display: grid; gap: .5rem; margin-top: .7rem;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(140px, 100%), 1fr));
 }
 .mx-tile {
   position: relative;
@@ -805,12 +830,12 @@ body:has(.entry-footer) .toasts[popover] { bottom: calc(4.75rem + env(safe-area-
 .mx-recent-row { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; }
 
 .mx-delivery-line {
-  display: grid; grid-template-columns: minmax(160px, 2fr) 1fr 1fr auto auto;
+  display: grid; grid-template-columns: minmax(min(160px, 100%), 2fr) 1fr 1fr auto auto;
   gap: .5rem; align-items: center; margin-bottom: .45rem;
 }
 
 @media (max-width: 720px) {
-  .mx-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+  .mx-grid { grid-template-columns: repeat(auto-fill, minmax(min(120px, 100%), 1fr)); }
   .mx-delivery-line { grid-template-columns: 1fr 1fr; }
   .mx-delivery-line select { grid-column: 1 / -1; }
   .mx-basket-lines { max-height: 38vh; }

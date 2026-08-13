@@ -7,8 +7,16 @@
   <title>Breakfast Control · Nice Operation</title>
   <meta name="description" content="Daily breakfast ingredient usage tracking and consumption analytics." />
   <link rel="stylesheet" href="/styles.css" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍳</text></svg>" />
+  <!-- Real files, not data: URIs. A phone adding this page to its home screen
+       does not use the favicon: Android reads the manifest and will not fetch
+       a data: URI for an icon, and iOS ignores the manifest and looks for
+       apple-touch-icon, which has to be a PNG. -->
+  <link rel="icon" href="/icon.svg" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Breakfast" />
   <script>
     // Two Workers serve these same files: the breakfast site, and the
     // housekeeping site at housekeeping.niceoperation.com. The tab title, the
@@ -16,12 +24,18 @@
     // somebody adds the page to their home screen are all settled before any
     // module loads, so the decision is made here, inline, by the same rule
     // public/js/brand.js uses.
+    //
+    // The housekeeping Worker also swaps these files server-side, at the same
+    // paths, so a browser that read the tags before this ran still gets a bed.
     if (/housekeeping/.test(location.hostname)) {
       document.documentElement.dataset.app = 'housekeeping';
       document.title = 'Bed Check · Nice Operation';
-      document.querySelector('link[rel="manifest"]').href = '/manifest.housekeeping.webmanifest';
-      document.querySelector('link[rel="icon"]').href =
-        "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛏</text></svg>";
+      const set = (selector, value, attr) =>
+        document.querySelector(selector)?.setAttribute(attr || 'href', value);
+      set('link[rel="manifest"]', '/manifest.housekeeping.webmanifest');
+      set('link[rel="icon"]', '/icon.housekeeping.svg');
+      set('link[rel="apple-touch-icon"]', '/apple-touch-icon.housekeeping.png');
+      set('meta[name="apple-mobile-web-app-title"]', 'Bed Check', 'content');
     }
   </script>
 </head>

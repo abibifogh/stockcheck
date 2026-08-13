@@ -185,11 +185,38 @@ function match(pattern, pathname) {
   return params;
 }
 
+/**
+ * Files that exist twice: once for the breakfast site, once for housekeeping.
+ *
+ * Which one a request should get cannot be decided by the file — both sites
+ * serve the same `public/` directory — so the Worker decides, and the page can
+ * ask for `/apple-touch-icon.png` without knowing which site it is on. The
+ * housekeeping deployment routes these paths through the Worker first; the
+ * breakfast one does not, so it serves the plain file and is unaffected.
+ */
+export const SITE_ASSETS = new Set([
+  '/manifest.webmanifest',
+  '/icon.svg',
+  '/apple-touch-icon.png',
+  '/icon-192.png',
+  '/icon-512.png',
+]);
+
+/** `/icon-192.png` → `/icon-192.housekeeping.png`. */
+export function housekeepingAsset(pathname) {
+  const dot = pathname.lastIndexOf('.');
+  return `${pathname.slice(0, dot)}.housekeeping${pathname.slice(dot)}`;
+}
+
 export default {
   async fetch(request, env, executionContext) {
     const url = new URL(request.url);
 
     if (!url.pathname.startsWith('/api/')) {
+      if (siteOf(env) === 'housekeeping' && SITE_ASSETS.has(url.pathname)) {
+        const swapped = new URL(housekeepingAsset(url.pathname), url);
+        return env.ASSETS.fetch(new Request(swapped, request));
+      }
       return env.ASSETS.fetch(request);
     }
 

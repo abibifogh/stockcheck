@@ -27,7 +27,18 @@ compatibility_date = "2025-05-01"
 directory = "./public"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
-run_worker_first = ["/api/*"]
+# The icons and the manifest go through the Worker as well, so it can hand back
+# the housekeeping version of each rather than the breakfast one sitting at the
+# same name. `wrangler.toml` keeps the plain list, so the breakfast site serves
+# its own files exactly as before.
+run_worker_first = [
+  "/api/*",
+  "/manifest.webmanifest",
+  "/icon.svg",
+  "/apple-touch-icon.png",
+  "/icon-192.png",
+  "/icon-512.png",
+]
 
 [[d1_databases]]
 binding = "DB"
