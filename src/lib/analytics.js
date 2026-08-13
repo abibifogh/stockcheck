@@ -30,15 +30,19 @@ const MIN_SAMPLE = 4;
  * read is faster and far less error-prone than incremental bookkeeping.
  */
 export async function loadDataset(db) {
-  const [categories, ingredients, serviceDays, usage, purchases, settings, counts] = await Promise.all([
-    db.prepare('SELECT * FROM categories ORDER BY sort_order, name').all(),
-    db.prepare('SELECT * FROM ingredients ORDER BY sort_order, name').all(),
-    db.prepare('SELECT * FROM service_days ORDER BY day').all(),
-    db.prepare('SELECT day, ingredient_id, qty FROM usage ORDER BY day').all(),
-    db.prepare('SELECT * FROM purchases ORDER BY day').all(),
-    db.prepare('SELECT key, value FROM settings').all(),
-    db.prepare('SELECT * FROM stock_counts ORDER BY day').all(),
-  ]);
+  const [categories, ingredients, serviceDays, usage, purchases, settings, counts, production]
+    = await Promise.all([
+      db.prepare('SELECT * FROM categories ORDER BY sort_order, name').all(),
+      db.prepare('SELECT * FROM ingredients ORDER BY sort_order, name').all(),
+      db.prepare('SELECT * FROM service_days ORDER BY day').all(),
+      db.prepare('SELECT day, ingredient_id, qty FROM usage ORDER BY day').all(),
+      db.prepare('SELECT * FROM purchases ORDER BY day').all(),
+      db.prepare('SELECT key, value FROM settings').all(),
+      db.prepare('SELECT * FROM stock_counts ORDER BY day').all(),
+      // Tolerated missing so every report still loads on an installation that
+      // has not run the bakery migration yet.
+      db.prepare('SELECT * FROM production ORDER BY day, id').all().catch(() => ({ results: [] })),
+    ]);
 
   return makeDataset({
     categories: categories.results ?? [],
@@ -48,6 +52,7 @@ export async function loadDataset(db) {
     purchases: purchases.results ?? [],
     settings: settings.results ?? [],
     stockCounts: counts.results ?? [],
+    production: production.results ?? [],
   });
 }
 
@@ -63,11 +68,33 @@ export function makeDataset(raw) {
     usageByDay.get(u.day).set(u.ingredient_id, Number(u.qty) || 0);
   }
 
+  // Bread baked on the premises arrives on the shelf exactly as a delivery
+  // does, so the ledger is given both. They are kept apart everywhere else:
+  // "what we spent with suppliers" must not quietly include loaves we made
+  // ourselves, and a production run has no invoice behind it.
+  const production = raw.production ?? [];
   const ledger = buildLedger({
     ingredients: raw.ingredients,
-    purchases: raw.purchases,
+    purchases: [
+      ...(raw.purchases ?? []),
+      ...production.map((p) => ({
+        day: p.day,
+        ingredient_id: p.ingredient_id,
+        qty: Number(p.qty) || 0,
+        unit_cost: Number(p.unit_cost) || 0,
+      })),
+    ],
     usage: raw.usage,
   });
+
+  // day -> ingredient -> qty produced. Wanted by the stock screen and the day
+  // report, and walking the list again each time would show on a free plan.
+  const producedByDay = new Map();
+  for (const p of production) {
+    if (!producedByDay.has(p.day)) producedByDay.set(p.day, new Map());
+    const perItem = producedByDay.get(p.day);
+    perItem.set(p.ingredient_id, (perItem.get(p.ingredient_id) ?? 0) + (Number(p.qty) || 0));
+  }
 
   const dataset = {
     ...raw,
@@ -78,6 +105,8 @@ export function makeDataset(raw) {
     categoryById,
     serviceByDay,
     usageByDay,
+    production,
+    producedByDay,
     ledger,
     _dayCache: new Map(),
   };

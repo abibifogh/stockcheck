@@ -990,3 +990,45 @@ td.tick input, th.tick input { cursor: pointer; }
 /* A row that no longer counts — a voided sale, a stopped schedule. Still
    there to be read, visibly out of play. */
 .row-muted td { opacity: .55; }
+
+/* ---------------------------------------------------------------- bakery --
+   A page reached through a link, by somebody with no account and usually a
+   floury phone. Nothing on it but the form: no menu, no sign-in, nothing else
+   to reach. Everything is sized for a thumb. */
+
+.alert.good { background: var(--good-soft); border-color: color-mix(in srgb, var(--good) 30%, transparent); }
+
+.bake-page { min-height: 100dvh; background: var(--bg); }
+.bake-head {
+  display: flex; align-items: center; gap: .75rem;
+  padding: .8rem clamp(.75rem, 4vw, 1.5rem);
+  background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.bake-main { max-width: 620px; margin: 0 auto; padding: 1rem clamp(.6rem, 3vw, 1.2rem) 3rem; }
+.bake-broken { max-width: 480px; margin: 0 auto; padding: 3rem 1rem; }
+
+.bake-list { display: grid; gap: .5rem; }
+.bake-row {
+  display: flex; align-items: center; justify-content: space-between; gap: .75rem;
+  padding: .6rem .7rem;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.bake-name { min-width: 0; font-size: .95rem; }
+.bake-qty {
+  width: 84px; text-align: center; font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.bake-foot {
+  display: grid; gap: .6rem; margin-top: 1rem;
+  padding-top: .8rem; border-top: 1px solid var(--border);
+}
+.bake-summary { font-size: .88rem; line-height: 1.5; }
+.bake-send { min-height: 52px; font-size: 1rem; }
+
+@media (max-width: 480px) {
+  .bake-row { flex-wrap: wrap; }
+  .bake-name { flex: 1 1 100%; }
+  .bake-row .mx-step { margin-left: auto; }
+}

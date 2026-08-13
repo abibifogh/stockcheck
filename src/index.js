@@ -15,6 +15,7 @@ import * as insights from './routes/insights.js';
 import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
 import * as mx from './routes/maintenance.js';
+import * as bakery from './routes/bakery.js';
 import * as shop from './routes/shop.js';
 import * as inbox from './routes/inbox.js';
 import * as stocktakes from './routes/stocktakes.js';
@@ -57,6 +58,22 @@ const ROUTES = [
   ['GET', '/api/insights/monthly', 'reports', insights.monthly],
   ['GET', '/api/insights/compare', 'reports', insights.compare],
   ['GET', '/api/export', 'reports', insights.exportCsv],
+
+  // --------------------------------------------------------------- bakery --
+  // The two public routes are the whole point: the bakery reports what came
+  // out of the oven without needing an account. The token in the body is the
+  // gate, and all it can do is add stock.
+  ['POST', '/api/bakery/open', 'public', bakery.open],
+  ['POST', '/api/bakery/submit', 'public', bakery.submit],
+
+  ['GET', '/api/bakery/form', 'bakery', bakery.form],
+  ['POST', '/api/production', 'bakery', bakery.create],
+  ['GET', '/api/production', 'stock', bakery.log],
+  ['DELETE', '/api/production/:id', 'stock', bakery.remove],
+
+  ['GET', '/api/bakery/links', 'users', bakery.listLinks],
+  ['POST', '/api/bakery/links', 'users', bakery.createLink],
+  ['DELETE', '/api/bakery/links/:id', 'users', bakery.revokeLink],
 
   ['GET', '/api/insights/stock', 'stock', insights.stock],
   ['POST', '/api/stock-counts', 'stock', catalog.createStockCount],

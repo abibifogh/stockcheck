@@ -59,6 +59,23 @@ indistinguishable from "we forgot" and silently drags every average down.
 | **Daily email** | A summary of each submitted day, with the analysis, to whichever addresses you choose. |
 | **Erase data** | Clear a trial run before going live, with a typed confirmation. Keeps people, settings and the ingredient list. |
 
+### For the bakery — a link, and nothing else
+
+Bread baked on the premises is stock arriving; the only difference from a
+delivery is that no money changed hands. Without somewhere to record it, the
+morning sheet deducts loaves the system never saw arrive and the figure goes
+negative every week.
+
+| Feature | What it does |
+|---|---|
+| **A link** | An administrator issues one per bakery or per phone. It opens a single form listing only what you bake — no account, no PIN, nothing to remember. It shows no costs and reaches nothing else in the system. |
+| **Per cycle** | Several reports a day is the normal case. The cycle is guessed from the time and is one tap to change. "Already sent" shows what has gone in today, so a run never gets reported twice. |
+| **Straight into stock** | Production enters the ledger exactly as a delivery does, valued at what a unit costs you to make. It is kept out of Purchases, which is money that actually went to suppliers. |
+| **Revocable** | Only a fingerprint of the token is stored, so a link cannot be looked up later. Lost one? Revoke and reissue; what it already sent is untouched. |
+
+There is also a `baker` role for somebody who would rather sign in, and
+managers hold the same permission for covering a shift.
+
 ### For the craft shop — a till
 
 The third store, and the only one that takes money. Cash or card; nothing else

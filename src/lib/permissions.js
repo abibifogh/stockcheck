@@ -9,6 +9,7 @@ export const PERMISSIONS = [
   { key: 'stock', label: 'Stock', detail: 'Stock levels, reorder list, physical counts' },
   { key: 'purchases', label: 'Purchases', detail: 'Record deliveries and see what was paid' },
   { key: 'approvals', label: 'Approvals', detail: 'Accept or reject changes to days already submitted' },
+  { key: 'bakery', label: 'Bakery', detail: 'Report bread produced, which puts it into stock' },
   { key: 'setup', label: 'Setup', detail: 'Ingredients, categories and property settings' },
   { key: 'users', label: 'Users & data', detail: 'Manage people, notifications, locks and erase data' },
 
@@ -44,7 +45,15 @@ export const ROLES = [
     key: 'manager',
     label: 'Manager',
     detail: 'Records and reviews. Sees costs, stock and purchases, and approves changes.',
-    defaults: ['entry', 'reports', 'stock', 'purchases', 'approvals'],
+    // Including the bakery form: a manager covering for the baker on a quiet
+    // Sunday should not need their own access changed to record a bake.
+    defaults: ['entry', 'reports', 'stock', 'purchases', 'approvals', 'bakery'],
+  },
+  {
+    key: 'baker',
+    label: 'Baker',
+    detail: 'Reports what came out of the oven. Sees no costs and no other screen.',
+    defaults: ['bakery'],
   },
   {
     key: 'technician',

@@ -21,6 +21,7 @@ import { renderMxPurchases } from './views/mx-purchases.js';
 import { renderMxSetup } from './views/mx-setup.js';
 import { renderMxArea } from './views/mx-area.js';
 import { renderMxCompare } from './views/mx-compare.js';
+import { renderBakeryLink, renderProduction } from './views/bakery.js';
 import { renderShopSell } from './views/shop-sell.js';
 import { renderShopOverview, renderShopReport, renderShopCompare } from './views/shop-reports.js';
 import { renderShopSales } from './views/shop-sales.js';
@@ -40,6 +41,7 @@ export const state = {
 
 const ROUTES = [
   { path: 'entry', label: 'Daily entry', permission: 'entry', render: renderEntry, group: 'Breakfast' },
+  { path: 'production', label: 'Bakery', permission: 'bakery', render: renderProduction, group: 'Breakfast' },
   { path: 'overview', label: 'Overview', permission: 'reports', render: renderOverview, group: 'Breakfast' },
   { path: 'daily', label: 'Day', permission: 'reports', render: renderDaily, group: 'Breakfast' },
   { path: 'weekly', label: 'Week', permission: 'reports', render: renderWeekly, group: 'Breakfast' },
@@ -95,16 +97,26 @@ function currentRoute() {
   return ROUTES.find((r) => r.path === hash && allowed(r));
 }
 
-/** Land people on the most useful screen they are actually allowed to open. */
+/**
+ * Land people on the most useful screen they are actually allowed to open.
+ *
+ * The fallback matters as much as the list. Naming a specific route here once
+ * sent anybody whose permissions were not on the list — a baker, say — to a
+ * screen they could not open, which loops straight back to this function and
+ * leaves them staring at the sign-in page they just cleared. So the last
+ * resort is the first route they can actually open, and Help is open to
+ * everyone, so there is always one.
+ */
 function defaultRoute() {
   const preferred = [
     'overview', 'entry', 'mx-overview', 'mx-issue',
     // The till before the shop's reports: an assistant who can do both is
     // still standing at a counter.
     'shop-sell', 'shop-overview',
-    'stock', 'purchases', 'setup', 'admin',
+    'production', 'stock', 'purchases', 'setup', 'admin',
   ];
-  return preferred.find((path) => allowed(ROUTES.find((r) => r.path === path))) ?? 'entry';
+  const wanted = preferred.find((path) => allowed(ROUTES.find((r) => r.path === path)));
+  return wanted ?? ROUTES.find((r) => allowed(r) && !r.hidden)?.path ?? 'guide';
 }
 
 /** Query params live after the route: #/daily?day=2026-08-08 */
@@ -410,8 +422,34 @@ function toggleTheme() {
   localStorage.setItem('bf.theme', next);
 }
 
+/**
+ * The bakery link: a page that exists outside the rest of the app.
+ *
+ * It has to be answered before the sign-in gate, because the entire point is
+ * that the bakery has no account. Its token comes from the URL and goes no
+ * further than the two endpoints that accept it.
+ */
+function bakeryToken() {
+  if (location.pathname.replace(/\/+$/, '') === '/bake') {
+    return new URLSearchParams(location.search).get('t') ?? '';
+  }
+  // The hash form works too, so a link still opens on a host that cannot serve
+  // a clean path.
+  if (location.hash.startsWith('#/bake')) {
+    return new URLSearchParams(location.hash.split('?')[1] || '').get('t') ?? '';
+  }
+  return null;
+}
+
 export async function render() {
   root.classList.remove('app-loading');
+
+  const token = bakeryToken();
+  if (token !== null) {
+    mount(root, h('div.card', h('div.skeleton', { style: { height: '120px' } })));
+    mount(root, await renderBakeryLink(token));
+    return;
+  }
 
   if (!state.role) {
     mount(root, renderLogin(async ({ role, name, email, permissions, isRecovery }) => {
@@ -472,6 +510,7 @@ function resetSession() {
 
 const ROLE_LABELS = {
   cook: 'Kitchen',
+  baker: 'Bakery',
   manager: 'Manager',
   technician: 'Maintenance',
   maintenance_manager: 'Maintenance manager',
@@ -494,6 +533,13 @@ window.addEventListener('online', syncPending);
 (async function boot() {
   const savedTheme = localStorage.getItem('bf.theme');
   if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
+
+  // The bakery link answers itself. Asking the server who is signed in first
+  // would be a wasted round trip on a page that deliberately has nobody.
+  if (bakeryToken() !== null) {
+    await render();
+    return;
+  }
 
   try {
     const me = await api.me();

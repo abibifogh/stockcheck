@@ -20,6 +20,7 @@ export async function renderStock(params) {
   const host = h('div');
 
   const reload = async () => mount(host, await renderStock({ asOf }));
+  const bakeryHost = h('div');
 
   const tiles = h('div.grid.grid-4', { style: { marginBottom: '1rem' } },
     statTile({ label: 'Store value', value: fmtMoney(data.totalValue, { compact: true }), sub: 'at weighted average cost' }),
@@ -102,7 +103,8 @@ export async function renderStock(params) {
     h('div.page-head',
       h('div',
         h('h1', 'Stock'),
-        h('div.sub', 'Book stock = opening + purchases − recorded usage, valued at weighted average cost'),
+        h('div.sub', 'Book stock = opening + purchases + bakery − recorded usage, '
+          + 'valued at weighted average cost'),
       ),
       exportButton(api.exportUrl('stock', data.asOf, data.asOf), 'Export stock'),
     ),
@@ -111,8 +113,75 @@ export async function renderStock(params) {
     shrinkageCard,
     h('div.grid.grid-2', countCard, h('div')),
     allCard,
+    bakeryHost,
   );
+
+  // Loaded after the page is up: the bakery log is worth having here, but not
+  // worth holding the stock figures behind.
+  loadBakery(bakeryHost, reload);
+
   return host;
+}
+
+/**
+ * What the bakery has sent, on the stock screen.
+ *
+ * It belongs here rather than on a screen of its own: bread baked is stock
+ * arriving, and the question anybody has about it — "did the night run go in?"
+ * — is asked while looking at what is on the shelf.
+ */
+async function loadBakery(host, reload) {
+  let data;
+  try {
+    data = await api.productionLog();
+  } catch {
+    return; // migration not run, or no access — either way, nothing to show
+  }
+  if (!data.runs?.length) return;
+
+  const remove = async (event, run) => {
+    if (!confirm(`Remove ${fmtNum(run.qty, 2)} ${run.unit} of ${run.name} from `
+      + `${fmtDay(run.day)}${run.cycle ? ` (${run.cycle})` : ''}? Stock goes back to what it was.`)) return;
+    event.target.disabled = true;
+    try {
+      await api.deleteProduction(run.id);
+      toast('Removed', 'good');
+      reload();
+    } catch (err) {
+      toast(err.message, 'bad');
+      event.target.disabled = false;
+    }
+  };
+
+  const produced = data.runs.reduce((n, r) => n + r.value, 0);
+
+  mount(host, card('Baked in our own bakery', {
+    wide: true,
+    note: `${data.cycles.length} ${data.cycles.length === 1 ? 'cycle' : 'cycles'} · `
+      + `${fmtMoney(produced, { compact: true })} added to the shelf`,
+  },
+    table([
+      { key: 'day', label: 'Date', format: (v) => fmtDay(v) },
+      { key: 'cycle', label: 'Cycle', format: (v) => (v ? h('span.pill', v) : h('span.muted', '—')) },
+      { key: 'name', label: 'Item' },
+      { key: 'qty', label: 'Made', align: 'right', format: (v, r) => h('strong', `${fmtNum(v, 2)} ${r.unit}`) },
+      { key: 'value', label: 'Worth', align: 'right', format: (v) => fmtMoney(v, { withSymbol: false }) },
+      {
+        key: 'producedBy',
+        label: 'Reported by',
+        format: (v, r) => h('span', v || h('span.muted', '—'),
+          r.viaLink ? h('span.muted', { title: r.linkLabel ?? '' }, ' · via link') : null),
+      },
+      {
+        key: 'id',
+        label: '',
+        format: (v, r) => h('button.btn-sm.btn-ghost', { onclick: (e) => remove(e, r) }, 'Remove'),
+      },
+    ], data.runs.slice(0, 60)),
+    h('p.muted', { style: { fontSize: '.82rem', marginTop: '.6rem', marginBottom: 0 } },
+      'These add to stock exactly as a delivery does, and the morning sheet draws against '
+      + 'them. They are kept out of Purchases, which is money actually spent with suppliers.'),
+  ));
 }
 
 function countForm(onSaved) {

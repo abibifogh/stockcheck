@@ -165,6 +165,22 @@ export const api = {
   mxRemoveItems: (ids) => request('/api/mx/items/remove', { method: 'POST', body: { ids } }),
   mxRemoveAreas: (ids) => request('/api/mx/areas/remove', { method: 'POST', body: { ids } }),
 
+  // --------------------------------------------------------------- bakery --
+  // The first two need no session: the token in the body is the whole gate.
+  bakeryOpen: (token) => request('/api/bakery/open', { method: 'POST', body: { token } }),
+  bakerySubmit: (body) => request('/api/bakery/submit', { method: 'POST', body }),
+
+  bakeryForm: () => request('/api/bakery/form'),
+  createProduction: (body) => request('/api/production', { method: 'POST', body }),
+  productionLog: (from, to) => request(`/api/production?${new URLSearchParams({
+    ...(from ? { from } : {}), ...(to ? { to } : {}),
+  })}`),
+  deleteProduction: (id) => request(`/api/production/${id}`, { method: 'DELETE' }),
+
+  bakeryLinks: () => request('/api/bakery/links'),
+  createBakeryLink: (label) => request('/api/bakery/links', { method: 'POST', body: { label } }),
+  revokeBakeryLink: (id) => request(`/api/bakery/links/${id}`, { method: 'DELETE' }),
+
   // ----------------------------------------------------------- craft shop --
   shopBootstrap: () => request('/api/shop/bootstrap'),
   shopCreateSale: (body) => request('/api/shop/sales', { method: 'POST', body }),

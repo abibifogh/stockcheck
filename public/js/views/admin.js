@@ -28,6 +28,7 @@ export async function renderAdmin() {
     locksCard(locks.locks || [], reload),
     importCard(reload),
     submissionsCard(days.days || [], reload),
+    bakeryLinksCard(reload),
     notificationsCard(notifications, reload),
     inAppCard(notifications, reload),
     pushCard(notifications, reload),
@@ -618,6 +619,166 @@ function userDialog(existing, roles, permissions, onSaved) {
 // ---------------------------------------------------------------------------
 // Notifications
 // ---------------------------------------------------------------------------
+
+/**
+ * Links for the bakery.
+ *
+ * A link rather than an account, because a report after every production cycle
+ * only happens if reporting needs nothing remembered. The link opens one form,
+ * lists only what you bake, and the only thing it can do is add stock — it
+ * reads no cost, no guest count, nothing else about the hotel.
+ *
+ * Loaded after the page rather than with it: this is the least urgent card on
+ * the screen and should not hold the rest of it up.
+ */
+function bakeryLinksCard(reload) {
+  const host = h('div');
+
+  (async () => {
+    let data;
+    try {
+      data = await api.bakeryLinks();
+    } catch {
+      return; // migration not run yet — the card simply stays away
+    }
+
+    const label = h('input', {
+      type: 'text', placeholder: 'e.g. Main bakery, or Kofi’s phone', maxlength: 60,
+    });
+
+    const issue = async (event) => {
+      if (!label.value.trim()) { toast('Give the link a name so you know whose it is', 'bad'); return; }
+      event.target.disabled = true;
+      try {
+        const link = await api.createBakeryLink(label.value.trim());
+        showLink(link);
+        reload();
+      } catch (err) {
+        toast(err.message, 'bad');
+        event.target.disabled = false;
+      }
+    };
+
+    const revoke = async (event, row) => {
+      if (!confirm(`Revoke “${row.label}”? Anyone holding that link stops being able to report. `
+        + 'What it has already sent stays exactly where it is.')) return;
+      event.target.disabled = true;
+      try {
+        await api.revokeBakeryLink(row.id);
+        toast('Revoked', 'good');
+        reload();
+      } catch (err) {
+        toast(err.message, 'bad');
+        event.target.disabled = false;
+      }
+    };
+
+    mount(host, card('Bakery links', {
+      wide: true,
+      note: 'A link the bakery opens to report what it baked — no account needed',
+    },
+      h('p.muted', { style: { fontSize: '.87rem', marginTop: 0 } },
+        'Send one to the bakery and they bookmark it. It opens a single form listing what you '
+        + 'have marked as made in-house; what they send goes onto the breakfast shelf, and the '
+        + 'morning sheet draws against it. The link shows no costs and reaches nothing else.'),
+
+      h('div.field-row',
+        h('label.field', h('span', 'Who is this link for'), label),
+      ),
+      h('button.btn-primary', { style: { marginTop: '.6rem' }, onclick: issue }, 'Create a link'),
+
+      data.links.length
+        ? h('div', { style: { marginTop: '1.1rem' } },
+          table([
+            { key: 'label', label: 'Link' },
+            {
+              key: 'hint',
+              label: 'Ends in',
+              format: (v) => h('code.mono', { style: { fontSize: '.8rem' } }, `…${v ?? '????'}`),
+            },
+            {
+              key: 'useCount',
+              label: 'Reports sent',
+              align: 'right',
+              format: (v) => fmtNum(v, 0),
+            },
+            {
+              key: 'lastUsedAt',
+              label: 'Last used',
+              format: (v) => (v ? String(v).slice(0, 16).replace('T', ' ') : h('span.muted', 'never')),
+            },
+            {
+              key: 'active',
+              label: '',
+              format: (v, r) => (v
+                ? h('button.btn-sm.btn-ghost', { onclick: (e) => revoke(e, r) }, 'Revoke')
+                : h('span.pill', 'revoked')),
+            },
+          ], data.links, { rowClass: (r) => (r.active ? '' : 'row-muted') }))
+        : null,
+
+      h('p.muted', { style: { fontSize: '.82rem', marginTop: '.9rem', marginBottom: 0 } },
+        'The link is shown once, when you create it, and never stored anywhere it could be read '
+        + 'back. If one is lost or goes to the wrong person, revoke it and make another — that '
+        + 'takes ten seconds and is the right habit anyway.'),
+    ));
+  })();
+
+  return host;
+}
+
+/** The one moment the token exists in readable form. Make it easy to send. */
+function showLink(link) {
+  const box = h('input', {
+    type: 'text', value: link.url, readonly: true,
+    style: { fontFamily: 'var(--mono)', fontSize: '.82rem' },
+    onclick: (e) => e.target.select(),
+  });
+
+  const dialog = h('dialog', {
+    style: {
+      border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+      background: 'var(--surface)', color: 'var(--text)',
+      maxWidth: '560px', width: '92vw', padding: '1.2rem',
+    },
+  },
+    h('div.card-head',
+      h('h2', `Link for ${link.label}`),
+      h('button.btn-sm.btn-ghost', { onclick: () => dialog.close() }, '✕'),
+    ),
+    h('div.alert.warn',
+      h('span.alert-icon', '⚠️'),
+      h('div',
+        h('div.alert-title', 'Copy it now'),
+        h('div.alert-detail',
+          'This is the only time it is shown. It is stored only as a fingerprint, so it '
+          + 'cannot be looked up again — if you lose it, revoke this one and make another.'),
+      )),
+    h('label.field', { style: { marginTop: '.8rem' } }, h('span', 'Send this to the bakery'), box),
+    h('div.btn-row', { style: { marginTop: '1rem' } },
+      h('button.btn-primary', {
+        onclick: (event) => {
+          box.select();
+          navigator.clipboard?.writeText(link.url)
+            .then(() => { event.target.textContent = '✓ Copied'; })
+            .catch(() => toast('Could not copy on this device — select it and copy by hand', 'bad'));
+        },
+      }, '📋 Copy the link'),
+      h('a.btn.btn-sm', {
+        href: `https://wa.me/?text=${encodeURIComponent(
+          `Bakery reporting link — open this after every production cycle and enter what came out of the oven:\n${link.url}`,
+        )}`,
+        target: '_blank',
+        rel: 'noopener',
+      }, 'Send on WhatsApp'),
+      h('button', { onclick: () => dialog.close() }, 'Done'),
+    ),
+  );
+
+  document.body.append(dialog);
+  dialog.addEventListener('close', () => dialog.remove());
+  dialog.showModal();
+}
 
 function notificationsCard(data, reload) {
   const enabled = h('select',

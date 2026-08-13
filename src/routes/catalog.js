@@ -180,6 +180,9 @@ function ingredientFields(body, { partial = false } = {}) {
     default_unit_cost: num(body.default_unit_cost, 'Unit cost', { min: 0, max: 1e6, fallback: 0 }),
     opening_stock: num(body.opening_stock, 'Opening stock', { min: -1e6, max: 1e6, fallback: 0 }),
     is_core: bool(body.is_core, true) ? 1 : 0,
+    // Made on the premises rather than delivered. Puts it on the bakery form,
+    // and nowhere else.
+    is_produced: bool(body.is_produced, false) ? 1 : 0,
     active: bool(body.active, true) ? 1 : 0,
     sort_order: int(body.sort_order, 'Sort order', { min: 0, max: 10000, fallback: 100 }),
   };
@@ -191,11 +194,12 @@ export async function createIngredient(ctx) {
   try {
     const row = await ctx.db.prepare(
       `INSERT INTO ingredients
-        (category_id, name, unit, step, par_level, default_unit_cost, opening_stock, is_core, active, sort_order)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+        (category_id, name, unit, step, par_level, default_unit_cost, opening_stock,
+         is_core, is_produced, active, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     ).bind(
       f.category_id, f.name, f.unit, f.step, f.par_level,
-      f.default_unit_cost, f.opening_stock, f.is_core, f.active, f.sort_order,
+      f.default_unit_cost, f.opening_stock, f.is_core, f.is_produced, f.active, f.sort_order,
     ).first();
     return json({ ingredient: row }, { status: 201 });
   } catch (err) {
@@ -218,11 +222,12 @@ export async function updateIngredient(ctx, id) {
     row = await ctx.db.prepare(
       `UPDATE ingredients SET
          category_id = ?, name = ?, unit = ?, step = ?, par_level = ?,
-         default_unit_cost = ?, opening_stock = ?, is_core = ?, active = ?, sort_order = ?
+         default_unit_cost = ?, opening_stock = ?, is_core = ?, is_produced = ?,
+         active = ?, sort_order = ?
        WHERE id = ? RETURNING *`,
     ).bind(
       f.category_id, f.name, f.unit, f.step, f.par_level,
-      f.default_unit_cost, f.opening_stock, f.is_core, f.active, f.sort_order, id,
+      f.default_unit_cost, f.opening_stock, f.is_core, f.is_produced, f.active, f.sort_order, id,
     ).first();
   } catch (err) {
     const category = await ctx.db.prepare('SELECT name FROM categories WHERE id = ?')

@@ -155,6 +155,7 @@ function greeting() {
   // your job is.
   if (can('shop_sell') && !can('entry')) return 'Working the craft shop till';
   if (can('mx_issue') && !can('entry')) return 'Issuing parts, and what the store holds';
+  if (can('bakery') && !can('entry')) return 'Reporting what came out of the oven';
   return 'Recording the morning — that is all you need';
 }
 
@@ -218,6 +219,41 @@ const SECTIONS = [
         + 'in the reports until you submit.'),
       warn('If the internet drops', 'keep working. Your entries are kept on the tablet and sent as soon '
         + 'as you are back online. You will see “Saved on this device”.'),
+    ),
+  },
+
+  {
+    id: 'bakery',
+    title: 'Reporting what the bakery baked',
+    permission: 'bakery',
+    lead: 'After every production cycle. It takes about fifteen seconds.',
+    render: () => h('div',
+      h('p', 'Bread you bake goes onto the breakfast shelf the moment you report it, and the '
+        + 'kitchen draws against it in the morning. Report it after every cycle and the figures '
+        + 'stay true; report it at the end of the week and they never do.'),
+      steps(
+        h('span', h('strong', 'Open the link'), ' — bookmark it, it is the same one every time. '
+          + 'There is no PIN and nothing to remember.'),
+        h('span', h('strong', 'Check the cycle.'), ' It guesses from the time of day, so most of '
+          + 'the time it is already right. Tap another if it is not.'),
+        h('span', h('strong', 'Type how many came out'), ' beside each thing you baked. Leave '
+          + 'anything you did not bake blank.'),
+        h('span', h('strong', 'Press Send this cycle.'), ' A green box appears saying what went '
+          + 'in. That box is your confirmation — if it is not there, it did not send.'),
+      ),
+      note('You can send more than once a day.',
+        'That is the point. Morning, afternoon and night are three separate reports, and each '
+        + 'one adds to the shelf.'),
+      note('“Already sent” is there so you never have to guess.',
+        'It lists what has gone in today. If the last cycle is on it, do not send it again — '
+        + 'sending twice puts bread on the shelf that never existed, and the kitchen will '
+        + 'find the shortfall a week later with no way to explain it.'),
+      note('The link shows nothing about the hotel.',
+        'No costs, no guest numbers, no other screen. It is a form that adds bread and does '
+        + 'nothing else, which is why it is safe to keep on a phone in a bakery.'),
+      warn('If the link stops working, ask for a new one.',
+        'It can be revoked — when a phone is lost, or somebody leaves. Everything already sent '
+        + 'stays exactly where it is.'),
     ),
   },
 
@@ -603,6 +639,44 @@ const SECTIONS = [
         + 'confidently telling you something untrue.'),
       note('Suppliers come from a list', 'so the same trader does not appear three times with three '
         + 'spellings. An administrator manages that list under Setup.'),
+    ),
+  },
+
+  {
+    id: 'bakery-setup',
+    title: 'Setting up the bakery link',
+    permission: 'stock',
+    lead: 'Bread you bake is stock arriving. The only difference from a delivery is that no money changed hands.',
+    render: () => h('div',
+      h('p', 'Book stock is opening plus what came in less what was used. Until now the only way '
+        + 'in was a delivery somebody paid for, so bread baked on the premises quietly went '
+        + 'missing — the morning sheet deducted loaves the system never saw arrive, and the '
+        + 'figure went negative every week.'),
+      steps(
+        h('span', h('strong', 'Mark what you bake.'), ' Under Setup, each bread item has a '
+          + '“Where it comes from” box. Set it to ', h('strong', '“Made in our bakery”'), '. Only '
+          + 'those items appear on the bakery form.'),
+        h('span', h('strong', 'Set what a unit costs you to make.'), ' That is the “Fallback unit '
+          + 'cost” on the same screen. Every bake is valued at it, so it is what the bread on the '
+          + 'shelf is worth and what the kitchen’s cost per guest is built from.'),
+        h('span', h('strong', 'Create a link'), ' under Users & data → Bakery links, name it after '
+          + 'whoever will use it, and send it to them. WhatsApp works well.'),
+      ),
+      warn('The link is shown once and never again.',
+        'Only a fingerprint of it is stored, so it cannot be looked up later. If one is lost or '
+        + 'goes to the wrong person, revoke it and issue another — that takes ten seconds, and '
+        + 'the production it already sent is untouched.'),
+      note('Where it turns up.',
+        'On the Stock screen, under “Baked in our own bakery”: every cycle, who reported it, and '
+        + 'what it added to the shelf. A wrong figure can be removed there and stock goes back to '
+        + 'what it was.'),
+      note('It is not a purchase.',
+        'Production is deliberately kept out of Purchases, which is money that actually went to '
+        + 'suppliers. Bread appears in stock and in cost per guest, and nowhere in your spend.'),
+      note('Somebody can have an account instead, or as well.',
+        'The “Baker” role opens the same form and nothing else. Managers have it too, for '
+        + 'covering a shift. The link exists because a bakery reporting four times a day should '
+        + 'not have to remember a PIN.'),
     ),
   },
 
@@ -1078,6 +1152,8 @@ const SECTIONS = [
           + 'administrators, because they are the only people who can accept one.'),
         h('span', h('strong', 'A scheduled stock count has come round —'), ' goes to whoever was '
           + 'asked to do it, and to whoever runs the parts store.'),
+        h('span', h('strong', 'The bakery reported a production cycle —'), ' goes to whoever can '
+          + 'see stock, since that is what it changes.'),
       ),
       note('Read is per person.', 'Clearing your bell clears yours. The manager next to you still '
         + 'has theirs, so nothing gets marked as dealt with on somebody else’s behalf.'),
