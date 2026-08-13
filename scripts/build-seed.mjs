@@ -122,7 +122,8 @@ function build(files, out) {
   writeFileSync(out, `${[sql, ...indexes].join('\n')}\n`);
 }
 
-const all = readdirSync('migrations').sort();
+// `.sql` only: `migrations/console/` is a directory of paste-able copies.
+const all = readdirSync('migrations').filter((f) => f.endsWith('.sql')).sort();
 // 0007 creates the bed-check tables one way and 0008 rebuilds them another; a
 // fresh database only ever wants the second, which FINAL_TABLES supplies.
 const upgrades = (f) => f !== '0008_check_rounds.sql' && f !== '0008_notifications_and_stocktakes.sql';

@@ -14,7 +14,9 @@ import { DatabaseSync } from 'node:sqlite';
  * Rebuild the files with `node scripts/build-seed.mjs` when a migration changes.
  */
 
-const MIGRATIONS = readdirSync('migrations').sort();
+// `migrations/console/` holds comment-free copies for pasting; only the .sql
+// files directly in `migrations/` are migrations to run.
+const MIGRATIONS = readdirSync('migrations').filter((f) => f.endsWith('.sql')).sort();
 
 /** The hand-paste upgrades, in the order a database part-way along needs them. */
 const UPGRADE_FILES = [
