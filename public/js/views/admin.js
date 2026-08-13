@@ -29,6 +29,7 @@ export async function renderAdmin() {
     importCard(reload),
     submissionsCard(days.days || [], reload),
     notificationsCard(notifications, reload),
+    inAppCard(notifications, reload),
     pushCard(notifications, reload),
     eraseCard(summary, reload),
   );
@@ -751,6 +752,71 @@ function notificationsCard(data, reload) {
  * ability to see who is being alerted, retire a phone that has been lost or
  * replaced, and switch the whole thing off.
  */
+/**
+ * The bell, and the two things besides the breakfast sheet that ring it.
+ *
+ * Kept apart from the email card because these reach people who are already
+ * looking at the system, and need no domain, key or verified sender to work.
+ */
+function inAppCard(data, reload) {
+  const inApp = h('select',
+    h('option', { value: '1', selected: data.inAppEnabled }, 'Show notifications in the bell'),
+    h('option', { value: '0', selected: !data.inAppEnabled }, 'Turn the bell off'),
+  );
+  const countPending = h('select',
+    h('option', { value: '1', selected: data.countPendingEnabled }, 'Tell administrators'),
+    h('option', { value: '0', selected: !data.countPendingEnabled }, 'Say nothing'),
+  );
+  const stocktakeDue = h('select',
+    h('option', { value: '1', selected: data.stocktakeDueEnabled }, 'Tell the people asked'),
+    h('option', { value: '0', selected: !data.stocktakeDueEnabled }, 'Say nothing'),
+  );
+
+  const save = async (event) => {
+    event.target.disabled = true;
+    try {
+      await api.updateNotifications({
+        // Only the switches on this card are sent; the rest keep what they had.
+        inAppEnabled: inApp.value === '1',
+        countPendingEnabled: countPending.value === '1',
+        stocktakeDueEnabled: stocktakeDue.value === '1',
+        recipients: data.recipients,
+        from: data.from,
+        siteUrl: data.siteUrl,
+        enabled: data.enabled,
+        pushEnabled: data.pushEnabled,
+      });
+      toast('Saved', 'good');
+      reload();
+    } catch (err) {
+      toast(err.message, 'bad');
+      event.target.disabled = false;
+    }
+  };
+
+  return card('In-app notifications', {
+    note: 'The bell at the top of every screen',
+    wide: true,
+  },
+    h('p.muted', { style: { fontSize: '.87rem', marginTop: 0 } },
+      'These need no email account and no setup. Everybody sees what their own access allows: '
+      + 'a submitted breakfast sheet reaches whoever can read reports, a count waiting for '
+      + 'approval reaches administrators, and a stock count that has come round reaches '
+      + 'whoever was asked to do it.'),
+    h('div.field-row',
+      h('label.field', h('span', 'The bell'), inApp),
+      h('label.field', h('span', 'A part count needs approving'), countPending),
+      h('label.field', h('span', 'A scheduled stock count is due'), stocktakeDue),
+    ),
+    h('div.btn-row', { style: { marginTop: '1rem' } },
+      h('button.btn-primary', { onclick: save }, 'Save'),
+    ),
+    h('p.muted', { style: { fontSize: '.82rem', marginTop: '.8rem', marginBottom: 0 } },
+      'The last two are also emailed, to whoever holds the matching access and has an '
+      + 'email address on their account, plus everybody on the daily-email list above.'),
+  );
+}
+
 function pushCard(data, reload) {
   const enabled = h('select',
     h('option', { value: '1', selected: data.pushEnabled }, 'Alert every subscribed device'),

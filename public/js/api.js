@@ -165,6 +165,19 @@ export const api = {
   mxRemoveItems: (ids) => request('/api/mx/items/remove', { method: 'POST', body: { ids } }),
   mxRemoveAreas: (ids) => request('/api/mx/areas/remove', { method: 'POST', body: { ids } }),
 
+  // ------------------------------------------------------ notifications --
+  inbox: (limit) => request(`/api/inbox${limit ? `?limit=${limit}` : ''}`),
+  markInboxRead: (ids) => request('/api/inbox/read', { method: 'POST', body: { ids: ids ?? null } }),
+
+  // -------------------------------------------------- scheduled counts --
+  mxStocktakes: () => request('/api/mx/stocktakes'),
+  mxMyStocktakes: () => request('/api/mx/stocktakes/mine'),
+  mxCreateStocktake: (body) => request('/api/mx/stocktakes', { method: 'POST', body }),
+  mxUpdateStocktake: (id, body) => request(`/api/mx/stocktakes/${id}`, { method: 'PUT', body }),
+  mxDeleteStocktake: (id) => request(`/api/mx/stocktakes/${id}`, { method: 'DELETE' }),
+  mxRunStocktake: (id) => request(`/api/mx/stocktakes/${id}/run`, { method: 'POST', body: {} }),
+  mxCancelStocktakeTask: (id) => request(`/api/mx/stocktake-tasks/${id}/cancel`, { method: 'POST', body: {} }),
+
   exportUrl: (type, from, to) =>
     `/api/export?${new URLSearchParams({ type, ...(from ? { from } : {}), ...(to ? { to } : {}) })}`,
 };

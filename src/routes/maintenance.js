@@ -6,6 +6,8 @@ import {
   compare as compareRanges, loadDataset, overview as overviewReport, periodReport, stockReport,
 } from '../lib/maintenance.js';
 import { addDays, diffDays, isDay, todayIn } from '../util/dates.js';
+import { announce, readSettings } from '../lib/notify.js';
+import { closeDueTasks } from '../lib/stocktakes.js';
 
 /**
  * The maintenance store's API.
@@ -264,6 +266,30 @@ export async function saveCounts(ctx) {
   ).bind(day, Number(c.itemId), Number(c.qty) || 0, c.note ?? null, ctx.session.user.name)));
 
   await audit(ctx, 'mx.count', null, { day, items: counts.length });
+
+  // Somebody has to decide on this, and nothing happens to the shelf until
+  // they do — so the people who can decide are told, without the counter
+  // having to chase anybody.
+  const settings = await readSettings(ctx.db);
+  if (settings.notify_count_pending !== '0') {
+    const task = announce(ctx.db, ctx.env, {
+      kind: 'count_pending',
+      audience: 'users',
+      title: `${counts.length} counted part${counts.length === 1 ? '' : 's'} waiting for approval`,
+      body: `${ctx.session.user.name} counted ${counts.length} item`
+        + `${counts.length === 1 ? '' : 's'} on ${day}. `
+        + 'Stock stays as it is until the count is accepted.',
+      link: '#/mx-stock',
+      linkLabel: 'Review the count',
+    });
+    if (ctx.executionContext?.waitUntil) ctx.executionContext.waitUntil(task);
+    else await task.catch(() => {});
+  }
+
+  // Counting is often the answer to a scheduled task, so close any that this
+  // count satisfies rather than making somebody tick it off by hand.
+  await closeDueTasks(ctx.db, day, ctx.session.user.name, counts.length).catch(() => {});
+
   return json({ ok: true, recorded: counts.length, awaitingApproval: true });
 }
 

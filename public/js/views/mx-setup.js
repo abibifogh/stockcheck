@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import { attributeSummary, fmtMoney, fmtQty, h, mount, parseAttributes, toast } from '../util.js';
 import { card, table } from './components.js';
+import { schedulesCard } from './mx-schedules.js';
 
 /**
  * The parts list, and the places work happens.
@@ -10,7 +11,13 @@ import { card, table } from './components.js';
  * everything against nothing.
  */
 export async function renderMxSetup() {
-  const [data, areas] = await Promise.all([api.mxBootstrap(), api.mxAreas()]);
+  const [data, areas, schedules] = await Promise.all([
+    api.mxBootstrap(),
+    api.mxAreas(),
+    // A store that has not run the latest database changes yet should still be
+    // able to reach its parts list, so a missing schedules table is survivable.
+    api.mxStocktakes().catch(() => null),
+  ]);
   const host = h('div');
   const reload = async () => mount(host, await renderMxSetup());
 
@@ -18,10 +25,11 @@ export async function renderMxSetup() {
     h('div.page-head',
       h('div',
         h('h1', 'Maintenance setup'),
-        h('div.sub', 'The parts you keep, and the rooms and areas you keep them for'),
+        h('div.sub', 'The parts you keep, the rooms you keep them for, and when they get counted'),
       ),
     ),
     roomsCard(areas.areas, reload),
+    schedules ? schedulesCard(schedules, reload) : null,
     bulkPartsCard(data, reload),
     itemsCard(data, reload),
   );

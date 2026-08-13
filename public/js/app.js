@@ -188,6 +188,126 @@ function closeDrawer() {
   document.querySelector('.shell')?.classList.remove('nav-open');
 }
 
+/**
+ * The bell.
+ *
+ * Email is the channel that reaches somebody who is not looking at the system;
+ * this is the one that reaches somebody who is. It is deliberately quiet: a
+ * count, a list, and nothing that interrupts what you were doing.
+ */
+const inbox = { notifications: [], unread: 0, loadedAt: 0 };
+let inboxTimer = null;
+
+function bellButton() {
+  const badge = h('span.bell-badge', { style: { display: 'none' } }, '');
+  const button = h('button.btn-ghost.btn-sm.bell', {
+    title: 'Notifications',
+    onclick: (event) => {
+      event.stopPropagation();
+      toggleInboxPanel(button);
+    },
+  }, '🔔', badge);
+
+  const paint = () => {
+    badge.textContent = inbox.unread > 9 ? '9+' : String(inbox.unread);
+    badge.style.display = inbox.unread ? '' : 'none';
+    button.classList.toggle('has-unread', inbox.unread > 0);
+  };
+  paint();
+
+  const refresh = async () => {
+    try {
+      const data = await api.inbox(30);
+      inbox.notifications = data.notifications ?? [];
+      inbox.unread = data.unread ?? 0;
+      inbox.loadedAt = Date.now();
+      paint();
+    } catch { /* a bell that cannot load is not worth an error message */ }
+  };
+
+  refresh();
+  clearInterval(inboxTimer);
+  // Two minutes: often enough that a manager notices a report while it still
+  // matters, rare enough to be invisible on the free plan's request budget.
+  inboxTimer = setInterval(() => {
+    if (document.visibilityState === 'visible') refresh();
+  }, 120000);
+
+  return button;
+}
+
+function closeInboxPanel() {
+  document.querySelector('.inbox-panel')?.remove();
+}
+
+function toggleInboxPanel(anchor) {
+  if (document.querySelector('.inbox-panel')) {
+    closeInboxPanel();
+    return;
+  }
+
+  const openOne = async (note) => {
+    closeInboxPanel();
+    if (!note.read) {
+      note.read = true;
+      inbox.unread = Math.max(0, inbox.unread - 1);
+      api.markInboxRead([note.id]).catch(() => {});
+    }
+    if (note.link) location.hash = note.link.replace(/^#/, '#');
+    render();
+  };
+
+  const items = inbox.notifications.length
+    ? inbox.notifications.map((note) => h(`div.inbox-item${note.read ? '' : '.unread'}`, {
+      onclick: () => openOne(note),
+    },
+    h('div.inbox-title', note.title),
+    note.body ? h('div.inbox-body', note.body) : null,
+    h('div.inbox-when', whenLabel(note.at)),
+    ))
+    : [h('div.inbox-empty', h('p.muted', 'Nothing new. Submitted reports and counts waiting for approval show up here.'))];
+
+  const panel = h('div.inbox-panel', { onclick: (e) => e.stopPropagation() },
+    h('div.inbox-head',
+      h('strong', 'Notifications'),
+      inbox.unread
+        ? h('button.btn-ghost.btn-sm', {
+          onclick: async () => {
+            inbox.notifications.forEach((n) => { n.read = true; });
+            inbox.unread = 0;
+            closeInboxPanel();
+            document.querySelector('.bell')?.classList.remove('has-unread');
+            const badge = document.querySelector('.bell-badge');
+            if (badge) badge.style.display = 'none';
+            await api.markInboxRead().catch(() => {});
+          },
+        }, 'Mark all read')
+        : null,
+    ),
+    h('div.inbox-list', ...items),
+  );
+
+  anchor.parentElement.appendChild(panel);
+  // Clicking anywhere else puts it away, which is what a dropdown is expected
+  // to do and saves needing a close button on a phone.
+  setTimeout(() => document.addEventListener('click', closeInboxPanel, { once: true }), 0);
+}
+
+/** "3 minutes ago", without pulling in a date library. */
+function whenLabel(at) {
+  if (!at) return '';
+  const then = new Date(String(at).replace(' ', 'T') + (String(at).endsWith('Z') ? '' : 'Z'));
+  const seconds = Math.max(0, (Date.now() - then.getTime()) / 1000);
+  if (seconds < 90) return 'just now';
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} minutes ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
+  const days = Math.round(hours / 24);
+  if (days < 8) return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+  return then.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
 function shell(content) {
   const menuButton = h('button.btn-ghost.btn-sm.nav-toggle', {
     title: 'Menu',
@@ -205,6 +325,7 @@ function shell(content) {
         ),
       ),
       h('div.topbar-spacer'),
+      bellButton(),
       h('button.btn-ghost.btn-sm', {
         title: 'Switch light / dark',
         onclick: toggleTheme,

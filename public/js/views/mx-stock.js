@@ -14,9 +14,10 @@ import { printButton } from '../print.js';
  * twice a year, and a short window would call almost everything dead stock.
  */
 export async function renderMxStock() {
-  const [data, pending] = await Promise.all([
+  const [data, pending, asked] = await Promise.all([
     api.mxStock(),
     api.mxPendingCounts().catch(() => ({ counts: [], days: [] })),
+    api.mxMyStocktakes().catch(() => ({ tasks: [] })),
   ]);
   const host = h('div');
   const reload = async () => mount(host, await renderMxStock());
@@ -61,6 +62,8 @@ export async function renderMxStock() {
         h('button.btn-sm', { onclick: () => navigate('mx-purchases') }, 'Record a delivery'),
       ),
     ),
+
+    askedToCount(asked),
 
     h('div.grid.grid-4', { style: { marginBottom: '1rem' } },
       statTile({ label: 'Value on the shelf', value: fmtMoney(data.totalValue, { compact: true }), sub: 'at what you paid' }),
@@ -193,6 +196,33 @@ export async function renderMxStock() {
  * Anyone with the stock screen can see the queue, because knowing a count is
  * stuck is not privileged information. Only an administrator gets the buttons.
  */
+/**
+ * "You have been asked to count this."
+ *
+ * The task closes itself when a count is recorded, so this says what to do and
+ * then gets out of the way — there is nothing here to press.
+ */
+function askedToCount(asked) {
+  const tasks = asked?.tasks ?? [];
+  if (!tasks.length) return null;
+
+  const late = tasks.some((t) => t.overdue);
+  return h(`div.alert.${late ? 'high' : 'info'}`, { style: { marginBottom: '1rem' } },
+    h('span.alert-icon', late ? '⏰' : '📋'),
+    h('div',
+      h('div.alert-title', tasks.length === 1
+        ? `Stock count due: ${tasks[0].name}`
+        : `${tasks.length} stock counts are due`),
+      h('div.alert-detail',
+        tasks.map((t) => h('div', `${t.name} — due ${fmtDay(t.dueDay)}${t.overdue ? ' (late)' : ''}`)),
+        h('div', { style: { marginTop: '.35rem' } },
+          'Type what is actually on the shelf in the last column below and submit. '
+          + 'That closes the count; an administrator accepts the figures afterwards.'),
+      ),
+    ),
+  );
+}
+
 function countApprovalCard(pending, reload) {
   const rows = pending?.counts ?? [];
   if (!rows.length) return null;

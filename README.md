@@ -204,6 +204,13 @@ If the custom domain is not ready yet, comment out the `[[routes]]` block in
 `wrangler.toml` for this first deploy — Cloudflare rejects a route for a
 hostname it cannot resolve yet. You will get a `*.workers.dev` URL to test on.
 
+Deploying also registers the Cron Trigger in `wrangler.toml` (`0 6 * * *`).
+That daily tick is what notices a scheduled maintenance stock count has come
+round and tells the people asked to do it. Cron Triggers are included on the
+free plan. If it is ever removed or fails, nothing is lost: opening the parts
+screen or the maintenance setup screen also notices an overdue count and
+announces it then.
+
 ### 6. Point the domain at it
 
 The `[[routes]]` block in `wrangler.toml` claims `breakfast.niceoperation.com`.

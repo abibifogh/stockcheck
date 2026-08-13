@@ -15,6 +15,10 @@ import * as insights from './routes/insights.js';
 import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
 import * as mx from './routes/maintenance.js';
+import * as inbox from './routes/inbox.js';
+import * as stocktakes from './routes/stocktakes.js';
+import { openDueTasks } from './lib/stocktakes.js';
+import { todayIn } from './util/dates.js';
 import { PIN_TAKEN } from './routes/admin.js';
 
 /**
@@ -102,6 +106,11 @@ const ROUTES = [
 
   ['GET', '/api/audit', 'users', admin.auditTrail],
 
+  // The bell. Nothing to gate: what you can see is decided by the permissions
+  // you already hold, inside the query.
+  ['GET', '/api/inbox', null, inbox.list],
+  ['POST', '/api/inbox/read', null, inbox.read],
+
   // ------------------------------------------------------------ maintenance --
   // A separate store with its own permissions, so a technician can be given the
   // issue screen and nothing else.
@@ -143,6 +152,16 @@ const ROUTES = [
   ['POST', '/api/mx/items/import', 'mx_setup', mx.importParts],
   ['POST', '/api/mx/items/remove', 'mx_setup', mx.removeItems],
   ['POST', '/api/mx/areas/remove', 'mx_setup', mx.removeAreas],
+
+  // Scheduled counts. Anybody who can count sees what they have been asked to
+  // do; only setup can decide who is asked, and how often.
+  ['GET', '/api/mx/stocktakes/mine', 'mx_stock', stocktakes.myTasks],
+  ['GET', '/api/mx/stocktakes', 'mx_setup', stocktakes.list],
+  ['POST', '/api/mx/stocktakes', 'mx_setup', stocktakes.create],
+  ['PUT', '/api/mx/stocktakes/:id', 'mx_setup', stocktakes.update],
+  ['DELETE', '/api/mx/stocktakes/:id', 'mx_setup', stocktakes.remove],
+  ['POST', '/api/mx/stocktakes/:id/run', 'mx_setup', stocktakes.runNow],
+  ['POST', '/api/mx/stocktake-tasks/:id/cancel', 'mx_setup', stocktakes.cancelTask],
 ];
 
 function match(pattern, pathname) {
@@ -201,6 +220,28 @@ export default {
       console.error('Unhandled error', err);
       return json({ error: 'Something went wrong on the server' }, { status: 500 });
     }
+  },
+
+  /**
+   * The daily tick, from a Cron Trigger.
+   *
+   * Its only job is to notice that a scheduled stock count has come round and
+   * tell the people asked to do it. Opening a task is idempotent, so a cron
+   * that fires twice — or a person opening the screen first — cannot produce
+   * two tasks or two rounds of email for the same count.
+   */
+  async scheduled(event, env, executionContext) {
+    if (!env.DB) return;
+    const run = (async () => {
+      const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'timezone'")
+        .first()
+        .catch(() => null);
+      const result = await openDueTasks(env.DB, env, todayIn(row?.value || 'UTC'));
+      if (result.opened) console.log(`Opened ${result.opened} stock count task(s)`);
+    })().catch((err) => console.error('Scheduled run failed', err));
+
+    if (executionContext?.waitUntil) executionContext.waitUntil(run);
+    else await run;
   },
 };
 

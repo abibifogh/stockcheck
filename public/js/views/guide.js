@@ -799,6 +799,53 @@ const SECTIONS = [
   },
 
   {
+    id: 'mx-schedule',
+    title: 'Counting on a schedule',
+    permission: 'mx_stock',
+    lead: 'A count that happens when somebody remembers is a count that stops happening.',
+    render: () => h('div',
+      h('p', 'A schedule is a standing arrangement — count the store every month, and ask these '
+        + 'people. When the day comes round the system opens the count and tells them, by email and '
+        + 'in the bell at the top of the screen. Nobody has to keep a date in their head.'),
+      points(
+        h('span', h('strong', 'The parts screen tells you when one is yours.'), ' A band appears at '
+          + 'the top saying which count is due and whether it is late.'),
+        h('span', h('strong', 'Recording the count closes it.'), ' There is no separate box to tick — '
+          + 'counting was the whole point, so doing it is what finishes it.'),
+        h('span', h('strong', 'The next date is worked out from the date that was due,'), ' not from '
+          + 'the day you got round to it. A count done three days late does not push every future '
+          + 'count three days later.'),
+      ),
+      note('It still goes to an administrator afterwards.',
+        'A scheduled count is an ordinary count: the figures wait for approval exactly as they would '
+        + 'if somebody had counted off their own bat. The schedule decides when, not whether.'),
+      can('mx_setup')
+        ? h('div',
+          h('h3', { style: { marginTop: '1.1rem' } }, 'Setting one up'),
+          steps(
+            h('span', 'Open ', h('strong', 'Maintenance → Setup'), ' and find ',
+              h('strong', '“Scheduled stock counts”'), '.'),
+            h('span', h('strong', 'Name it and choose how often'), ' — weekly through to yearly. '
+              + 'The first date decides the rhythm from then on.'),
+            h('span', h('strong', 'Tick who is asked.'), ' Those people get it personally. Leave '
+              + 'everybody unticked and it goes to whoever runs the store.'),
+            h('span', h('strong', '“Ask now”'), ' asks for a count today without waiting for the '
+              + 'date, for when something has gone missing and you want to know where you stand.'),
+          ),
+          note('“Counts asked for” is the record.',
+            'Every occurrence, when it was due, who did it and how many items they counted. A count '
+            + 'that is not going to happen can be cancelled — it will be asked for again on the next '
+            + 'due date, and the cancellation stays visible.'),
+          warn('The due date fires once a day, early.',
+            'If nothing has been announced by the time you look, opening the parts screen or the '
+            + 'setup screen also notices an overdue count and announces it there and then. You '
+            + 'cannot miss one by being early.'),
+        )
+        : null,
+    ),
+  },
+
+  {
     id: 'mx-setup',
     title: 'Setting up the parts store',
     permission: 'mx_setup',
@@ -852,10 +899,40 @@ const SECTIONS = [
   },
 
   {
+    id: 'bell',
+    title: 'The bell, and what rings it',
+    lead: 'Everything the system wants to tell you, in one place at the top of every screen.',
+    render: () => h('div',
+      h('p', 'The 🔔 at the top right carries a red number when something is waiting. Open it, read '
+        + 'the list, and click any line to go straight to what it is about. What you see is decided '
+        + 'by what you are allowed to open — there is nothing in there you could not have found by '
+        + 'looking.'),
+      points(
+        h('span', h('strong', 'A breakfast sheet was submitted —'), ' who recorded it, how many '
+          + 'guests, and how many items. Goes to everybody who can read reports.'),
+        h('span', h('strong', 'A part count is waiting for approval —'), ' goes to administrators, '
+          + 'because they are the only people who can accept one.'),
+        h('span', h('strong', 'A scheduled stock count has come round —'), ' goes to whoever was '
+          + 'asked to do it, and to whoever runs the parts store.'),
+      ),
+      note('Read is per person.', 'Clearing your bell clears yours. The manager next to you still '
+        + 'has theirs, so nothing gets marked as dealt with on somebody else’s behalf.'),
+      note('The last two are emailed as well.', 'Anybody with the matching access and an email '
+        + 'address on their account gets a copy, along with everybody on the daily-email list. The '
+        + 'bell needs no setup at all; email needs a sending key first.'),
+      can('users')
+        ? note('Turning it down.', 'Users & data → In-app notifications has a switch for the bell '
+          + 'itself and one for each of the two events. Switching the bell off stops them being '
+          + 'recorded at all, for everybody.')
+        : null,
+    ),
+  },
+
+  {
     id: 'alerts-setup',
     title: 'Being told when a day is submitted',
     permission: 'reports',
-    lead: 'Two ways to hear about it, and they do different jobs.',
+    lead: 'Three ways to hear about it, and they do different jobs.',
     render: () => h('div',
       points(
         h('span', h('strong', 'An alert on your phone or computer —'), ' arrives within seconds of a '
@@ -863,6 +940,8 @@ const SECTIONS = [
           + 'Tap it to open that day.'),
         h('span', h('strong', 'An email —'), ' the full morning summary with the analysis and '
           + 'anything flagged, which is the one worth keeping.'),
+        h('span', h('strong', 'The bell —'), ' waiting for you next time you open the system, whether '
+          + 'or not email or alerts have been set up. Nothing to turn on.'),
       ),
       h('h3', { style: { marginTop: '1.1rem' } }, 'Turning on the alert'),
       steps(

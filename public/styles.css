@@ -114,6 +114,47 @@ a { color: var(--accent); }
 .brand-sub { color: var(--text-faint); font-weight: 500; font-size: .78rem; display: block; letter-spacing: 0; }
 .topbar-spacer { flex: 1; }
 
+/* ----------------------------------------------------------------- bell --
+   Quiet by design. A count on the button when something is waiting, nothing
+   at all when it is not. */
+.bell { position: relative; font-size: 1rem; }
+.bell.has-unread { color: var(--accent); }
+.bell-badge {
+  position: absolute; top: 1px; right: 1px;
+  min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 999px; background: var(--bad); color: #fff;
+  font-size: .65rem; font-weight: 700; line-height: 16px; text-align: center;
+}
+
+.inbox-panel {
+  position: absolute; top: calc(var(--topbar-h, 56px) - 4px); right: clamp(.5rem, 3vw, 1.5rem);
+  z-index: 60; width: min(360px, calc(100vw - 1.5rem));
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: 0 16px 40px rgb(0 0 0 / .18);
+  overflow: hidden;
+}
+.inbox-head {
+  display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+  padding: .6rem .85rem; border-bottom: 1px solid var(--border); background: var(--surface-2);
+}
+.inbox-list { max-height: min(60dvh, 460px); overflow-y: auto; }
+.inbox-item {
+  padding: .7rem .85rem; border-bottom: 1px solid var(--border); cursor: pointer;
+  border-left: 3px solid transparent;
+}
+.inbox-item:last-child { border-bottom: 0; }
+.inbox-item:hover { background: var(--surface-2); }
+.inbox-item.unread { border-left-color: var(--accent); background: var(--accent-soft); }
+.inbox-item.unread:hover { background: color-mix(in srgb, var(--accent-soft) 70%, var(--surface)); }
+.inbox-title { font-weight: 650; font-size: .88rem; }
+.inbox-body {
+  color: var(--text-dim); font-size: .8rem; margin-top: .2rem; white-space: pre-line;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.inbox-when { color: var(--text-faint); font-size: .72rem; margin-top: .3rem; }
+.inbox-empty { padding: 1.1rem .85rem; text-align: center; }
+.inbox-empty p { margin: 0; font-size: .82rem; }
+
 /* ------------------------------------------------------------- side nav --
    Two stores will not fit in one row of tabs, so navigation lives down the
    side where each section can be named. */
