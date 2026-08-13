@@ -332,6 +332,14 @@ That SQL file is the migration with every comment stripped out, because the D1
 console rejects a paste it reads as comments alone — it is otherwise identical,
 and safe to run twice.
 
+**Which file for which job.** `housekeeping-database.sql` builds a database
+from nothing. The `-upgrade-` files move one that already exists, in order:
+`housekeeping-upgrade-rounds.sql` (one check a day to three, run once) then
+`housekeeping-upgrade-notices.sql` (the in-app bell, safe to repeat).
+`test/seed.test.js` asserts that applying every upgrade in turn lands a database
+exactly where a fresh one starts, so a new migration that forgets its upgrade
+file is caught rather than discovered.
+
 **Setting it up, or upgrading it.** `seed/housekeeping-database.sql` builds a
 database from nothing; it skips whatever already exists, which makes it safe to
 paste twice but useless for a database part-way along. Moving one that already

@@ -16,6 +16,9 @@ import { DatabaseSync } from 'node:sqlite';
 
 const MIGRATIONS = readdirSync('migrations').sort();
 
+/** The hand-paste upgrades, in the order a database part-way along needs them. */
+const UPGRADE_FILES = ['housekeeping-upgrade-rounds.sql', 'housekeeping-upgrade-notices.sql'];
+
 function apply(db, files) {
   db.exec('PRAGMA foreign_keys = ON;');
   for (const f of files) db.exec(readFileSync(`migrations/${f}`, 'utf8'));
@@ -101,8 +104,14 @@ test('the schema file is refused by a database part-way along, and the upgrade f
     'if this stops throwing, the schema file has become safe to run on an old database — say so in the README',
   );
 
+  // Every upgrade file, in order, is what a database part-way along needs — and
+  // together they must land it exactly where a fresh one starts. If a later
+  // migration adds another, this list is where it has to be named, and this
+  // assertion is what says so.
   const upgraded = old();
-  upgraded.exec(readFileSync('seed/housekeeping-upgrade-rounds.sql', 'utf8'));
+  for (const file of UPGRADE_FILES) {
+    upgraded.exec(readFileSync(`seed/${file}`, 'utf8'));
+  }
 
   const fresh = new DatabaseSync(':memory:');
   fresh.exec('PRAGMA foreign_keys = ON;');
@@ -110,6 +119,19 @@ test('the schema file is refused by a database part-way along, and the upgrade f
 
   assert.deepEqual(shapeOf(upgraded), shapeOf(fresh),
     'a database upgraded by hand must end up the same shape as one built fresh');
+});
+
+test('the notices upgrade can be run as often as you like', () => {
+  // Unlike the rounds one it adds no columns, so a second paste is a no-op
+  // rather than an error. Somebody will paste it twice.
+  const db = apply(new DatabaseSync(':memory:'), MIGRATIONS.filter((f) => f < '0009'));
+  const sql = readFileSync('seed/housekeeping-upgrade-notices.sql', 'utf8');
+
+  db.exec(sql);
+  const before = shapeOf(db);
+  db.exec(sql);
+
+  assert.deepEqual(shapeOf(db), before);
 });
 
 test('the upgrade file is the migration, so what holds for one holds for the other', () => {
