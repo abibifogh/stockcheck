@@ -106,4 +106,11 @@ build(all.filter((f) => upgrades(f) && !f.startsWith('0005') && !f.startsWith('0
 // has the rest.
 build(all.filter((f) => upgrades(f) && f.startsWith('0007')), 'seed/housekeeping-tables.sql');
 
+// The step from the one-check-a-day shape to three. The files above build the
+// destination and skip anything already there, which is exactly wrong for a
+// database part-way along: CREATE TABLE IF NOT EXISTS leaves the old table
+// alone and the next index fails on a column it does not have. So the upgrade
+// is its own file, and it is the migration verbatim.
+writeFileSync('seed/housekeeping-upgrade-rounds.sql', `${statementsOf('0008_check_rounds.sql')}\n`);
+
 console.log('wrote seed/housekeeping-database.sql and seed/housekeeping-tables.sql');

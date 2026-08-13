@@ -323,6 +323,15 @@ That SQL file is the migration with every comment stripped out, because the D1
 console rejects a paste it reads as comments alone — it is otherwise identical,
 and safe to run twice.
 
+**Setting it up, or upgrading it.** `seed/housekeeping-database.sql` builds a
+database from nothing; it skips whatever already exists, which makes it safe to
+paste twice but useless for a database part-way along. Moving one that already
+holds a check a day to three uses `seed/housekeeping-upgrade-rounds.sql`
+instead, which is migration 0008 verbatim and keeps every check already
+recorded. Running the schema file at a database of the older shape fails with
+"no such column: slot", and `test/seed.test.js` asserts that it does — so the
+day it stops being true, the note above has to change with it.
+
 Four things bite when setting this up through the dashboard, all of them once:
 
 - **Root directory** means the folder inside the repository, and the answer is

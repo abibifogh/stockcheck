@@ -86,6 +86,42 @@ test('a database can hold three rounds for one day, and no more of the same one'
   );
 });
 
+test('the schema file is refused by a database part-way along, and the upgrade file is not', () => {
+  // The gap that bit a real setup: the schema file builds the destination and
+  // skips whatever already exists, so on a database still holding the
+  // one-check-a-day tables it leaves them alone and then fails on an index
+  // naming a column they do not have. The upgrade file is what that database
+  // needs, and nothing here should ever suggest otherwise.
+  const old = () => apply(new DatabaseSync(':memory:'), MIGRATIONS.filter((f) => f < '0008'));
+
+  assert.throws(
+    () => old().exec(readFileSync('seed/housekeeping-database.sql', 'utf8')),
+    /no such column: slot/,
+    'if this stops throwing, the schema file has become safe to run on an old database — say so in the README',
+  );
+
+  const upgraded = old();
+  upgraded.exec(readFileSync('seed/housekeeping-upgrade-rounds.sql', 'utf8'));
+
+  const fresh = new DatabaseSync(':memory:');
+  fresh.exec('PRAGMA foreign_keys = ON;');
+  fresh.exec(readFileSync('seed/housekeeping-database.sql', 'utf8'));
+
+  assert.deepEqual(shapeOf(upgraded), shapeOf(fresh),
+    'a database upgraded by hand must end up the same shape as one built fresh');
+});
+
+test('the upgrade file is the migration, so what holds for one holds for the other', () => {
+  const viaMigration = apply(new DatabaseSync(':memory:'), MIGRATIONS.filter((f) => f < '0008'));
+  viaMigration.exec(readFileSync('migrations/0008_check_rounds.sql', 'utf8'));
+
+  const viaFile = apply(new DatabaseSync(':memory:'), MIGRATIONS.filter((f) => f < '0008'));
+  viaFile.exec(readFileSync('seed/housekeeping-upgrade-rounds.sql', 'utf8'));
+
+  assert.deepEqual(shapeOf(viaFile), shapeOf(viaMigration),
+    'seed/housekeeping-upgrade-rounds.sql has drifted — rebuild it with scripts/build-seed.mjs');
+});
+
 test('upgrading an older database keeps the checks already recorded', () => {
   // The bug this guards: dropping hk_rounds to rebuild it performs an implicit
   // delete, and hk_checks cascades from it. A rebuild that looks careful takes
