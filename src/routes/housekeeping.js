@@ -30,10 +30,17 @@ async function audit(ctx, action, entity, detail) {
   ).run().catch(() => {});
 }
 
-/** Can this person see what the front desk expects of a bed? */
+/**
+ * Can this person see what the front desk expects of a bed?
+ *
+ * Not the housekeeper walking the round: being shown the answer before you look
+ * is how a check quietly stops being one. Managers reading reports need it to
+ * make sense of a finding, and whoever fills the roster in obviously knows it
+ * already.
+ */
 function seesRoster(ctx) {
-  return ctx.session.permissions.includes('hk_reports')
-    || ctx.session.permissions.includes('hk_setup');
+  return ['hk_reports', 'hk_roster', 'hk_setup']
+    .some((p) => ctx.session.permissions.includes(p));
 }
 
 /**

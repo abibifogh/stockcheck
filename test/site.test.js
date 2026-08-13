@@ -56,7 +56,7 @@ test('a path that merely starts with the same letters is not caught', () => {
 
 test('the housekeeping site offers only housekeeping sections', () => {
   const keys = permissionsFor('housekeeping').map((p) => p.key);
-  assert.deepEqual(keys, ['hk_check', 'hk_reports', 'hk_setup']);
+  assert.deepEqual(keys, ['hk_check', 'hk_reports', 'hk_roster', 'hk_setup']);
   // And the full site is untouched by any of this.
   assert.equal(permissionsFor('full').length, PERMISSIONS.length);
 });
@@ -73,7 +73,7 @@ test('it offers only the roles built from those sections, plus administrator', (
 
   // An administrator here administers this site, not a kitchen.
   const admin = roles.find((r) => r.key === 'admin');
-  assert.deepEqual(admin.defaults, ['hk_check', 'hk_reports', 'hk_setup', 'users']);
+  assert.deepEqual(admin.defaults, ['hk_check', 'hk_reports', 'hk_roster', 'hk_setup', 'users']);
   assert.ok(admin.defaults.includes('users'), 'somebody has to be able to manage people');
 
   assert.deepEqual(rolesFor('housekeeping').find((r) => r.key === 'housekeeper').defaults, ['hk_check']);

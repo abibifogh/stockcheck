@@ -157,7 +157,7 @@ function keepInView(toc, link) {
  * manual for two systems they cannot open.
  */
 const HOUSEKEEPING_SECTIONS = new Set([
-  'hk-check', 'hk-reports', 'hk-setup', 'account', 'people', 'problems',
+  'hk-check', 'hk-roster', 'hk-reports', 'hk-setup', 'account', 'people', 'problems',
 ]);
 
 function onThisSite(id) {
@@ -170,9 +170,13 @@ function greeting() {
   // Somebody who only walks the dorms should not be greeted with a page about
   // the kitchen.
   if (can('hk_check') && !can('entry')) {
-    return can('hk_reports')
-      ? 'Walking the dorms, and reading what the checks tell you'
+    if (can('hk_reports')) return 'Walking the dorms, and reading what the checks tell you';
+    return can('hk_roster')
+      ? 'Checking the beds, and keeping the roster of who is expected in them'
       : 'Walking the dorms and checking the beds — that is all you need';
+  }
+  if (can('hk_roster') && !can('hk_check') && !can('entry')) {
+    return 'Keeping the roster of who is expected in which bed';
   }
   return 'Recording the morning — that is all you need';
 }
@@ -894,6 +898,42 @@ const SECTIONS = [
   },
 
   {
+    id: 'hk-roster',
+    title: 'Tonight’s roster: who should be in which bed',
+    permission: 'hk_roster',
+    lead: 'The roster is what turns “this bed is occupied” into “this bed should not have been”.',
+    render: () => h('div',
+      h('p', 'Reception know who is booked into which bed tonight. The Roster screen is where that '
+        + 'goes in, and it is the only reason the reports can tell you a bed was found occupied when '
+        + 'nobody was expected in it.'),
+      steps(
+        h('span', h('strong', 'Open Roster under Housekeeping.'), ' Every dorm is listed with its '
+          + 'beds — the same beds the check screen walks.'),
+        h('span', h('strong', 'Set each bed.'), ' Should be free, should be occupied, or not tracked. '
+          + '“Set every bed to” does a whole room at once, then change the few that differ.'),
+        h('span', h('strong', 'Add who is expected, if it helps.'), ' A guest name or a booking '
+          + 'reference beside a bed. It is optional, and it shows on the reports beside anything odd '
+          + 'that bed turns up.'),
+        h('span', h('strong', 'Press Save the roster.'), ' One button for the whole property. The bar '
+          + 'at the bottom counts how many beds you have changed, and it stays greyed out until '
+          + 'there is something to save.'),
+      ),
+      note('“Not tracked” is a real answer.', 'A bed left as not tracked is still checked and still '
+        + 'has to carry a name tag. It simply raises no surprise either way. Only beds you have set '
+        + 'here can be reported as occupied when they should have been free.'),
+      note('This screen cannot break anything.', 'It sets the roster and nothing else — the dorms, '
+        + 'the beds and their names are on the Setup screen, which is a separate permission. Somebody '
+        + 'given the roster cannot rename a dorm or delete a bed.'),
+      note('Changing the roster does not rewrite the past.', 'Every check keeps its own copy of what '
+        + 'was expected at the moment it was answered, so tonight’s bookings cannot change what last '
+        + 'Tuesday found.'),
+      note('The person walking the dorms should not see this.', 'Somebody who knows the answer before '
+        + 'they look at the bed is not really checking it. That is why the roster is its own '
+        + 'permission and is left off the bed check screen.'),
+    ),
+  },
+
+  {
     id: 'hk-reports',
     title: 'What the bed check tells you',
     permission: 'hk_reports',
@@ -979,8 +1019,11 @@ const SECTIONS = [
         + 'before you confirm. Only that period goes: the dorms, the beds, the people and every '
         + 'other day are untouched. There is no undo, which is why it counts first.'),
       note('The roster is never shown to the housekeeper.', 'Somebody who can see what the answer is '
-        + 'supposed to be before they answer is not really checking. It appears on the reports, and on '
-        + 'the setup screen, and nowhere else.'),
+        + 'supposed to be before they answer is not really checking. It appears on the reports, on '
+        + 'this screen, on the Roster screen, and nowhere else.'),
+      note('The front desk can keep the roster without this screen.', 'Give somebody “The roster” on '
+        + 'its own and they get a Roster screen with the same three columns and none of the renaming '
+        + 'and deleting. Anybody with setup already has it.'),
       note('Changing the roster does not rewrite the past.', 'Every check keeps its own copy of what '
         + 'was expected at the time, so tonight’s bookings cannot change what last Tuesday found.'),
       note('Closing a room keeps its history.', 'A room or bed that has ever been checked is closed '

@@ -3,7 +3,7 @@ import {
   saltForEmail, sessionCookie, storedPassword, throttleCheck, throttleFail,
   throttleReset, tokenTtl, userForCredentials, userForPin, verifyPasswordKey,
 } from './lib/auth.js';
-import { effectivePermissions } from './lib/permissions.js';
+import { allows, effectivePermissions } from './lib/permissions.js';
 import { servesPath, siteOf } from './lib/site.js';
 import {
   HttpError, badRequest, forbidden, isMissingTable, json, readJson, str, unauthorized,
@@ -158,14 +158,14 @@ const ROUTES = [
   ['GET', '/api/hk/rooms/:id/detail', 'hk_reports', hk.roomReport],
   ['GET', '/api/hk/export', 'hk_reports', hk.exportCsv],
 
-  ['GET', '/api/hk/rooms', 'hk_setup', hk.listRooms],
+  ['GET', '/api/hk/rooms', ['hk_roster', 'hk_setup'], hk.listRooms],
   ['POST', '/api/hk/rooms', 'hk_setup', hk.createRoom],
   ['PUT', '/api/hk/rooms/:id', 'hk_setup', hk.updateRoom],
   ['DELETE', '/api/hk/rooms/:id', 'hk_setup', hk.deleteRoom],
   ['POST', '/api/hk/beds', 'hk_setup', hk.createBed],
   ['PUT', '/api/hk/beds/:id', 'hk_setup', hk.updateBed],
   ['DELETE', '/api/hk/beds/:id', 'hk_setup', hk.deleteBed],
-  ['POST', '/api/hk/roster', 'hk_setup', hk.saveRoster],
+  ['POST', '/api/hk/roster', ['hk_roster', 'hk_setup'], hk.saveRoster],
   ['PUT', '/api/hk/settings', 'hk_setup', hk.updateSettings],
 ];
 
@@ -263,7 +263,8 @@ async function route(request, env, url, executionContext) {
     if (permission !== 'public') {
       ctx.session = await getSession(request, env, env.DB);
       if (!ctx.session) throw unauthorized();
-      if (permission && !ctx.session.permissions.includes(permission)) {
+      // A list means any one of them is enough — see `allows`.
+      if (!allows(permission, ctx.session.permissions)) {
         throw forbidden('You do not have access to that part of the system.');
       }
     }

@@ -25,6 +25,7 @@ import { renderHkCheck } from './views/hk-check.js';
 import { renderHkOverview, renderHkReport } from './views/hk-reports.js';
 import { renderHkRoom } from './views/hk-room.js';
 import { renderHkSetup } from './views/hk-setup.js';
+import { renderHkRoster } from './views/hk-roster.js';
 import { BRAND } from './brand.js';
 import { noticeBell } from './views/notices.js';
 
@@ -67,6 +68,9 @@ const ROUTES = [
   // The bed check comes first in its section because it is the only screen a
   // housekeeper opens, and it is opened every single morning.
   { path: 'hk-check', label: 'Bed check', permission: 'hk_check', render: renderHkCheck, group: 'Housekeeping' },
+  // The roster on its own page, for the desk that sets who is expected where
+  // without being handed the screen that renames and deletes dorms.
+  { path: 'hk-roster', label: 'Roster', permission: 'hk_roster', render: renderHkRoster, group: 'Housekeeping' },
   { path: 'hk-overview', label: 'Dorms', permission: 'hk_reports', render: renderHkOverview, group: 'Housekeeping' },
   { path: 'hk-report', label: 'Report', permission: 'hk_reports', render: renderHkReport, group: 'Housekeeping' },
   { path: 'hk-setup', label: 'Setup', permission: 'hk_setup', render: renderHkSetup, group: 'Housekeeping' },
@@ -112,10 +116,10 @@ function defaultRoute() {
   // administrator who typed housekeeping.niceoperation.com did not mean to
   // arrive at the breakfast overview.
   const preferred = BRAND.app === 'housekeeping'
-    ? ['hk-overview', 'hk-check', 'overview', 'entry', 'mx-overview', 'mx-issue',
-      'stock', 'purchases', 'setup', 'admin']
-    : ['overview', 'entry', 'hk-overview', 'hk-check', 'mx-overview', 'mx-issue',
-      'stock', 'purchases', 'setup', 'admin'];
+    ? ['hk-overview', 'hk-check', 'hk-roster', 'hk-setup', 'overview', 'entry',
+      'mx-overview', 'mx-issue', 'stock', 'purchases', 'setup', 'admin', 'guide']
+    : ['overview', 'entry', 'hk-overview', 'hk-check', 'hk-roster', 'mx-overview',
+      'mx-issue', 'stock', 'purchases', 'setup', 'admin', 'guide'];
   return preferred.find((path) => allowed(ROUTES.find((r) => r.path === path))) ?? 'entry';
 }
 

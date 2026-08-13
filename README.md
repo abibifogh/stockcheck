@@ -94,7 +94,8 @@ The manager's side is built around the findings rather than the activity:
 | **Report** | A period, against the period before it — untagged beds, tag compliance, unexpected occupancy, coverage, and who walked what. Exports to CSV. |
 | **Every room, every day** | A room-by-day grid, one square per room per day, coloured by the worst thing found. Grey means nobody checked, which is treated as loudly as red. |
 | **A room's own page** | Every check ever made in one dorm, bed by bed, with its notes and its history. |
-| **Setup** | The rooms and their beds, and the roster: what the front desk expects of each bed. |
+| **Roster** | Tonight's expectation for every bed on one page, saved in one press. Its own permission, so the front desk can keep it without being able to rename or delete a dorm. |
+| **Setup** | The rooms and their beds, and the roster alongside them. |
 
 **The roster** is what turns "this bed is occupied" into "this bed should have
 been empty". Each bed is marked *should be free*, *should be occupied* or *not
@@ -103,6 +104,13 @@ simply raises no surprise either way. It is never shown to the person doing the
 round — somebody who knows the expected answer before they look is not checking
 — and every check keeps its own copy of what was expected at the time, so
 editing tonight's roster cannot rewrite what last Tuesday found.
+
+Keeping the roster and building the dorms are **separate permissions**. The
+front desk knows tonight's bookings, and that is no reason to hand them the
+screen that renames and deletes rooms; *The roster* on its own gives them the
+Roster page and nothing else, and anybody with housekeeping setup holds it
+already. Neither walking role gets it by default — that is the whole point of a
+blind check — so it is granted per person on the People screen.
 
 **The email** goes out the moment a check is submitted — three times a day,
 named for the check it reports — to its own list of recipients. It leads with
