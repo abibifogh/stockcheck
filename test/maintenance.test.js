@@ -164,7 +164,54 @@ test('stock sitting untouched for three months is reported as idle money', () =>
   assert.equal(report.idle[0].value >= 0, true);
 });
 
-test('a physical count is compared against the book and the gap is valued', () => {
+test('a count awaiting approval is reported as a difference but moves nothing', () => {
+  const ds = build({
+    issues: [issue('2026-06-01', 1, 10, 1)],
+    counts: [{ id: 1, day: '2026-06-02', item_id: 1, counted_qty: 85, status: 'pending' }],
+  });
+  const report = stockReport(ds, '2026-06-30');
+  const bulb = report.rows.find((r) => r.itemId === 1);
+
+  // The book is untouched: 100 opening less 10 issued.
+  assert.equal(bulb.stock, 90);
+  assert.equal(bulb.pendingCountQty, 85);
+  assert.equal(bulb.countVariance, -5); // book says 90, shelf holds 85
+  assert.equal(bulb.countVarianceValue, -125);
+  assert.equal(report.shrinkage[0].itemId, 1);
+});
+
+test('an approved count becomes the stock figure, and the gap closes', () => {
+  const ds = build({
+    issues: [issue('2026-06-01', 1, 10, 1)],
+    counts: [{ id: 1, day: '2026-06-02', item_id: 1, counted_qty: 85, status: 'approved' }],
+  });
+  const report = stockReport(ds, '2026-06-30');
+  const bulb = report.rows.find((r) => r.itemId === 1);
+
+  assert.equal(bulb.stock, 85);          // the shelf won
+  assert.equal(bulb.lastCountDay, '2026-06-02');
+  assert.equal(bulb.pendingCountQty, null);
+  assert.equal(bulb.countVariance, null); // nothing outstanding
+  assert.equal(report.shrinkage.length, 0);
+});
+
+test('a rejected count changes nothing and stops being chased', () => {
+  const ds = build({
+    issues: [issue('2026-06-01', 1, 10, 1)],
+    counts: [{ id: 1, day: '2026-06-02', item_id: 1, counted_qty: 85, status: 'rejected' }],
+  });
+  const report = stockReport(ds, '2026-06-30');
+  const bulb = report.rows.find((r) => r.itemId === 1);
+
+  assert.equal(bulb.stock, 90);
+  assert.equal(bulb.pendingCountQty, null);
+  assert.equal(bulb.countVariance, null);
+  assert.equal(report.shrinkage.length, 0);
+});
+
+test('a count with no status at all is treated as still waiting', () => {
+  // Rows written before the approval step existed must surface for a decision
+  // rather than silently moving stock or silently vanishing.
   const ds = build({
     issues: [issue('2026-06-01', 1, 10, 1)],
     counts: [{ id: 1, day: '2026-06-02', item_id: 1, counted_qty: 85 }],
@@ -172,9 +219,9 @@ test('a physical count is compared against the book and the gap is valued', () =
   const report = stockReport(ds, '2026-06-30');
   const bulb = report.rows.find((r) => r.itemId === 1);
 
-  assert.equal(bulb.countVariance, -5); // book said 90, shelf holds 85
-  assert.equal(bulb.countVarianceValue, -125);
-  assert.equal(report.shrinkage[0].itemId, 1);
+  assert.equal(bulb.stock, 90);           // book untouched
+  assert.equal(bulb.pendingCountQty, 85); // and visible
+  assert.equal(bulb.countVariance, -5);
 });
 
 // ------------------------------------------------------------------- period --

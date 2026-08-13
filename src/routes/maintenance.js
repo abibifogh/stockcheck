@@ -225,6 +225,14 @@ export async function deletePurchase(ctx, id) {
 // Counts
 // ---------------------------------------------------------------------------
 
+/**
+ * Record what was actually on the shelf.
+ *
+ * A count is a claim, not yet a correction. It is stored as pending and moves
+ * no figure until an administrator accepts it — recounting a store is exactly
+ * the moment somebody could quietly write off a shortfall, so the person who
+ * counts is never the person who decides.
+ */
 export async function saveCounts(ctx) {
   const body = await readJson(ctx.request);
   const day = str(body.day, 'Date', { required: true, max: 10 });
@@ -232,14 +240,148 @@ export async function saveCounts(ctx) {
 
   const counts = Array.isArray(body.counts) ? body.counts : [];
   if (!counts.length) throw badRequest('Nothing was counted.');
+  if (counts.length > 1000) throw badRequest('That is more than 1000 items in one count.');
+
+  for (const c of counts) {
+    const qty = Number(c.qty);
+    if (!Number.isFinite(qty) || qty < 0) throw badRequest('A counted quantity cannot be negative.');
+    if (qty > 1000000) throw badRequest('That counted quantity looks wrong.');
+  }
 
   await ctx.db.batch(counts.map((c) => ctx.db.prepare(
-    `INSERT INTO mx_counts (day, item_id, counted_qty, note) VALUES (?1, ?2, ?3, ?4)
-     ON CONFLICT(day, item_id) DO UPDATE SET counted_qty = excluded.counted_qty, note = excluded.note`,
-  ).bind(day, Number(c.itemId), Number(c.qty) || 0, c.note ?? null)));
+    `INSERT INTO mx_counts (day, item_id, counted_qty, note, status, counted_by)
+     VALUES (?1, ?2, ?3, ?4, 'pending', ?5)
+     ON CONFLICT(day, item_id) DO UPDATE SET
+       counted_qty = excluded.counted_qty,
+       note        = excluded.note,
+       counted_by  = excluded.counted_by,
+       -- Re-counting the same item on the same day starts the decision again;
+       -- an already-accepted figure must not be edited underneath it.
+       status      = 'pending',
+       reviewed_by = NULL,
+       reviewed_at = NULL,
+       review_note = NULL`,
+  ).bind(day, Number(c.itemId), Number(c.qty) || 0, c.note ?? null, ctx.session.user.name)));
 
   await audit(ctx, 'mx.count', null, { day, items: counts.length });
-  return json({ ok: true, recorded: counts.length });
+  return json({ ok: true, recorded: counts.length, awaitingApproval: true });
+}
+
+/**
+ * Counts waiting on a decision, with what accepting each one would do.
+ *
+ * The difference is worked out against the book as it stands now rather than
+ * stored when the count was taken, so a delivery keyed in late shows up here
+ * before anybody accepts anything.
+ */
+export async function pendingCounts(ctx) {
+  const ds = await loadDataset(ctx.db);
+  const rows = await ctx.db.prepare(
+    `SELECT c.*, i.name AS item_name, i.unit, i.attributes
+       FROM mx_counts c JOIN mx_items i ON i.id = c.item_id
+      WHERE c.status = 'pending'
+      ORDER BY c.day DESC, i.name`,
+  ).all();
+
+  const counts = (rows.results ?? []).map((row) => {
+    const book = ds.ledger.stockOn(row.item_id, row.day);
+    const unitCost = ds.ledger.unitCostOn(row.item_id, row.day);
+    const difference = Math.round((Number(row.counted_qty) - book) * 1000) / 1000;
+    return {
+      id: row.id,
+      day: row.day,
+      itemId: row.item_id,
+      name: row.item_name,
+      unit: row.unit,
+      attributes: row.attributes ?? null,
+      countedQty: Number(row.counted_qty),
+      bookQty: Math.round(book * 1000) / 1000,
+      difference,
+      differenceValue: Math.round(difference * unitCost * 100) / 100,
+      countedBy: row.counted_by,
+      note: row.note,
+    };
+  });
+
+  const byDay = new Map();
+  for (const c of counts) {
+    if (!byDay.has(c.day)) byDay.set(c.day, { day: c.day, items: 0, shortfall: 0, surplus: 0, net: 0 });
+    const g = byDay.get(c.day);
+    g.items += 1;
+    g.net = Math.round((g.net + c.differenceValue) * 100) / 100;
+    if (c.differenceValue < 0) g.shortfall = Math.round((g.shortfall + c.differenceValue) * 100) / 100;
+    else g.surplus = Math.round((g.surplus + c.differenceValue) * 100) / 100;
+  }
+
+  return json({
+    currency: ds.currency,
+    counts,
+    days: [...byDay.values()].sort((a, b) => b.day.localeCompare(a.day)),
+  });
+}
+
+/**
+ * Accept or reject counts.
+ *
+ * Accepting is what actually moves the book — until this runs, a count is a
+ * note about the shelf and nothing more.
+ */
+export async function reviewCounts(ctx) {
+  const body = await readJson(ctx.request);
+  const approve = body.approve === true;
+  const note = str(body.note, 'Note', { max: 300, fallback: '' }) || null;
+
+  // Either a list of specific counts, or a whole day's stocktake at once.
+  let ids;
+  if (Array.isArray(body.ids)) {
+    ids = readIds(body.ids);
+  } else if (body.day && isDay(body.day)) {
+    const rows = await ctx.db.prepare(
+      "SELECT id FROM mx_counts WHERE day = ? AND status = 'pending'",
+    ).bind(body.day).all();
+    ids = (rows.results ?? []).map((r) => r.id);
+    if (!ids.length) throw badRequest('There is nothing waiting on that date.');
+  } else {
+    throw badRequest('Nothing was selected.');
+  }
+
+  const holes = ids.map(() => '?').join(',');
+  const result = await ctx.db.prepare(
+    `UPDATE mx_counts
+        SET status = ?, reviewed_by = ?, reviewed_at = datetime('now'), review_note = ?
+      WHERE id IN (${holes}) AND status = 'pending'`,
+  ).bind(approve ? 'approved' : 'rejected', ctx.session.user.name, note, ...ids).run();
+
+  const changed = result.meta?.changes ?? 0;
+  await audit(ctx, approve ? 'mx.count.approve' : 'mx.count.reject', null, { counts: changed, note });
+
+  return json({ ok: true, [approve ? 'approved' : 'rejected']: changed });
+}
+
+/** What was decided, and by whom — the record the approval step exists for. */
+export async function countHistory(ctx) {
+  const rows = await ctx.db.prepare(
+    `SELECT c.*, i.name AS item_name, i.unit
+       FROM mx_counts c JOIN mx_items i ON i.id = c.item_id
+      WHERE c.status <> 'pending'
+      ORDER BY c.reviewed_at DESC, c.id DESC
+      LIMIT 100`,
+  ).all();
+
+  return json({
+    counts: (rows.results ?? []).map((row) => ({
+      id: row.id,
+      day: row.day,
+      name: row.item_name,
+      unit: row.unit,
+      countedQty: Number(row.counted_qty),
+      status: row.status,
+      countedBy: row.counted_by,
+      reviewedBy: row.reviewed_by,
+      reviewedAt: row.reviewed_at,
+      reviewNote: row.review_note,
+    })),
+  });
 }
 
 // ---------------------------------------------------------------------------

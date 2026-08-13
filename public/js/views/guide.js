@@ -740,6 +740,12 @@ const SECTIONS = [
           'What you bought in the period against what you actually issued.',
           'Buying much more than you use is cash going onto a shelf. Month after month, it is worth '
           + 'asking whether the order quantities are right.'],
+        ['Counts waiting for approval',
+          'Physical counts somebody has recorded, with what the book says, what was counted, and what '
+          + 'accepting each one would be worth. Only an administrator sees the buttons.',
+          'Read the money column before accepting. Accepting corrects the book to match the shelf from '
+          + 'that date on; rejecting leaves everything as it was. Either way the decision is kept with '
+          + 'the count, alongside who did the counting.'],
         ['Order list',
           'Everything below its restock level, with how much to order and roughly what it will cost.',
           'Negative stock never means the shelf is negative — it means a delivery was never recorded. '
@@ -753,6 +759,42 @@ const SECTIONS = [
           'If the two periods are different lengths the screen says so. Read the per-day figures then, '
           + 'not the totals.'],
       ),
+    ),
+  },
+
+  {
+    id: 'mx-counting',
+    title: 'Counting the store',
+    permission: 'mx_stock',
+    lead: 'A count is a claim about the shelf. Accepting it is what makes it true.',
+    render: () => h('div',
+      h('p', 'The book works out what should be on the shelf: what you bought, less what was issued. '
+        + 'Reality drifts from that — things get taken without being recorded, a delivery is keyed in '
+        + 'twice, something breaks in the store. Counting is how you put it right.'),
+      steps(
+        h('span', h('strong', 'Count the shelf'), ' and type the figures into the “Counted” column on '
+          + 'the Parts screen. You do not have to do the whole store; count what you counted.'),
+        h('span', h('strong', 'Save the count.'), ' Nothing moves yet. It goes into a queue with what '
+          + 'the book says beside it, and what the difference is worth.'),
+        h('span', h('strong', 'An administrator accepts or rejects it.'), ' Accepting corrects the book '
+          + 'to the counted figure. Rejecting leaves everything alone.'),
+      ),
+      warn('Whoever counts is never whoever decides.',
+        'Recounting a store is exactly the moment a shortfall could be quietly written off, so the two '
+        + 'jobs are deliberately kept apart. Anybody with the stock screen can record a count and see '
+        + 'the queue; only an administrator can accept one.'),
+      note('An accepted count wins from its date onwards.',
+        'Issues and deliveries after that date carry on from the counted figure. A delivery keyed in '
+        + 'late, dated before the count, does not unsettle it — you counted what was actually there, '
+        + 'and that stands.'),
+      note('Re-counting starts the decision again.',
+        'Changing a count for the same item on the same day puts it back in the queue, even if it had '
+        + 'already been accepted. An agreed figure cannot be edited underneath somebody.'),
+      can('users')
+        ? note('What you are agreeing to.', 'The confirmation says what the change is worth across '
+          + 'everything selected. A large shortfall is worth asking about before you accept it — '
+          + 'accepting is how it stops being a question and becomes the new truth.')
+        : null,
     ),
   },
 

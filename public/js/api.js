@@ -137,6 +137,9 @@ export const api = {
 
   mxStock: (asOf) => request(`/api/mx/stock${asOf ? `?asOf=${asOf}` : ''}`),
   mxSaveCounts: (body) => request('/api/mx/counts', { method: 'POST', body }),
+  mxPendingCounts: () => request('/api/mx/counts/pending'),
+  mxCountHistory: () => request('/api/mx/counts/history'),
+  mxReviewCounts: (body) => request('/api/mx/counts/review', { method: 'POST', body }),
 
   mxOverview: () => request('/api/mx/overview'),
   mxReport: (from, to) => request(`/api/mx/report?${new URLSearchParams({

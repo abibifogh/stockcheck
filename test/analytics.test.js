@@ -619,3 +619,111 @@ test('clearing the form never touches what was stored', () => {
   assert.equal(insight.today.guests, 50);
   assert.equal(insight.lines.length, 2);
 });
+
+// -------------------------------------------------- counts that move stock --
+
+test('an accepted count becomes the balance, whatever the book had worked out', () => {
+  const ledger = buildLedger({
+    ingredients: [{ ...INGREDIENTS[0], opening_stock: 100, default_unit_cost: 2 }],
+    purchases: [],
+    usage: [{ day: '2026-03-02', ingredient_id: 1, qty: 10 }],
+    counts: [{ day: '2026-03-05', ingredient_id: 1, qty: 80 }],
+  });
+
+  // Book said 90; the shelf held 80.
+  assert.equal(ledger.stockOn(1, '2026-03-04'), 90);
+  const entry = ledger.entry(1, '2026-03-05');
+  assert.equal(entry.closingStock, 80);
+  assert.equal(entry.adjustment, -10);
+  assert.equal(entry.adjustmentValue, -20);
+  // And it carries forward.
+  assert.equal(ledger.stockOn(1, '2026-03-20'), 80);
+});
+
+test('a count finding more than the book is applied just the same', () => {
+  const ledger = buildLedger({
+    ingredients: [{ ...INGREDIENTS[0], opening_stock: 50, default_unit_cost: 2 }],
+    purchases: [],
+    usage: [],
+    counts: [{ day: '2026-03-05', ingredient_id: 1, qty: 62 }],
+  });
+  const entry = ledger.entry(1, '2026-03-05');
+  assert.equal(entry.closingStock, 62);
+  assert.equal(entry.adjustment, 12);
+  assert.equal(entry.adjustmentValue, 24);
+});
+
+test('the count lands after that day’s deliveries and issues, not before', () => {
+  const ledger = buildLedger({
+    ingredients: [{ ...INGREDIENTS[0], opening_stock: 10, default_unit_cost: 1 }],
+    purchases: [{ day: '2026-03-05', ingredient_id: 1, qty: 100, unit_cost: 1 }],
+    usage: [{ day: '2026-03-05', ingredient_id: 1, qty: 20 }],
+    counts: [{ day: '2026-03-05', ingredient_id: 1, qty: 85 }],
+  });
+  const entry = ledger.entry(1, '2026-03-05');
+  // 10 + 100 − 20 = 90 on the book; counted 85.
+  assert.equal(entry.purchasedQty, 100);
+  assert.equal(entry.usedQty, 20);
+  assert.equal(entry.adjustment, -5);
+  assert.equal(entry.closingStock, 85);
+});
+
+test('a delivery back-dated before a count does not unsettle the counted figure', () => {
+  // The reason the count sets the balance instead of storing a difference:
+  // this delivery is keyed in late, dated before the count.
+  const ledger = buildLedger({
+    ingredients: [{ ...INGREDIENTS[0], opening_stock: 100, default_unit_cost: 2 }],
+    purchases: [{ day: '2026-03-03', ingredient_id: 1, qty: 40, unit_cost: 2 }],
+    usage: [],
+    counts: [{ day: '2026-03-05', ingredient_id: 1, qty: 80 }],
+  });
+  // The shelf still holds what was counted, not 140.
+  assert.equal(ledger.stockOn(1, '2026-03-05'), 80);
+  assert.equal(ledger.entry(1, '2026-03-05').adjustment, -60);
+});
+
+test('a later count supersedes an earlier one', () => {
+  const ledger = buildLedger({
+    ingredients: [{ ...INGREDIENTS[0], opening_stock: 100, default_unit_cost: 1 }],
+    purchases: [],
+    usage: [{ day: '2026-03-10', ingredient_id: 1, qty: 5 }],
+    counts: [
+      { day: '2026-03-05', ingredient_id: 1, qty: 80 },
+      { day: '2026-03-15', ingredient_id: 1, qty: 60 },
+    ],
+  });
+  assert.equal(ledger.stockOn(1, '2026-03-05'), 80);
+  assert.equal(ledger.stockOn(1, '2026-03-10'), 75); // 80 − 5
+  assert.equal(ledger.stockOn(1, '2026-03-15'), 60);
+  assert.equal(ledger.entry(1, '2026-03-15').adjustment, -15);
+});
+
+test('counting does not disturb the unit cost, only the quantity', () => {
+  const ledger = buildLedger({
+    ingredients: [{ ...INGREDIENTS[0], opening_stock: 100, default_unit_cost: 2 }],
+    purchases: [{ day: '2026-03-02', ingredient_id: 1, qty: 100, unit_cost: 4 }],
+    usage: [],
+    counts: [{ day: '2026-03-05', ingredient_id: 1, qty: 50 }],
+  });
+  // Blended to 3.00 by the delivery; a count is not a price.
+  assert.equal(ledger.unitCostOn(1, '2026-03-02'), 3);
+  assert.equal(ledger.unitCostOn(1, '2026-03-05'), 3);
+  assert.equal(ledger.entry(1, '2026-03-05').unitCost, 3);
+  assert.equal(ledger.closing(1).value, 150); // 50 × 3
+});
+
+test('with no counts passed, every figure is exactly as before', () => {
+  const inputs = {
+    ingredients: [{ ...INGREDIENTS[0], opening_stock: 100, default_unit_cost: 2 }],
+    purchases: [{ day: '2026-03-02', ingredient_id: 1, qty: 100, unit_cost: 4 }],
+    usage: [{ day: '2026-03-03', ingredient_id: 1, qty: 30 }],
+  };
+  const before = buildLedger(inputs);
+  const after = buildLedger({ ...inputs, counts: [] });
+
+  for (const day of ['2026-03-02', '2026-03-03']) {
+    assert.deepEqual(before.entry(1, day), after.entry(1, day));
+    assert.equal(before.entry(1, day).adjustment, 0);
+  }
+  assert.equal(before.stockOn(1, '2026-03-03'), 170);
+});

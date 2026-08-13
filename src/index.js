@@ -118,6 +118,11 @@ const ROUTES = [
 
   ['GET', '/api/mx/stock', 'mx_stock', mx.stock],
   ['POST', '/api/mx/counts', 'mx_stock', mx.saveCounts],
+  ['GET', '/api/mx/counts/pending', 'mx_stock', mx.pendingCounts],
+  ['GET', '/api/mx/counts/history', 'mx_stock', mx.countHistory],
+  // Accepting a count rewrites the shelf, so it is an administrator's call —
+  // never the same person who did the counting.
+  ['POST', '/api/mx/counts/review', 'users', mx.reviewCounts],
 
   ['GET', '/api/mx/overview', 'mx_reports', mx.overview],
   ['GET', '/api/mx/report', 'mx_reports', mx.report],

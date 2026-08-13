@@ -1,6 +1,8 @@
 import { api } from '../api.js';
-import { navigate } from '../app.js';
-import { attributeSummary, fmtMoney, fmtNum, fmtQty, h, mount, toast, todayISO } from '../util.js';
+import { can, navigate } from '../app.js';
+import {
+  attributeSummary, fmtDay, fmtMoney, fmtNum, fmtQty, h, mount, toast, todayISO,
+} from '../util.js';
 import { card, statTile, table } from './components.js';
 import { printButton } from '../print.js';
 
@@ -12,8 +14,12 @@ import { printButton } from '../print.js';
  * twice a year, and a short window would call almost everything dead stock.
  */
 export async function renderMxStock() {
-  const data = await api.mxStock();
+  const [data, pending] = await Promise.all([
+    api.mxStock(),
+    api.mxPendingCounts().catch(() => ({ counts: [], days: [] })),
+  ]);
   const host = h('div');
+  const reload = async () => mount(host, await renderMxStock());
 
   const counts = new Map();
 
@@ -36,8 +42,8 @@ export async function renderMxStock() {
         day: todayISO(),
         counts: [...counts.entries()].map(([itemId, qty]) => ({ itemId, qty })),
       });
-      toast(`${counts.size} counted`, 'good');
-      mount(host, await renderMxStock());
+      toast(`${counts.size} counted — waiting for an administrator to accept it`, 'good');
+      reload();
     } catch (err) {
       toast(err.message, 'bad');
       event.target.disabled = false;
@@ -130,10 +136,15 @@ export async function renderMxStock() {
       h('div.btn-row', { style: { marginTop: '.9rem' } },
         h('button.btn-primary', { onclick: saveCounts }, 'Save today’s count'),
       ),
+      h('p.muted', { style: { fontSize: '.82rem', marginTop: '.7rem', marginBottom: 0 } },
+        'A count does not change the figures on its own. It is sent to an administrator, who sees '
+        + 'what accepting it would do to each item and decides. Until then the book stands.'),
     ),
 
+    countApprovalCard(pending, reload),
+
     data.shrinkage.length
-      ? card('Where the count did not match the book', { wide: true },
+      ? card('Counted differently from the book', { wide: true, note: 'Waiting on a decision' },
         table([
           { key: 'name', label: 'Part' },
           { key: 'lastCountDay', label: 'Counted on' },
@@ -147,7 +158,8 @@ export async function renderMxStock() {
         ], data.shrinkage),
         h('p.muted', { style: { fontSize: '.82rem', marginTop: '.6rem', marginBottom: 0 } },
           'A shelf holding less than the book says means parts left without being recorded. '
-          + 'A small gap is normal; a consistent one is worth asking about.'))
+          + 'A small gap is normal; a consistent one is worth asking about. These gaps close '
+          + 'when an administrator accepts the count.'))
       : null,
 
     data.idle.length
@@ -164,4 +176,166 @@ export async function renderMxStock() {
   );
 
   return host;
+}
+
+// ---------------------------------------------------------------------------
+// Accepting a count
+// ---------------------------------------------------------------------------
+
+/**
+ * Counts waiting on an administrator.
+ *
+ * Recounting a store is exactly the moment a shortfall could be quietly
+ * written off, so whoever counts is never whoever decides. This card is what
+ * the decision looks like: every line, what it claims, what the book says, and
+ * what accepting it would cost — before anything moves.
+ *
+ * Anyone with the stock screen can see the queue, because knowing a count is
+ * stuck is not privileged information. Only an administrator gets the buttons.
+ */
+function countApprovalCard(pending, reload) {
+  const rows = pending?.counts ?? [];
+  if (!rows.length) return null;
+
+  const mayDecide = can('users');
+  const chosen = new Set(rows.map((r) => r.id));
+  const boxes = new Map();
+  // Populated straight away, not only on the first change: every row starts
+  // selected, so a blank label would misdescribe what Accept is about to do.
+  const barLabel = h('span', `${rows.length} of ${rows.length} selected`);
+  const noteInput = h('input', {
+    type: 'text', placeholder: 'Why (optional — kept with the decision)', maxlength: 300,
+  });
+
+  const refresh = () => {
+    barLabel.textContent = `${chosen.size} of ${rows.length} selected`;
+    for (const [id, box] of boxes) box.checked = chosen.has(id);
+  };
+
+  const decide = async (approve, event) => {
+    const ids = [...chosen];
+    if (!ids.length) { toast('Nothing selected', 'bad'); return; }
+
+    const worth = rows.filter((r) => ids.includes(r.id))
+      .reduce((n, r) => n + r.differenceValue, 0);
+    const question = approve
+      ? `Accept ${ids.length} counted ${ids.length === 1 ? 'figure' : 'figures'}? `
+        + `The book will be corrected to match the shelf, a change of `
+        + `${fmtMoney(worth)} in stock value. This cannot be undone from here.`
+      : `Reject ${ids.length} counted ${ids.length === 1 ? 'figure' : 'figures'}? `
+        + 'The book stays as it is and the count is filed as rejected.';
+    if (!confirm(question)) return;
+
+    event.target.disabled = true;
+    try {
+      const result = await api.mxReviewCounts({ ids, approve, note: noteInput.value.trim() || null });
+      toast(approve
+        ? `${result.approved} accepted — stock corrected`
+        : `${result.rejected} rejected — nothing changed`, 'good');
+      reload();
+    } catch (err) {
+      toast(err.message, 'bad');
+      event.target.disabled = false;
+    }
+  };
+
+  const headBox = h('input', {
+    type: 'checkbox', checked: true, title: 'Select all',
+    onchange: (e) => {
+      chosen.clear();
+      if (e.target.checked) for (const r of rows) chosen.add(r.id);
+      refresh();
+    },
+  });
+
+  const summary = (pending.days ?? []).map((d) => h('div.stat',
+    h('div.stat-label', fmtDay(d.day, { withYear: true })),
+    h('div.stat-value', { style: { fontSize: '1.2rem' } }, `${d.items} ${d.items === 1 ? 'item' : 'items'}`),
+    h('div.stat-sub',
+      d.net < 0
+        ? h('span.delta.up', `${fmtMoney(d.net, { withSymbol: false })} to write off`)
+        : d.net > 0
+          ? h('span.delta.down', `+${fmtMoney(d.net, { withSymbol: false })} found`)
+          : h('span.muted', 'no net change'),
+    ),
+  ));
+
+  return card('Counts waiting for approval', {
+    wide: true,
+    note: mayDecide ? 'Accepting corrects the book to match the shelf' : 'An administrator has to accept these',
+  },
+    summary.length ? h('div.grid.grid-4', { style: { marginBottom: '.9rem' } }, summary) : null,
+
+    !mayDecide
+      ? h('div.alert.info',
+        h('span.alert-icon', 'ℹ️'),
+        h('div',
+          h('div.alert-title', 'These are with an administrator'),
+          h('div.alert-detail',
+            'The figures below are what was counted. Nothing has moved yet — the book still shows '
+            + 'what it worked out. An administrator accepts or rejects each one.'),
+        ))
+      : null,
+
+    table([
+      ...(mayDecide ? [{
+        key: 'id',
+        label: headBox,
+        cls: 'tick',
+        format: (id) => {
+          const box = h('input', {
+            type: 'checkbox', checked: chosen.has(id),
+            onchange: (e) => {
+              if (e.target.checked) chosen.add(id); else chosen.delete(id);
+              refresh();
+            },
+          });
+          boxes.set(id, box);
+          return box;
+        },
+      }] : []),
+      { key: 'day', label: 'Counted on', format: (v) => fmtDay(v) },
+      {
+        key: 'name',
+        label: 'Part',
+        format: (v, r) => h('div', h('div', v),
+          h('small.muted', [attributeSummary(r.attributes), r.countedBy ? `by ${r.countedBy}` : null]
+            .filter(Boolean).join(' · '))),
+      },
+      { key: 'bookQty', label: 'Book says', align: 'right', format: (v, r) => fmtQty(v, r.unit) },
+      { key: 'countedQty', label: 'Counted', align: 'right', format: (v, r) => h('strong', fmtQty(v, r.unit)) },
+      {
+        key: 'difference',
+        label: 'Change',
+        align: 'right',
+        format: (v, r) => h(`span.delta.${v < 0 ? 'up' : v > 0 ? 'down' : 'flat'}`,
+          `${v > 0 ? '+' : ''}${fmtQty(v, r.unit)}`),
+      },
+      {
+        key: 'differenceValue',
+        label: 'Worth',
+        align: 'right',
+        format: (v) => h(`span.delta.${v < 0 ? 'up' : v > 0 ? 'down' : 'flat'}`,
+          fmtMoney(v, { withSymbol: false })),
+      },
+      { key: 'note', label: 'Note', format: (v) => (v ? h('span.muted', v) : '—') },
+    ], rows),
+
+    mayDecide
+      ? h('div', { style: { marginTop: '.9rem' } },
+        h('div.bulk-bar', barLabel,
+          h('div.btn-row',
+            h('button.btn-sm', { onclick: () => { chosen.clear(); refresh(); } }, 'Select none'),
+            h('button.btn-sm.btn-danger', { onclick: (e) => decide(false, e) }, 'Reject'),
+            h('button.btn-primary.btn-sm', { onclick: (e) => decide(true, e) }, 'Accept and correct stock'),
+          )),
+        h('label.field', { style: { marginTop: '.6rem', maxWidth: '460px' } },
+          h('span', 'Note on this decision'), noteInput),
+        h('p.muted', { style: { fontSize: '.82rem', marginTop: '.6rem', marginBottom: 0 } },
+          'Accepting sets the book to the counted figure from that date onwards. Later deliveries '
+          + 'and issues carry on from there, and a delivery keyed in late with an earlier date '
+          + 'cannot unsettle it.'),
+      )
+      : null,
+  );
 }
