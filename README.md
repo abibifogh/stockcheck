@@ -180,6 +180,14 @@ The seed is a reasonable starting catalogue for a Ghanaian hotel breakfast.
 Delete what you don't buy and correct the units and par levels in **Setup →
 Ingredients** — it is meant as a head start, not a prescription.
 
+**Applying a migration by hand.** If you are pasting into the Cloudflare D1
+console rather than running wrangler, use the copies in
+[`migrations/console/`](migrations/console/) — not the originals. The console
+rejects a paste that begins with a comment (*"Requests without any query are not
+supported"*), and every migration here opens with one. Those copies are the same
+SQL with the comments stripped; regenerate them with `npm run sql:console` after
+adding or editing a migration.
+
 ### 4. Set the PINs and session key
 
 Three secrets. The session key should be long and random; the PINs are what

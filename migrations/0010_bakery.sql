@@ -8,10 +8,6 @@
 --
 -- Safe to run more than once.
 
--- Which items the bakery reports on. Everything else stays out of the way: a
--- baker should open the link and see bread, not the whole storeroom.
-ALTER TABLE ingredients ADD COLUMN is_produced INTEGER NOT NULL DEFAULT 0;
-
 -- A shareable link, so the bakery can report without an account.
 --
 -- Only the hash of the token is kept. A link that leaks out can be revoked and
@@ -56,6 +52,16 @@ CREATE INDEX IF NOT EXISTS idx_production_item ON production (ingredient_id, day
 
 INSERT OR IGNORE INTO settings (key, value) VALUES
   ('notify_production', '1');
+
+-- Which items the bakery reports on. Everything else stays out of the way: a
+-- baker should open the link and see bread, not the whole storeroom.
+--
+-- Last, not first, and on purpose. SQLite has no "ADD COLUMN IF NOT EXISTS",
+-- so this is the one statement here that cannot be run twice — a second run
+-- stops on "duplicate column name: is_produced". Everything that has to
+-- succeed is therefore already done by the time it is reached, which makes
+-- running this file again harmless rather than destructive.
+ALTER TABLE ingredients ADD COLUMN is_produced INTEGER NOT NULL DEFAULT 0;
 
 -- The starter catalogue's two bread items, if they are still named as seeded.
 -- A hotel that renamed them ticks its own under Setup; nothing is guessed at
