@@ -3,9 +3,11 @@ import {
   getPepper, hashPin, isReservedPin, normaliseEmail, storedPassword,
 } from '../lib/auth.js';
 import {
-  PERMISSIONS, PERMISSION_KEYS, ROLES, effectivePermissions, isRole,
+  PERMISSION_KEYS, effectivePermissions, isRole, permissionsFor, rolesFor,
 } from '../lib/permissions.js';
-import { isEmail, notifyDaySubmitted, parseRecipients } from '../lib/email.js';
+import { siteOf } from '../lib/site.js';
+import { listNotices, markSeen } from '../lib/notices.js';
+import { isEmail, notifyDaySubmitted, notifyRoundSubmitted, parseRecipients } from '../lib/email.js';
 import { isDay } from '../util/dates.js';
 
 const PIN_RE = /^\d{4,10}$/;
@@ -115,10 +117,14 @@ export async function listUsers(ctx) {
     'SELECT * FROM users ORDER BY active DESC, role, name',
   ).all();
 
+  // Only what this site can actually offer — see permissionsFor().
+  const site = siteOf(ctx.env);
+
   return json({
     users: (rows.results ?? []).map(publicUser),
-    roles: ROLES,
-    permissions: PERMISSIONS,
+    roles: rolesFor(site),
+    permissions: permissionsFor(site),
+    site,
     recovery: await recoveryStatus(ctx),
   });
 }
@@ -276,6 +282,14 @@ export async function getNotifications(ctx) {
     devices: devices.results ?? [],
     pushLog: pushLog.results ?? [],
     recipients: parseRecipients(settings.notify_recipients),
+    // The bed check has its own audience — the people who care that a dorm bed
+    // is unlabelled are rarely the people who care what the eggs cost — but it
+    // shares the sender and the site address, which are properties of the
+    // installation rather than of either report.
+    housekeeping: {
+      enabled: settings.hk_notify_on_submit !== '0',
+      recipients: parseRecipients(settings.hk_notify_recipients),
+    },
     from: settings.email_from || '',
     siteUrl: settings.site_url || '',
     // The key itself is never returned — only whether one is present.
@@ -287,13 +301,18 @@ export async function getNotifications(ctx) {
 export async function updateNotifications(ctx) {
   const body = await readJson(ctx.request);
 
-  const recipients = Array.isArray(body.recipients)
-    ? body.recipients.map((r) => String(r).trim()).filter(Boolean)
-    : parseRecipients(body.recipients);
+  const readList = (value, label) => {
+    const list = Array.isArray(value)
+      ? value.map((r) => String(r).trim()).filter(Boolean)
+      : parseRecipients(value);
+    const bad = list.filter((r) => !isEmail(r));
+    if (bad.length) throw badRequest(`${label}: not a valid email address: ${bad[0]}`);
+    if (list.length > 25) throw badRequest(`${label}: that is a lot of recipients — 25 is the limit`);
+    return list;
+  };
 
-  const invalid = recipients.filter((r) => !isEmail(r));
-  if (invalid.length) throw badRequest(`Not a valid email address: ${invalid[0]}`);
-  if (recipients.length > 25) throw badRequest('That is a lot of recipients — 25 is the limit');
+  const recipients = readList(body.recipients, 'Daily email');
+  const hkRecipients = readList(body.hkRecipients ?? [], 'Bed check email');
 
   const from = str(body.from, 'From address', { max: 200, fallback: '' }) || '';
   if (from && !isEmail(from.replace(/^.*<([^>]+)>.*$/, '$1'))) {
@@ -307,6 +326,7 @@ export async function updateNotifications(ctx) {
 
   const enabled = bool(body.enabled, true) ? '1' : '0';
   const pushEnabled = bool(body.pushEnabled, true) ? '1' : '0';
+  const hkEnabled = bool(body.hkEnabled, true) ? '1' : '0';
 
   await ctx.db.batch([
     setting(ctx.db, 'notify_on_submit', enabled),
@@ -314,16 +334,38 @@ export async function updateNotifications(ctx) {
     setting(ctx.db, 'email_from', from),
     setting(ctx.db, 'site_url', siteUrl.replace(/\/+$/, '')),
     setting(ctx.db, 'push_on_submit', pushEnabled),
+    setting(ctx.db, 'hk_notify_on_submit', hkEnabled),
+    setting(ctx.db, 'hk_notify_recipients', JSON.stringify(hkRecipients)),
   ]);
 
   await audit(ctx, 'notifications.update', null, {
-    enabled, pushEnabled, recipients: recipients.length,
+    enabled, pushEnabled, hkEnabled,
+    recipients: recipients.length,
+    hkRecipients: hkRecipients.length,
   });
   return getNotifications(ctx);
 }
 
-/** Send the most recent day's email now, so the admin can prove it works. */
+/** Send the most recent email now, so the admin can prove it works. */
 export async function testNotification(ctx) {
+  // On a housekeeping site there is no day sheet to send. The proof somebody
+  // wants there is that a bed check reaches an inbox.
+  if (siteOf(ctx.env) === 'housekeeping') {
+    const round = await ctx.db.prepare('SELECT day FROM hk_rounds ORDER BY day DESC LIMIT 1').first();
+    if (!round) throw badRequest('There are no bed checks recorded yet to send a summary for.');
+
+    await notifyRoundSubmitted(ctx.db, ctx.env, {
+      day: round.day,
+      submittedBy: `${ctx.session.user.name} (test)`,
+      resubmission: false,
+    });
+
+    const sent = await ctx.db.prepare(
+      "SELECT * FROM email_log WHERE kind = 'hk_round' ORDER BY at DESC LIMIT 1",
+    ).first();
+    return json({ ok: sent?.status === 'sent', result: sent });
+  }
+
   const latest = await ctx.db.prepare(
     'SELECT day FROM service_days ORDER BY day DESC LIMIT 1',
   ).first();
@@ -370,7 +412,65 @@ export async function dataSummary(ctx) {
        (SELECT MAX(day) FROM service_days) AS last_day`,
   ).first();
 
-  return json({ counts: row ?? {}, confirmPhrase: CONFIRM_PHRASE });
+  // Tolerated missing, so the screen still loads on an installation that has
+  // the new code but not yet the new tables.
+  const housekeeping = await ctx.db.prepare(
+    `SELECT
+       (SELECT COUNT(*) FROM hk_rounds) AS rounds,
+       (SELECT COUNT(*) FROM hk_checks) AS bed_checks,
+       (SELECT COUNT(*) FROM hk_rooms)  AS dorm_rooms,
+       (SELECT COUNT(*) FROM hk_beds)   AS beds,
+       (SELECT MIN(day) FROM hk_rounds)  AS first_round,
+       (SELECT MAX(day) FROM hk_rounds)  AS last_round`,
+  ).first().catch(() => null);
+
+  /**
+   * What a chosen period actually covers.
+   *
+   * Erasing is the one thing here with no undo, so the screen should be able to
+   * say "this will delete 3 rounds and 72 bed checks" rather than asking
+   * somebody to trust a pair of dates. Counted the same way the delete counts
+   * it, from the same columns, so the number cannot promise one thing and the
+   * delete do another.
+   */
+  const q = ctx.url.searchParams;
+  const from = q.get('from');
+  const to = q.get('to');
+  let inRange = null;
+
+  if (from || to) {
+    if (from && !isDay(from)) throw badRequest('Invalid start date');
+    if (to && !isDay(to)) throw badRequest('Invalid end date');
+
+    const where = [];
+    const binds = [];
+    if (from) { where.push('day >= ?'); binds.push(from); }
+    if (to) { where.push('day <= ?'); binds.push(to); }
+    const clause = where.length ? ` WHERE ${where.join(' AND ')}` : '';
+
+    const count = async (table) => {
+      const row = await ctx.db.prepare(`SELECT COUNT(*) AS n FROM ${table}${clause}`)
+        .bind(...binds).first().catch(() => null);
+      return row?.n ?? 0;
+    };
+
+    inRange = {
+      from: from ?? null,
+      to: to ?? null,
+      days: await count('service_days'),
+      purchases: await count('purchases'),
+      rounds: await count('hk_rounds'),
+      bed_checks: await count('hk_checks'),
+    };
+  }
+
+  return json({
+    counts: { ...(row ?? {}), ...(housekeeping ?? {}) },
+    housekeeping: Boolean(housekeeping),
+    site: siteOf(ctx.env),
+    inRange,
+    confirmPhrase: CONFIRM_PHRASE,
+  });
 }
 
 /**
@@ -397,20 +497,35 @@ export async function eraseData(ctx) {
   const scope = str(body.scope, 'Scope', { max: 20, fallback: 'records' });
   if (!['records', 'everything'].includes(scope)) throw badRequest('Unknown scope');
 
-  const from = body.from ? str(body.from, 'From date', { max: 10 }) : null;
-  const to = body.to ? str(body.to, 'To date', { max: 10 }) : null;
+  // Roomy on purpose, so it is the date check below that speaks rather than a
+  // length limit: "From date must be 10 characters or fewer" is a true thing to
+  // say about "last tuesday" and a useless one.
+  const from = body.from ? str(body.from, 'From date', { max: 40 }) : null;
+  const to = body.to ? str(body.to, 'To date', { max: 40 }) : null;
   if (from && !isDay(from)) throw badRequest('Invalid start date');
   if (to && !isDay(to)) throw badRequest('Invalid end date');
   if (from && to && from > to) throw badRequest('The start date is after the end date');
 
   if (scope === 'everything' && (from || to)) {
-    throw badRequest('A date range only applies to recorded days, not to the ingredient list.');
+    throw badRequest(siteOf(ctx.env) === 'housekeeping'
+      ? 'A date range only applies to the checks recorded, not to the dorm rooms and beds.'
+      : 'A date range only applies to recorded days, not to the ingredient list.');
   }
 
-  const before = await ctx.db.prepare(
+  const tally = () => ctx.db.prepare(
     `SELECT (SELECT COUNT(*) FROM service_days) AS days,
             (SELECT COUNT(*) FROM purchases) AS purchases`,
   ).first();
+
+  // Counted separately and tolerated missing: a database without the bed check
+  // tables should still be able to erase the rest.
+  const hkTally = () => ctx.db.prepare(
+    `SELECT (SELECT COUNT(*) FROM hk_rounds) AS rounds,
+            (SELECT COUNT(*) FROM hk_checks) AS bed_checks`,
+  ).first().catch(() => ({ rounds: 0, bed_checks: 0 }));
+
+  const before = await tally();
+  const hkBefore = await hkTally();
 
   const statements = [];
   const range = (column) => {
@@ -426,10 +541,28 @@ export async function eraseData(ctx) {
     statements.push(ctx.db.prepare(`DELETE FROM ${table}${where}`).bind(...binds));
   }
 
+  // The bed check goes with the rest of the recorded activity, but only where
+  // its tables exist: a batch is all-or-nothing, and one missing table would
+  // take the whole erase down with it.
+  const hasHousekeeping = await ctx.db.prepare('SELECT 1 FROM hk_checks LIMIT 1')
+    .first().then(() => true).catch(() => false);
+
+  if (hasHousekeeping) {
+    for (const table of ['hk_checks', 'hk_rounds']) {
+      const { where, binds } = range('day');
+      statements.push(ctx.db.prepare(`DELETE FROM ${table}${where}`).bind(...binds));
+    }
+  }
+
   if (scope === 'everything') {
     // Ingredients first — categories are referenced by them.
     statements.push(ctx.db.prepare('DELETE FROM ingredients'));
     statements.push(ctx.db.prepare('DELETE FROM categories'));
+    // Same order downstairs: beds are referenced by the rooms they sit in.
+    if (hasHousekeeping) {
+      statements.push(ctx.db.prepare('DELETE FROM hk_beds'));
+      statements.push(ctx.db.prepare('DELETE FROM hk_rooms'));
+    }
   }
 
   statements.push(
@@ -449,6 +582,7 @@ export async function eraseData(ctx) {
             (SELECT COUNT(*) FROM purchases) AS purchases,
             (SELECT COUNT(*) FROM ingredients) AS ingredients`,
   ).first();
+  const hkAfter = await hkTally();
 
   return json({
     ok: true,
@@ -457,8 +591,10 @@ export async function eraseData(ctx) {
     removed: {
       days: (before?.days ?? 0) - (after?.days ?? 0),
       purchases: (before?.purchases ?? 0) - (after?.purchases ?? 0),
+      rounds: (hkBefore?.rounds ?? 0) - (hkAfter?.rounds ?? 0),
+      bed_checks: (hkBefore?.bed_checks ?? 0) - (hkAfter?.bed_checks ?? 0),
     },
-    remaining: after,
+    remaining: { ...after, ...hkAfter },
   });
 }
 
@@ -523,6 +659,28 @@ export async function deleteLock(ctx, id) {
     ),
   ]);
 
+  return json({ ok: true });
+}
+
+// ---------------------------------------------------------------------------
+// In-app notices
+// ---------------------------------------------------------------------------
+
+/**
+ * What has happened since you last looked.
+ *
+ * Open to anyone signed in, deliberately. A housekeeper seeing that reception
+ * submitted the morning check is not a leak; it is the thing that stops two
+ * people walking the same round.
+ */
+export async function listNoticesRoute(ctx) {
+  const limit = Math.min(Number(ctx.url.searchParams.get('limit')) || 20, 100);
+  return json(await listNotices(ctx.db, ctx.session.user.id, limit));
+}
+
+export async function markNoticesSeen(ctx) {
+  const body = await readJson(ctx.request).catch(() => ({}));
+  await markSeen(ctx.db, ctx.session.user.id, body.lastId);
   return json({ ok: true });
 }
 

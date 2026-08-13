@@ -3,15 +3,21 @@ import { state } from '../app.js';
 import { prepareNewPassword } from '../crypto.js';
 import { fmtDay, fmtNum, h, mount, toast, todayISO } from '../util.js';
 import { card, table } from './components.js';
+import { BRAND } from '../brand.js';
 
 /** Administrator screen: who can use the system, notifications, and data. */
 export async function renderAdmin() {
+  // Closed periods, bulk entry and the list of recorded days all belong to the
+  // breakfast unit. On a housekeeping-only site they are not merely hidden —
+  // the endpoints behind them are not served — so they are not asked for.
+  const full = BRAND.app !== 'housekeeping';
+
   const [users, notifications, summary, locks, days] = await Promise.all([
     api.users(),
     api.notifications(),
     api.dataSummary(),
-    api.locks(),
-    api.recentDays(60),
+    full ? api.locks() : Promise.resolve({ locks: [] }),
+    full ? api.recentDays(60) : Promise.resolve({ days: [] }),
   ]);
 
   const host = h('div');
@@ -21,15 +27,19 @@ export async function renderAdmin() {
     h('div.page-head',
       h('div',
         h('h1', 'Users & data'),
-        h('div.sub', 'Who can sign in, what they can see, closed periods and bulk entry'),
+        h('div.sub', full
+          ? 'Who can sign in, what they can see, closed periods and bulk entry'
+          : 'Who can sign in, what they can see, and who hears about a round'),
       ),
     ),
     usersCard(users, reload),
-    locksCard(locks.locks || [], reload),
-    importCard(reload),
-    submissionsCard(days.days || [], reload),
+    full ? locksCard(locks.locks || [], reload) : null,
+    full ? importCard(reload) : null,
+    full ? submissionsCard(days.days || [], reload) : null,
     notificationsCard(notifications, reload),
-    pushCard(notifications, reload),
+    // Phone alerts announce a submitted day sheet, which this site does not
+    // have. Showing the panel would be offering a switch that does nothing.
+    full ? pushCard(notifications, reload) : null,
     eraseCard(summary, reload),
   );
   return host;
@@ -632,25 +642,42 @@ function notificationsCard(data, reload) {
     placeholder: 'https://breakfast.niceoperation.com',
   });
 
-  const recipients = [...data.recipients];
-  const listHost = h('div', { style: { display: 'grid', gap: '.4rem' } });
-
-  const paintRecipients = () => {
-    mount(listHost, recipients.length
-      ? recipients.map((address, index) => h('div', {
-        style: { display: 'grid', gridTemplateColumns: '1fr auto', gap: '.4rem' },
-      },
-        h('input', {
-          type: 'email', value: address,
-          oninput: (e) => { recipients[index] = e.target.value.trim(); },
-        }),
-        h('button.btn-sm.btn-ghost', {
-          onclick: () => { recipients.splice(index, 1); paintRecipients(); },
-        }, '✕'),
-      ))
-      : h('p.muted', { style: { fontSize: '.85rem', margin: 0 } }, 'No recipients yet — nobody will be emailed.'));
+  // Two audiences, one list widget. The morning sheet and the dorm bed check go
+  // to different people in most properties, and to the same people in a small
+  // one — which is why the second list falls back to the first when it is left
+  // empty rather than quietly sending nothing.
+  const addressList = (addresses, emptyText) => {
+    const host = h('div', { style: { display: 'grid', gap: '.4rem' } });
+    const paint = () => {
+      mount(host, addresses.length
+        ? addresses.map((address, index) => h('div', {
+          style: { display: 'grid', gridTemplateColumns: '1fr auto', gap: '.4rem' },
+        },
+          h('input', {
+            type: 'email', value: address,
+            oninput: (e) => { addresses[index] = e.target.value.trim(); },
+          }),
+          h('button.btn-sm.btn-ghost', {
+            onclick: () => { addresses.splice(index, 1); paint(); },
+          }, '✕'),
+        ))
+        : h('p.muted', { style: { fontSize: '.85rem', margin: 0 } }, emptyText));
+    };
+    paint();
+    return { host, add: () => { addresses.push(''); paint(); } };
   };
-  paintRecipients();
+
+  const recipients = [...data.recipients];
+  const hkRecipients = [...(data.housekeeping?.recipients ?? [])];
+
+  const daily = addressList(recipients, 'No recipients yet — nobody will be emailed.');
+  const beds = addressList(hkRecipients,
+    'Nobody named — the bed check will go to the daily email list above.');
+
+  const hkEnabled = h('select',
+    h('option', { value: '1', selected: data.housekeeping?.enabled !== false }, 'Send an email when a bed check is submitted'),
+    h('option', { value: '0', selected: data.housekeeping?.enabled === false }, 'Do not send bed check emails'),
+  );
 
   const providerWarning = data.providerConfigured
     ? null
@@ -671,6 +698,9 @@ function notificationsCard(data, reload) {
         recipients: recipients.filter(Boolean),
         from: from.value.trim(),
         siteUrl: siteUrl.value.trim(),
+        pushEnabled: data.pushEnabled,
+        hkEnabled: hkEnabled.value === '1',
+        hkRecipients: hkRecipients.filter(Boolean),
       });
       toast('Notification settings saved', 'good');
       reload();
@@ -695,23 +725,37 @@ function notificationsCard(data, reload) {
     }
   };
 
-  return card('Daily email', {
-    note: 'Sent when the kitchen submits a day, with that morning’s analysis',
+  return card('Email alerts', {
+    note: BRAND.app === 'housekeeping'
+      ? 'Sent the moment a bed check is submitted'
+      : 'Sent the moment a day sheet or a bed check is submitted',
     wide: true,
   },
     providerWarning,
     h('div.field-row',
-      h('label.field', h('span', 'When to send'), enabled),
       h('label.field', h('span', 'From address'), from),
       h('label.field', h('span', 'Site address (for the link in the email)'), siteUrl),
     ),
-    h('div', { style: { marginTop: '.4rem' } },
-      h('div.stat-label', { style: { marginBottom: '.4rem' } }, 'Send to'),
-      listHost,
-      h('button.btn-sm', {
-        style: { marginTop: '.5rem' },
-        onclick: () => { recipients.push(''); paintRecipients(); },
-      }, '+ Add recipient'),
+
+    BRAND.app === 'housekeeping' ? null : h('div', { style: { marginTop: '.9rem' } },
+      h('div.stat-label', { style: { marginBottom: '.4rem' } }, 'The morning breakfast sheet'),
+      h('div.field-row', h('label.field', h('span', 'When to send'), enabled)),
+      h('div', { style: { marginTop: '.5rem' } },
+        daily.host,
+        h('button.btn-sm', { style: { marginTop: '.5rem' }, onclick: daily.add }, '+ Add recipient'),
+      ),
+    ),
+
+    h('div', { style: { marginTop: '1.1rem' } },
+      h('div.stat-label', { style: { marginBottom: '.4rem' } }, 'The dorm bed check'),
+      h('div.field-row', h('label.field', h('span', 'When to send'), hkEnabled)),
+      h('div', { style: { marginTop: '.5rem' } },
+        beds.host,
+        h('button.btn-sm', { style: { marginTop: '.5rem' }, onclick: beds.add }, '+ Add recipient'),
+      ),
+      h('p.muted', { style: { fontSize: '.82rem', marginTop: '.5rem', marginBottom: 0 } },
+        'This email lists every occupied bed found without a name tag, by room and bed, '
+        + 'along with anything found where the roster said it should not be.'),
     ),
     h('div.btn-row', { style: { marginTop: '1rem' } },
       h('button.btn-primary', { onclick: save }, 'Save'),
@@ -768,6 +812,8 @@ function pushCard(data, reload) {
         from: data.from,
         siteUrl: data.siteUrl,
         pushEnabled: enabled.value === '1',
+        hkEnabled: data.housekeeping?.enabled ?? true,
+        hkRecipients: data.housekeeping?.recipients ?? [],
       });
       toast('Alert settings saved', 'good');
       reload();
@@ -842,22 +888,113 @@ function pushCard(data, reload) {
 
 function eraseCard(data, reload) {
   const counts = data.counts || {};
+  const beds = BRAND.app === 'housekeeping';
 
-  const scope = h('select',
-    h('option', { value: 'records' }, 'Recorded days, usage, deliveries and stock counts'),
-    h('option', { value: 'everything' }, 'All of that, plus the whole ingredient list'),
-  );
+  const scope = beds
+    ? h('select',
+      h('option', { value: 'records' }, 'The checks recorded — rounds and every bed answered for'),
+      h('option', { value: 'everything' }, 'All of that, plus the dorm rooms and beds themselves'))
+    : h('select',
+      h('option', { value: 'records' }, 'Recorded days, usage, deliveries and stock counts'),
+      h('option', { value: 'everything' }, 'All of that, plus the whole ingredient list'));
+
   const from = h('input', { type: 'date' });
   const to = h('input', { type: 'date' });
   const confirmBox = h('input', { type: 'text', placeholder: `Type ${data.confirmPhrase} to confirm` });
+  const preview = h('div.erase-preview');
+  const button = h('button.btn-danger', { onclick: erase }, 'Erase permanently');
 
-  const erase = async (event) => {
-    const scopeLabel = scope.value === 'everything'
-      ? 'every recorded day AND the entire ingredient list'
-      : 'every recorded day, delivery and stock count';
+  /**
+   * What the chosen period actually holds.
+   *
+   * Erasing is the one action here with no undo, and a pair of dates is not
+   * something anybody can check by looking at it. So the screen goes and counts
+   * before you commit — and the button stays out of reach until it has, because
+   * "delete everything between two dates I have not verified" is exactly the
+   * mistake this panel exists to prevent.
+   */
+  let counted = null;
+
+  const drawPreview = async () => {
+    if (!from.value && !to.value) {
+      counted = null;
+      mount(preview, h('p.muted', { style: { margin: 0, fontSize: '.85rem' } },
+        'No period chosen — this will erase everything of the kind above.'));
+      button.textContent = 'Erase everything permanently';
+      return;
+    }
+
+    if (from.value && to.value && from.value > to.value) {
+      counted = null;
+      mount(preview, h('div.alert.warn', h('span.alert-icon', '⚠️'),
+        h('div', h('div.alert-detail', 'The start date is after the end date.'))));
+      return;
+    }
+
+    mount(preview, h('p.muted', { style: { margin: 0, fontSize: '.85rem' } }, 'Counting…'));
+    try {
+      const summary = await api.dataSummary(from.value || null, to.value || null);
+      counted = summary.inRange;
+      const parts = beds
+        ? [
+          [counted.rounds, 'check', 'checks'],
+          [counted.bed_checks, 'bed answered for', 'beds answered for'],
+        ]
+        : [
+          [counted.days, 'recorded day', 'recorded days'],
+          [counted.purchases, 'delivery', 'deliveries'],
+        ];
+
+      const total = parts.reduce((n, [count]) => n + count, 0);
+      const said = parts
+        .filter(([count]) => count > 0)
+        .map(([count, one, many]) => `${fmtNum(count, 0)} ${count === 1 ? one : many}`)
+        .join(' and ');
+
+      mount(preview, total
+        ? h('div.alert.high',
+          h('span.alert-icon', '⛔'),
+          h('div',
+            h('div.alert-title', `This will delete ${said}`),
+            h('div.alert-detail',
+              `Between ${from.value || 'the very beginning'} and ${to.value || 'today'}. `
+              + 'There is no undo.'),
+          ))
+        : h('div.alert.info',
+          h('span.alert-icon', 'ℹ️'),
+          h('div', h('div.alert-detail', 'Nothing was recorded in that period — there is nothing to erase.'))));
+
+      button.textContent = total ? `Erase these ${fmtNum(total, 0)} records permanently` : 'Nothing to erase';
+    } catch (err) {
+      counted = null;
+      mount(preview, h('div.alert.warn', h('span.alert-icon', '⚠️'),
+        h('div', h('div.alert-detail', err.message))));
+    }
+  };
+
+  from.addEventListener('change', drawPreview);
+  to.addEventListener('change', drawPreview);
+  drawPreview();
+
+  async function erase(event) {
     const ranged = from.value || to.value;
+    const scopeLabel = beds
+      ? (scope.value === 'everything'
+        ? 'every check ever recorded AND the dorm rooms and beds'
+        : 'every check ever recorded')
+      : (scope.value === 'everything'
+        ? 'every recorded day AND the entire ingredient list'
+        : 'every recorded day, delivery and stock count');
+
     const message = ranged
-      ? `Delete recorded days between ${from.value || 'the beginning'} and ${to.value || 'today'}?\n\nThis cannot be undone.`
+      ? `Delete everything recorded between ${from.value || 'the beginning'} and `
+        + `${to.value || 'today'}?\n\n`
+        + (counted
+          ? `${beds
+            ? `${counted.rounds} checks and ${counted.bed_checks} beds answered for`
+            : `${counted.days} days and ${counted.purchases} deliveries`} will go.\n\n`
+          : '')
+        + 'This cannot be undone.'
       : `Delete ${scopeLabel}?\n\nThis cannot be undone.`;
 
     if (!confirm(message)) return;
@@ -870,19 +1007,43 @@ function eraseCard(data, reload) {
         from: from.value || null,
         to: to.value || null,
       });
-      toast(`Erased ${result.removed.days} days and ${result.removed.purchases} deliveries`, 'good');
+
+      const removed = result.removed || {};
+      toast(beds
+        ? `Erased ${removed.rounds ?? 0} checks and ${removed.bed_checks ?? 0} bed records`
+        : `Erased ${removed.days ?? 0} days and ${removed.purchases ?? 0} deliveries`, 'good');
       reload();
     } catch (err) {
       toast(err.message, 'bad');
       event.target.disabled = false;
     }
-  };
+  }
 
-  return card('Erase data', {
-    note: 'For clearing out a trial run before going live',
-    wide: true,
-  },
-    h('div.grid.grid-4', { style: { marginBottom: '1rem' } },
+  const tiles = beds
+    ? [
+      h('div.stat',
+        h('div.stat-label', 'Checks recorded'),
+        h('div.stat-value', fmtNum(counts.rounds, 0)),
+        h('div.stat-sub', counts.first_round
+          ? `${fmtDay(counts.first_round)} → ${fmtDay(counts.last_round)}`
+          : 'none yet'),
+      ),
+      h('div.stat',
+        h('div.stat-label', 'Beds answered for'),
+        h('div.stat-value', fmtNum(counts.bed_checks, 0)),
+      ),
+      h('div.stat',
+        h('div.stat-label', 'Dorms set up'),
+        h('div.stat-value', fmtNum(counts.dorm_rooms, 0)),
+        h('div.stat-sub', `${fmtNum(counts.beds, 0)} beds`),
+      ),
+      h('div.stat',
+        h('div.stat-label', 'Kept either way'),
+        h('div.stat-value', fmtNum(counts.users, 0)),
+        h('div.stat-sub', 'people, and all your settings'),
+      ),
+    ]
+    : [
       h('div.stat',
         h('div.stat-label', 'Recorded days'),
         h('div.stat-value', fmtNum(counts.days, 0)),
@@ -901,27 +1062,39 @@ function eraseCard(data, reload) {
         h('div.stat-value', fmtNum(counts.users, 0)),
         h('div.stat-sub', 'people, and all your settings'),
       ),
-    ),
+    ];
+
+  return card(beds ? 'Erase bed checks' : 'Erase data', {
+    note: 'Clear a period, or a trial run, before going live',
+    wide: true,
+  },
+    h('div.grid.grid-4', { style: { marginBottom: '1rem' } }, tiles),
 
     h('div.alert.warn',
       h('span.alert-icon', '⚠️'),
       h('div',
         h('div.alert-title', 'This cannot be undone'),
         h('div.alert-detail',
-          'There is no undo and no recycle bin. If you only want to remove a few bad mornings, '
-          + 'set a date range below rather than erasing everything. '
+          'There is no undo and no recycle bin. To remove one bad week rather than everything, '
+          + 'set the dates below — the panel counts what falls inside them before you commit. '
           + 'Your people, PINs and settings are never touched.'),
       )),
 
     h('div.field-row',
       h('label.field', h('span', 'What to erase'), scope),
-      h('label.field', h('span', 'From (optional)'), from),
-      h('label.field', h('span', 'To (optional)'), to),
+      h('label.field', h('span', 'From'), from),
+      h('label.field', h('span', 'To'), to),
       h('label.field', h('span', `Type ${data.confirmPhrase}`), confirmBox),
     ),
-    h('p.muted', { style: { fontSize: '.82rem' } },
-      'Leave both dates empty to erase everything of the chosen kind. A date range only applies to '
-      + 'recorded days, usage, deliveries and counts — never to the ingredient list.'),
-    h('button.btn-danger', { onclick: erase }, 'Erase permanently'),
+
+    preview,
+
+    h('p.muted', { style: { fontSize: '.82rem', marginTop: '.7rem' } },
+      beds
+        ? 'Leave both dates empty to erase every check ever recorded. A period only applies to the '
+          + 'checks — never to the dorm rooms and beds, which are removed only by the second option.'
+        : 'Leave both dates empty to erase everything of the chosen kind. A date range only applies to '
+          + 'recorded days, usage, deliveries and counts — never to the ingredient list.'),
+    button,
   );
 }

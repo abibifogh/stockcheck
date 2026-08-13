@@ -6,9 +6,19 @@ Cooks record what was used each morning in under a minute. Everything else —
 cost per guest, week-on-week comparisons, monthly reporting, stock levels and
 reorder lists — is derived from that one sheet plus the delivery log.
 
-Runs entirely on Cloudflare: a single Worker serves both the app and the API,
-with a D1 (SQLite) database behind it. Deploys from GitHub on every push to
-`main`.
+Alongside it are two other rounds that work the same way — a few taps from
+somebody with no time, and the analysis derived from them: a **maintenance
+parts store**, and a **dorm bed check** for hostel rooms. Each has its own
+screens and its own permissions, so a housekeeper's PIN opens the bed check and
+nothing else.
+
+Runs entirely on Cloudflare: a Worker serves both the app and the API, with a
+D1 (SQLite) database behind it. Deploys from GitHub on every push to `main`.
+
+The dorm bed check has its own address, **housekeeping.niceoperation.com**,
+served by a second Worker from this same code and the same database — separate
+deployments, so neither site can take the other down. See *The housekeeping
+site* under Setup.
 
 ---
 
@@ -46,8 +56,85 @@ indistinguishable from "we forgot" and silently drags every average down.
 | **Week** | This week against last, weekday patterns, biggest risers and fallers, portioning consistency. |
 | **Month** | Full report: cost per guest trend, category mix, outsider economics, store movement, best/worst days, projection. |
 | **Approvals** | Corrections to days already submitted, shown as a before/after list to accept or reject. |
-| **Stock** | Book stock, days of cover, reorder list, physical-count variances. |
+| **Stock** | Book stock, days of cover, reorder list, physical-count variances. Filter the page to one category, or band every table by category. |
 | **Purchases** | Delivery log — multi-line, supplier picked from a list, unit costs pre-filled from the last price paid. |
+
+### For housekeeping — the dorm bed check
+
+A separate round, with its own screens, its own permissions and its own email.
+It answers one question the breakfast side cannot: **is every occupied bed in
+the dorms labelled, and is anything occupied that should not be?**
+
+- **Three checks a day, each its own report.** Reception check when they open
+  up, housekeeping check again while the rooms are being done, and reception
+  check once more before closing. Each is submitted and emailed on its own, by
+  the people who did it. The screen opens on whichever check the clock is in.
+- **Two questions per bed.** The person checking opens a room, taps **Free** or
+  **Occupied** for each bed, and — only for an occupied bed — answers **does it
+  have a name tag?** Any bed can carry a note. Nothing else is asked, and
+  nothing is typed unless there is something to say.
+- **One tap for an empty room.** "All free" answers every bed in a dorm at
+  once; correct the ones that differ.
+- **Answers save themselves** as they are given, retry on their own when the
+  signal drops in a stairwell, and are pushed if the phone is locked mid-round.
+  The round is finished with one **Submit** at the end, which is what sends the
+  email.
+- **Shared while it runs.** Two people can fill in different parts of the same
+  check at once; every bed records who answered for it.
+- **An occupied bed is not saved until the tag question is answered.** It stays
+  highlighted and is counted in the bar at the foot of the screen, because "we
+  did not finish this bed" and "this bed was fine" must never look alike.
+
+The manager's side is built around the findings rather than the activity:
+
+| View | Answers |
+|---|---|
+| **Dorms** | Where the property stands today: which of the three checks are in, rooms as coloured chips, what is still outstanding, and the last 30 days. |
+| **Found and fixed** | Whether a finding survived its day. Checking three times only pays if somebody acts in between, and this is the panel that says whether they did. |
+| **Report** | A period, against the period before it — untagged beds, tag compliance, unexpected occupancy, coverage, and who walked what. Exports to CSV. |
+| **Every room, every day** | A room-by-day grid, one square per room per day, coloured by the worst thing found. Grey means nobody checked, which is treated as loudly as red. |
+| **A room's own page** | Every check ever made in one dorm, bed by bed, with its notes and its history. |
+| **Roster** | Tonight's expectation for every bed on one page, saved in one press. Its own permission, so the front desk can keep it without being able to rename or delete a dorm. |
+| **Setup** | The rooms and their beds, and the roster alongside them. |
+
+**The roster** is what turns "this bed is occupied" into "this bed should have
+been empty". Each bed is marked *should be free*, *should be occupied* or *not
+tracked*; a bed left untracked is still checked and still needs a name tag, it
+simply raises no surprise either way. It is never shown to the person doing the
+round — somebody who knows the expected answer before they look is not checking
+— and every check keeps its own copy of what was expected at the time, so
+editing tonight's roster cannot rewrite what last Tuesday found.
+
+Keeping the roster and building the dorms are **separate permissions**. The
+front desk knows tonight's bookings, and that is no reason to hand them the
+screen that renames and deletes rooms; *The roster* on its own gives them the
+Roster page and nothing else, and anybody with housekeeping setup holds it
+already. Neither walking role gets it by default — that is the whole point of a
+blind check — so it is granted per person on the People screen.
+
+**The email** goes out the moment a check is submitted — three times a day,
+named for the check it reports — to its own list of recipients. It leads with
+every untagged bed by room and bed name, because a count is not something
+anybody can act on, then the unexpected occupancy, the rooms with gaps, and
+whatever was written down. Underneath it shows the day's other two checks and
+what is still outstanding after the last one to look.
+
+**Two ways of being told.** Every submitted check sends its email *and* records
+a notice in the app — the 🔔 in the top bar, with an unread count, the headline
+number, and a link to that day. They exist together on purpose: an email
+reaches somebody who is not looking at the system, and the bell reaches
+somebody who is. It also survives what email does not. A wrong sending domain,
+an expired key or an empty recipient list is otherwise invisible until somebody
+asks why they never heard about Tuesday; the bell says so at the time, naming
+the reason, and says plainly that the check itself is safe.
+
+**Why three, and what the system does with them.** A bed found untagged at
+eight and tagged by ten was dealt with; the same bed untagged at eight, at
+noon and at ten at night was not. Only the second kind is worth anybody's
+morning, so every report separates them — and a finding made by the day's
+*last* check is never counted against anyone, because nobody had the chance.
+Silence is not a fix either: a bed no later check looked at again stays
+unresolved rather than quietly clearing itself.
 
 ### For the administrator
 
@@ -56,8 +143,8 @@ indistinguishable from "we forgot" and silently drags every average down.
 | **People** | Individual accounts with their own list of sections they can open, enforced on the server rather than just hidden in the menu. Administrators sign in with an email address and password; cooks and managers use a PIN. |
 | **Closed periods** | Lock a date range once it has been reported on. Nothing inside it can be added, changed or deleted — by anyone, including an administrator, until it is reopened. |
 | **Bulk entry** | Download a spreadsheet template, fill in a backlog, upload it. Always previews before it writes. |
-| **Daily email** | A summary of each submitted day, with the analysis, to whichever addresses you choose. |
-| **Erase data** | Clear a trial run before going live, with a typed confirmation. Keeps people, settings and the ingredient list. |
+| **Email alerts** | A summary of each submitted day sheet, and of each submitted bed check, to whichever addresses you choose — two separate lists, one sender. |
+| **Erase a period** | Delete everything recorded between two dates, with a typed confirmation. The panel counts what falls inside the dates first — so many checks, so many beds answered for — and that count comes from the same columns the delete uses, so it cannot promise one thing and do another. Only activity goes: people, settings, the ingredient list and the dorm layout are never touched by a period. |
 
 ---
 
@@ -173,7 +260,7 @@ it reaches everything. Once you have an administrator account with an email
 address and password, you can switch the recovery PIN off entirely under
 **Setup → Emergency access**.
 
-### 4b. Turning on the daily email (optional)
+### 4b. Turning on email (optional)
 
 Email goes out through [Resend](https://resend.com), which is free at this
 volume. Three steps:
@@ -187,9 +274,11 @@ volume. Three steps:
    npx wrangler secret put RESEND_API_KEY
    ```
 
-3. In the app, go to **Users & data → Daily email**, set the "from" address to
+3. In the app, go to **Users & data → Email alerts**, set the "from" address to
    something at your verified domain, add the recipients, and press **Send a
-   test now**. The result appears in the log underneath.
+   test now**. The result appears in the log underneath. The dorm bed check has
+   its own recipient list on the same panel; leave it empty and its findings go
+   to the same people as the morning sheet.
 
 Without this the app works perfectly; it simply does not send email, and says
 so on that screen.
@@ -213,6 +302,112 @@ certificate automatically — no manual CNAME needed.
 To use a different hostname (say the apex, or `kitchen.niceoperation.com`), edit
 the `pattern` in `wrangler.toml` and redeploy.
 
+### 6b. The housekeeping site (housekeeping.niceoperation.com)
+
+The dorm bed check runs at its own address, from a **separate Worker** built
+from this same code. Deploying it cannot disturb the breakfast site: different
+Worker, different deployment, its own config in `wrangler.housekeeping.toml`.
+`wrangler.toml` is not involved and never needs re-deploying for it.
+
+The two share **one database**, so people, PINs, permissions and settings are
+entered once and work on both. They do **not** share secrets — every Worker
+holds its own — so this one needs its own:
+
+```bash
+# Its own session key. Different from the breakfast site's; the two sites are
+# different hostnames, so a cookie was never going to cross between them anyway.
+openssl rand -base64 32 | npx wrangler secret put SESSION_SECRET -c wrangler.housekeeping.toml
+
+# Optional but wise: the emergency way back in, if every account is locked out.
+npx wrangler secret put MANAGER_PIN -c wrangler.housekeeping.toml
+
+# Only if the bed check should email its findings.
+npx wrangler secret put RESEND_API_KEY -c wrangler.housekeeping.toml
+```
+
+Then deploy it:
+
+```bash
+npm run db:migrate            # once, if 0007 has not been applied yet
+npm run deploy:housekeeping
+```
+
+**Without a terminal**, the same two steps are done in the dashboard: paste
+`seed/housekeeping-tables.sql` into **D1 → breakfast → Console** to create the
+tables, and create the Worker through **Workers → Create → Import a repository**
+with the deploy command `npx wrangler deploy -c wrangler.housekeeping.toml`.
+That SQL file is the migration with every comment stripped out, because the D1
+console rejects a paste it reads as comments alone — it is otherwise identical,
+and safe to run twice.
+
+**Running one without pasting anything.** Actions → *Housekeeping database* →
+**Run workflow**, pick the file, type `housekeeping` to confirm. It needs
+`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the repository secrets,
+with D1 edit permission on the token; it runs on nobody's schedule, only when
+somebody presses it, and it prints the state of the database afterwards so a
+schema change is never something you have to take on trust.
+
+**Which file for which job.** `housekeeping-database.sql` builds a database
+from nothing. The `-upgrade-` files move one that already exists, in order:
+`housekeeping-upgrade-rounds.sql` (one check a day to three, run once) then
+`housekeeping-upgrade-notices.sql` (the in-app bell, safe to repeat).
+`test/seed.test.js` asserts that applying every upgrade in turn lands a database
+exactly where a fresh one starts, so a new migration that forgets its upgrade
+file is caught rather than discovered.
+
+**Setting it up, or upgrading it.** `seed/housekeeping-database.sql` builds a
+database from nothing; it skips whatever already exists, which makes it safe to
+paste twice but useless for a database part-way along. Moving one that already
+holds a check a day to three uses `seed/housekeeping-upgrade-rounds.sql`
+instead, which is migration 0008 verbatim and keeps every check already
+recorded. Running the schema file at a database of the older shape fails with
+"no such column: slot", and `test/seed.test.js` asserts that it does — so the
+day it stops being true, the note above has to change with it.
+
+Four things bite when setting this up through the dashboard, all of them once:
+
+- **Root directory** means the folder inside the repository, and the answer is
+  `/`. It is not where the branch name goes; a branch name there fails the build
+  with "root directory not found".
+- **The deploy command must keep its `-c wrangler.housekeeping.toml`.** Without
+  it, `wrangler deploy` reads `wrangler.toml` and deploys the *breakfast* Worker
+  instead — a build that succeeds while doing the wrong thing, which is worse
+  than one that fails.
+- **The import form does not ask which branch to build**, so it takes the
+  repository's default. If the config file lives on another branch, set the
+  branch under Settings → Build first.
+- **"Retry build" replays the same snapshot**, so it cannot pick up a branch you
+  changed afterwards. Start a fresh build, or push a commit, and check the build
+  is labelled with the branch you meant.
+
+Deploying creates `housekeeping.niceoperation.com`, its DNS record and its
+certificate, the zone already being on Cloudflare. If the hostname is not ready,
+comment out the `[[routes]]` block in `wrangler.housekeeping.toml` for the first
+deploy and test on the `*.workers.dev` address it prints.
+
+Both sites serve the same screens and the same permissions decide what anybody
+can open; what the housekeeping address changes is what it calls itself. It is
+titled **Bed Check**, carries a 🛏 rather than a 🍳, installs to a phone's home
+screen under its own name and icon, and opens on the bed check rather than the
+breakfast overview. A housekeeper never has to know the other site exists.
+
+### The two sites are independent
+
+They share no database and no secrets. The housekeeping site has its own D1
+database, so its own people, its own settings and its own history: deleting a
+housekeeper there cannot affect the breakfast site, and the two lists of staff
+never have to agree.
+
+`APP_SITE = "housekeeping"` is what makes that deployment housekeeping-only.
+The breakfast and maintenance screens are absent from its menu, absent from its
+guide, absent from the roles you can hand out on it — and their API answers 404
+there rather than quietly operating on an empty database. `test/site.test.js`
+holds that line.
+
+To set up its database, paste `seed/housekeeping-database.sql` into the new
+database's console. It is every migration that site needs, comments stripped,
+without the parts store it does not serve — and safe to run twice.
+
 ### 7. Automatic deploys from GitHub
 
 Add two repository secrets under **Settings → Secrets and variables →
@@ -225,6 +420,13 @@ Actions**:
 
 After that, every push to `main` runs the tests and — only if they pass —
 applies migrations and deploys.
+
+The workflow deploys the **breakfast** Worker only. The housekeeping site is
+deployed with `npm run deploy:housekeeping` when its code changes, which is
+deliberate: the two are separate deployments precisely so one cannot take the
+other down. Add a second `deploy` step with
+`command: deploy -c wrangler.housekeeping.toml` if you would rather both went
+out together.
 
 ---
 
@@ -282,11 +484,15 @@ src/
     analytics.js      Daily / weekly / monthly / stock analysis
     auth.js           PIN login, signed session cookies
     http.js           JSON responses, input validation
+    housekeeping.js   The dorm bed check: findings, coverage, room-by-day
   routes/             API handlers
   util/               Date and statistics helpers
 public/               Frontend — plain ES modules, no build step
 migrations/           Database schema
-test/                 Analytics tests
+wrangler.toml         The breakfast site
+wrangler.housekeeping.toml
+                      The housekeeping site: same code, own Worker and hostname
+test/                 Analytics and route tests
 ```
 
 There is no frontend build step and no runtime dependencies. The charts are
@@ -312,7 +518,18 @@ without a database, which is what `test/analytics.test.js` does.
 - **Timezone matters.** The `timezone` setting decides which calendar day a
   morning belongs to. Set it in Setup before the kitchen starts recording.
 - **Retired, not deleted.** An ingredient with history is retired rather than
-  removed, so past reports stay correct.
+  removed, so past reports stay correct. The same applies to a dorm room or a
+  bed that has ever been checked.
+- **A free bed is never a missing name tag.** The tag question is only asked of
+  an occupied bed, and its absence is stored as "not asked" rather than "no".
+  Tag compliance is therefore measured against occupied beds, never against
+  every bed — otherwise an empty week would look like a triumph.
+- **Not checked is not the same as clean.** A bed nobody answered for, or a room
+  nobody opened, is reported as a gap in its own right and shown in grey on the
+  room-by-day grid. Coverage sits beside every other figure so a spotless week
+  on a quarter of the beds cannot be mistaken for a spotless week.
+- **The roster is snapshotted onto each check.** Editing tonight's expected
+  occupancy cannot change which of last week's beds counted as a surprise.
 - **Two ways to sign in, chosen by role.** A PIN is right for a cook at a
   tablet with flour on their hands. It is not right for an account that can see
   every cost, manage people and erase data, so administrators use an email

@@ -3,7 +3,8 @@ import {
   saltForEmail, sessionCookie, storedPassword, throttleCheck, throttleFail,
   throttleReset, tokenTtl, userForCredentials, userForPin, verifyPasswordKey,
 } from './lib/auth.js';
-import { effectivePermissions } from './lib/permissions.js';
+import { allows, effectivePermissions } from './lib/permissions.js';
+import { servesPath, siteOf } from './lib/site.js';
 import {
   HttpError, badRequest, forbidden, isMissingTable, json, readJson, str, unauthorized,
 } from './lib/http.js';
@@ -15,6 +16,7 @@ import * as insights from './routes/insights.js';
 import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
 import * as mx from './routes/maintenance.js';
+import * as hk from './routes/housekeeping.js';
 import { PIN_TAKEN } from './routes/admin.js';
 
 /**
@@ -102,6 +104,11 @@ const ROUTES = [
 
   ['GET', '/api/audit', 'users', admin.auditTrail],
 
+  // The bell. Open to anyone signed in: a housekeeper seeing that reception
+  // submitted the morning check is what stops two people walking one round.
+  ['GET', '/api/notices', null, admin.listNoticesRoute],
+  ['POST', '/api/notices/seen', null, admin.markNoticesSeen],
+
   // ------------------------------------------------------------ maintenance --
   // A separate store with its own permissions, so a technician can be given the
   // issue screen and nothing else.
@@ -136,6 +143,30 @@ const ROUTES = [
   ['POST', '/api/mx/categories', 'mx_setup', mx.createCategory],
   ['GET', '/api/mx/items/template', 'mx_setup', mx.partsTemplate],
   ['POST', '/api/mx/items/import', 'mx_setup', mx.importParts],
+
+  // ----------------------------------------------------------- housekeeping --
+  // The dorm bed check. `hk_check` reaches the round and nothing else, so a
+  // housekeeper's PIN opens one screen: the beds, and the two questions.
+  ['GET', '/api/hk/bootstrap', 'hk_check', hk.bootstrap],
+  ['POST', '/api/hk/checks', 'hk_check', hk.saveChecks],
+  ['POST', '/api/hk/rounds/:day/:slot/submit', 'hk_check', hk.submitRound],
+  ['GET', '/api/hk/rounds', 'hk_reports', hk.listRounds],
+  ['GET', '/api/hk/day', 'hk_reports', hk.getDay],
+
+  ['GET', '/api/hk/overview', 'hk_reports', hk.overview],
+  ['GET', '/api/hk/report', 'hk_reports', hk.report],
+  ['GET', '/api/hk/rooms/:id/detail', 'hk_reports', hk.roomReport],
+  ['GET', '/api/hk/export', 'hk_reports', hk.exportCsv],
+
+  ['GET', '/api/hk/rooms', ['hk_roster', 'hk_setup'], hk.listRooms],
+  ['POST', '/api/hk/rooms', 'hk_setup', hk.createRoom],
+  ['PUT', '/api/hk/rooms/:id', 'hk_setup', hk.updateRoom],
+  ['DELETE', '/api/hk/rooms/:id', 'hk_setup', hk.deleteRoom],
+  ['POST', '/api/hk/beds', 'hk_setup', hk.createBed],
+  ['PUT', '/api/hk/beds/:id', 'hk_setup', hk.updateBed],
+  ['DELETE', '/api/hk/beds/:id', 'hk_setup', hk.deleteBed],
+  ['POST', '/api/hk/roster', ['hk_roster', 'hk_setup'], hk.saveRoster],
+  ['PUT', '/api/hk/settings', 'hk_setup', hk.updateSettings],
 ];
 
 function match(pattern, pathname) {
@@ -208,6 +239,13 @@ async function route(request, env, url, executionContext) {
     return json({ error: 'Server not configured: no database binding.' }, { status: 503 });
   }
 
+  // A housekeeping deployment serves the bed check and the things every site
+  // needs — signing in, people, notifications. The breakfast and maintenance
+  // API is simply not there.
+  if (!servesPath(siteOf(env), url.pathname)) {
+    return json({ error: 'Unknown endpoint' }, { status: 404 });
+  }
+
   const method = request.method === 'HEAD' ? 'GET' : request.method;
   let allowedMethods = null;
 
@@ -225,7 +263,8 @@ async function route(request, env, url, executionContext) {
     if (permission !== 'public') {
       ctx.session = await getSession(request, env, env.DB);
       if (!ctx.session) throw unauthorized();
-      if (permission && !ctx.session.permissions.includes(permission)) {
+      // A list means any one of them is enough — see `allows`.
+      if (!allows(permission, ctx.session.permissions)) {
         throw forbidden('You do not have access to that part of the system.');
       }
     }

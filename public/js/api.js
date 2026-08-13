@@ -116,7 +116,12 @@ export const api = {
   updateNotifications: (body) => request('/api/notifications', { method: 'PUT', body }),
   testNotification: () => request('/api/notifications/test', { method: 'POST' }),
 
-  dataSummary: () => request('/api/data/summary'),
+  notices: (limit = 20) => request(`/api/notices?limit=${limit}`),
+  markNoticesSeen: (lastId) => request('/api/notices/seen', { method: 'POST', body: { lastId } }),
+
+  dataSummary: (from, to) => request(`/api/data/summary?${new URLSearchParams({
+    ...(from ? { from } : {}), ...(to ? { to } : {}),
+  })}`),
   eraseData: (body) => request('/api/data/erase', { method: 'POST', body }),
 
   saveStockCounts: (body) => request('/api/stock-counts', { method: 'POST', body }),
@@ -159,6 +164,37 @@ export const api = {
   mxCreateCategory: (body) => request('/api/mx/categories', { method: 'POST', body }),
   mxPartsTemplateUrl: () => '/api/mx/items/template',
   mxImportParts: (body) => request('/api/mx/items/import', { method: 'POST', body }),
+
+  // ----------------------------------------------------------- housekeeping --
+  hkBootstrap: (params = {}) => request(`/api/hk/bootstrap?${new URLSearchParams(params)}`),
+  hkSaveChecks: (body) => request('/api/hk/checks', { method: 'POST', body }),
+  hkSubmitRound: (day, slot, body = {}) =>
+    request(`/api/hk/rounds/${day}/${slot}/submit`, { method: 'POST', body }),
+  hkRounds: (limit = 30) => request(`/api/hk/rounds?limit=${limit}`),
+  hkDay: (day, slot) => request(`/api/hk/day?${new URLSearchParams({
+    ...(day ? { day } : {}), ...(slot ? { slot } : {}),
+  })}`),
+
+  hkOverview: () => request('/api/hk/overview'),
+  hkReport: (from, to) => request(`/api/hk/report?${new URLSearchParams({
+    ...(from ? { from } : {}), ...(to ? { to } : {}),
+  })}`),
+  hkRoom: (id, from, to) => request(`/api/hk/rooms/${id}/detail?${new URLSearchParams({
+    ...(from ? { from } : {}), ...(to ? { to } : {}),
+  })}`),
+  hkExportUrl: (from, to) => `/api/hk/export?${new URLSearchParams({
+    ...(from ? { from } : {}), ...(to ? { to } : {}),
+  })}`,
+
+  hkRooms: () => request('/api/hk/rooms'),
+  hkCreateRoom: (body) => request('/api/hk/rooms', { method: 'POST', body }),
+  hkUpdateRoom: (id, body) => request(`/api/hk/rooms/${id}`, { method: 'PUT', body }),
+  hkDeleteRoom: (id) => request(`/api/hk/rooms/${id}`, { method: 'DELETE' }),
+  hkCreateBed: (body) => request('/api/hk/beds', { method: 'POST', body }),
+  hkUpdateBed: (id, body) => request(`/api/hk/beds/${id}`, { method: 'PUT', body }),
+  hkDeleteBed: (id) => request(`/api/hk/beds/${id}`, { method: 'DELETE' }),
+  hkSaveRoster: (body) => request('/api/hk/roster', { method: 'POST', body }),
+  hkUpdateSettings: (body) => request('/api/hk/settings', { method: 'PUT', body }),
 
   exportUrl: (type, from, to) =>
     `/api/export?${new URLSearchParams({ type, ...(from ? { from } : {}), ...(to ? { to } : {}) })}`,

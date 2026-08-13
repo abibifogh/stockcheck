@@ -1,0 +1,50 @@
+# The housekeeping site: housekeeping.niceoperation.com
+#
+# A second Worker, deployed from the same code as the breakfast site but
+# entirely its own deployment. Nothing here touches `wrangler.toml`, and
+# deploying this one cannot restart, replace or break the breakfast Worker —
+# which is the whole point of keeping them apart.
+#
+#   npm run deploy:housekeeping
+#
+# What is shared and what is not:
+#
+# Nothing at all is shared. Its own database, so its own people, its own
+# settings and its own history: deleting a housekeeper here cannot affect the
+# breakfast site, and the two lists of staff never have to agree. Its own
+# secrets too, because Workers never share those — this one needs its own
+# SESSION_SECRET, and its own RESEND_API_KEY if it is to send email.
+#
+# `APP_SITE` is what makes this deployment housekeeping-only: the breakfast and
+# maintenance screens are absent from the menu, absent from the guide, absent
+# from the roles you can hand out, and their API answers 404 here.
+
+name = "niceoperation-housekeeping"
+main = "src/index.js"
+compatibility_date = "2025-05-01"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "housekeeping"
+# Its own database, separate from the breakfast site's in every way.
+database_id = "b323f536-08ba-4db1-a3d2-6f848c503d6f"
+
+[vars]
+APP_NAME = "Nice Operation · Housekeeping"
+APP_SITE = "housekeeping"
+
+# Comment this block out for the very first deploy if the hostname does not
+# exist yet and Cloudflare refuses the route; you will get a *.workers.dev
+# address to test on, and can put it back once the zone is ready.
+[[routes]]
+pattern = "housekeeping.niceoperation.com"
+custom_domain = true
+
+[observability]
+enabled = true

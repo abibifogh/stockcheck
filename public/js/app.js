@@ -21,6 +21,13 @@ import { renderMxPurchases } from './views/mx-purchases.js';
 import { renderMxSetup } from './views/mx-setup.js';
 import { renderMxArea } from './views/mx-area.js';
 import { renderMxCompare } from './views/mx-compare.js';
+import { renderHkCheck } from './views/hk-check.js';
+import { renderHkOverview, renderHkReport } from './views/hk-reports.js';
+import { renderHkRoom } from './views/hk-room.js';
+import { renderHkSetup } from './views/hk-setup.js';
+import { renderHkRoster } from './views/hk-roster.js';
+import { BRAND } from './brand.js';
+import { noticeBell } from './views/notices.js';
 
 export const state = {
   role: null,
@@ -33,29 +40,41 @@ export const state = {
 };
 
 const ROUTES = [
-  { path: 'entry', label: 'Daily entry', permission: 'entry', render: renderEntry, group: 'Breakfast' },
-  { path: 'overview', label: 'Overview', permission: 'reports', render: renderOverview, group: 'Breakfast' },
-  { path: 'daily', label: 'Day', permission: 'reports', render: renderDaily, group: 'Breakfast' },
-  { path: 'weekly', label: 'Week', permission: 'reports', render: renderWeekly, group: 'Breakfast' },
-  { path: 'monthly', label: 'Month', permission: 'reports', render: renderMonthly, group: 'Breakfast' },
-  { path: 'compare', label: 'Compare', permission: 'reports', render: renderCompare, group: 'Breakfast' },
-  { path: 'approvals', label: 'Approvals', permission: 'approvals', render: renderApprovals, group: 'Breakfast' },
-  { path: 'stock', label: 'Stock', permission: 'stock', render: renderStock, group: 'Breakfast' },
-  { path: 'purchases', label: 'Purchases', permission: 'purchases', render: renderPurchases, group: 'Breakfast' },
-  { path: 'setup', label: 'Setup', permission: 'setup', render: renderSetup, group: 'Breakfast' },
+  { path: 'entry', label: 'Daily entry', permission: 'entry', render: renderEntry, group: 'Breakfast', site: 'full' },
+  { path: 'overview', label: 'Overview', permission: 'reports', render: renderOverview, group: 'Breakfast', site: 'full' },
+  { path: 'daily', label: 'Day', permission: 'reports', render: renderDaily, group: 'Breakfast', site: 'full' },
+  { path: 'weekly', label: 'Week', permission: 'reports', render: renderWeekly, group: 'Breakfast', site: 'full' },
+  { path: 'monthly', label: 'Month', permission: 'reports', render: renderMonthly, group: 'Breakfast', site: 'full' },
+  { path: 'compare', label: 'Compare', permission: 'reports', render: renderCompare, group: 'Breakfast', site: 'full' },
+  { path: 'approvals', label: 'Approvals', permission: 'approvals', render: renderApprovals, group: 'Breakfast', site: 'full' },
+  { path: 'stock', label: 'Stock', permission: 'stock', render: renderStock, group: 'Breakfast', site: 'full' },
+  { path: 'purchases', label: 'Purchases', permission: 'purchases', render: renderPurchases, group: 'Breakfast', site: 'full' },
+  { path: 'setup', label: 'Setup', permission: 'setup', render: renderSetup, group: 'Breakfast', site: 'full' },
   { path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin },
   // ------------------------------------------------------------ maintenance --
   // A second store with its own screens. Grouped in the menu so somebody who
   // works in both does not have to hunt for which "Stock" is which.
-  { path: 'mx-issue', label: 'Issue parts', permission: 'mx_issue', render: renderMxIssue, group: 'Maintenance' },
-  { path: 'mx-overview', label: 'Store', permission: 'mx_reports', render: renderMxOverview, group: 'Maintenance' },
-  { path: 'mx-report', label: 'Report', permission: 'mx_reports', render: renderMxReport, group: 'Maintenance' },
-  { path: 'mx-compare', label: 'Compare', permission: 'mx_reports', render: renderMxCompare, group: 'Maintenance' },
-  { path: 'mx-stock', label: 'Parts', permission: 'mx_stock', render: renderMxStock, group: 'Maintenance' },
-  { path: 'mx-purchases', label: 'Bought', permission: 'mx_purchases', render: renderMxPurchases, group: 'Maintenance' },
-  { path: 'mx-setup', label: 'Setup', permission: 'mx_setup', render: renderMxSetup, group: 'Maintenance' },
+  { path: 'mx-issue', label: 'Issue parts', permission: 'mx_issue', render: renderMxIssue, group: 'Maintenance', site: 'full' },
+  { path: 'mx-overview', label: 'Store', permission: 'mx_reports', render: renderMxOverview, group: 'Maintenance', site: 'full' },
+  { path: 'mx-report', label: 'Report', permission: 'mx_reports', render: renderMxReport, group: 'Maintenance', site: 'full' },
+  { path: 'mx-compare', label: 'Compare', permission: 'mx_reports', render: renderMxCompare, group: 'Maintenance', site: 'full' },
+  { path: 'mx-stock', label: 'Parts', permission: 'mx_stock', render: renderMxStock, group: 'Maintenance', site: 'full' },
+  { path: 'mx-purchases', label: 'Bought', permission: 'mx_purchases', render: renderMxPurchases, group: 'Maintenance', site: 'full' },
+  { path: 'mx-setup', label: 'Setup', permission: 'mx_setup', render: renderMxSetup, group: 'Maintenance', site: 'full' },
   // Reached by clicking a room in the report rather than from the menu.
-  { path: 'mx-area', label: 'Room', permission: 'mx_reports', render: renderMxArea, hidden: true },
+  { path: 'mx-area', label: 'Room', permission: 'mx_reports', render: renderMxArea, hidden: true, site: 'full' },
+
+  // ----------------------------------------------------------- housekeeping --
+  // The bed check comes first in its section because it is the only screen a
+  // housekeeper opens, and it is opened every single morning.
+  { path: 'hk-check', label: 'Bed check', permission: 'hk_check', render: renderHkCheck, group: 'Housekeeping' },
+  // The roster on its own page, for the desk that sets who is expected where
+  // without being handed the screen that renames and deletes dorms.
+  { path: 'hk-roster', label: 'Roster', permission: 'hk_roster', render: renderHkRoster, group: 'Housekeeping' },
+  { path: 'hk-overview', label: 'Dorms', permission: 'hk_reports', render: renderHkOverview, group: 'Housekeeping' },
+  { path: 'hk-report', label: 'Report', permission: 'hk_reports', render: renderHkReport, group: 'Housekeeping' },
+  { path: 'hk-setup', label: 'Setup', permission: 'hk_setup', render: renderHkSetup, group: 'Housekeeping' },
+  { path: 'hk-room', label: 'Dorm room', permission: 'hk_reports', render: renderHkRoom, hidden: true },
 
   // Open to everyone: the person most likely to need it is the one with the
   // fewest permissions.
@@ -68,8 +87,20 @@ export function can(permission) {
   return !permission || state.permissions.includes(permission);
 }
 
+/**
+ * Reachable at all on this site.
+ *
+ * A route marked `site: 'full'` belongs to the breakfast unit or the parts
+ * store, and the housekeeping deployment does not have them — not hidden behind
+ * a permission, absent. The Worker refuses their API on that site too, so this
+ * is the menu agreeing with the server rather than a second opinion.
+ */
+function onThisSite(route) {
+  return !route.site || route.site === BRAND.app || (route.site === 'full' && BRAND.app !== 'housekeeping');
+}
+
 function allowed(route) {
-  return can(route.permission);
+  return onThisSite(route) && can(route.permission);
 }
 
 function currentRoute() {
@@ -79,7 +110,16 @@ function currentRoute() {
 
 /** Land people on the most useful screen they are actually allowed to open. */
 function defaultRoute() {
-  const preferred = ['overview', 'entry', 'mx-overview', 'mx-issue', 'stock', 'purchases', 'setup', 'admin'];
+  // Reports before the entry screens, so somebody who runs a section lands on
+  // its dashboard and somebody who only fills it in lands on the form. On the
+  // housekeeping address the bed check comes first whoever you are — an
+  // administrator who typed housekeeping.niceoperation.com did not mean to
+  // arrive at the breakfast overview.
+  const preferred = BRAND.app === 'housekeeping'
+    ? ['hk-overview', 'hk-check', 'hk-roster', 'hk-setup', 'overview', 'entry',
+      'mx-overview', 'mx-issue', 'stock', 'purchases', 'setup', 'admin', 'guide']
+    : ['overview', 'entry', 'hk-overview', 'hk-check', 'hk-roster', 'mx-overview',
+      'mx-issue', 'stock', 'purchases', 'setup', 'admin', 'guide'];
   return preferred.find((path) => allowed(ROUTES.find((r) => r.path === path))) ?? 'entry';
 }
 
@@ -198,13 +238,14 @@ function shell(content) {
     h('header.topbar',
       menuButton,
       h('div.brand',
-        h('span.brand-mark', '🍳'),
+        h('span.brand-mark', BRAND.mark),
         h('div',
-          state.settings.property_name || 'Breakfast Control',
+          state.settings.property_name || BRAND.name,
           h('span.brand-sub', state.name ? `${state.name} · ${roleLabel(state.role)}` : roleLabel(state.role)),
         ),
       ),
       h('div.topbar-spacer'),
+      noticeBell(),
       h('button.btn-ghost.btn-sm', {
         title: 'Switch light / dark',
         onclick: toggleTheme,
@@ -325,7 +366,16 @@ function resetSession() {
   state.catalog = null;
 }
 
-const ROLE_LABELS = { cook: 'Kitchen', manager: 'Manager', admin: 'Administrator' };
+const ROLE_LABELS = {
+  cook: 'Kitchen',
+  manager: 'Manager',
+  admin: 'Administrator',
+  technician: 'Technician',
+  maintenance_manager: 'Maintenance',
+  receptionist: 'Reception',
+  housekeeper: 'Housekeeping',
+  housekeeping_manager: 'Housekeeping manager',
+};
 function roleLabel(role) {
   return ROLE_LABELS[role] || 'Signed in';
 }
