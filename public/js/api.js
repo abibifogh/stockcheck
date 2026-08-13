@@ -119,7 +119,9 @@ export const api = {
   notices: (limit = 20) => request(`/api/notices?limit=${limit}`),
   markNoticesSeen: (lastId) => request('/api/notices/seen', { method: 'POST', body: { lastId } }),
 
-  dataSummary: () => request('/api/data/summary'),
+  dataSummary: (from, to) => request(`/api/data/summary?${new URLSearchParams({
+    ...(from ? { from } : {}), ...(to ? { to } : {}),
+  })}`),
   eraseData: (body) => request('/api/data/erase', { method: 'POST', body }),
 
   saveStockCounts: (body) => request('/api/stock-counts', { method: 'POST', body }),

@@ -419,12 +419,56 @@ export async function dataSummary(ctx) {
        (SELECT COUNT(*) FROM hk_rounds) AS rounds,
        (SELECT COUNT(*) FROM hk_checks) AS bed_checks,
        (SELECT COUNT(*) FROM hk_rooms)  AS dorm_rooms,
-       (SELECT COUNT(*) FROM hk_beds)   AS beds`,
+       (SELECT COUNT(*) FROM hk_beds)   AS beds,
+       (SELECT MIN(day) FROM hk_rounds)  AS first_round,
+       (SELECT MAX(day) FROM hk_rounds)  AS last_round`,
   ).first().catch(() => null);
+
+  /**
+   * What a chosen period actually covers.
+   *
+   * Erasing is the one thing here with no undo, so the screen should be able to
+   * say "this will delete 3 rounds and 72 bed checks" rather than asking
+   * somebody to trust a pair of dates. Counted the same way the delete counts
+   * it, from the same columns, so the number cannot promise one thing and the
+   * delete do another.
+   */
+  const q = ctx.url.searchParams;
+  const from = q.get('from');
+  const to = q.get('to');
+  let inRange = null;
+
+  if (from || to) {
+    if (from && !isDay(from)) throw badRequest('Invalid start date');
+    if (to && !isDay(to)) throw badRequest('Invalid end date');
+
+    const where = [];
+    const binds = [];
+    if (from) { where.push('day >= ?'); binds.push(from); }
+    if (to) { where.push('day <= ?'); binds.push(to); }
+    const clause = where.length ? ` WHERE ${where.join(' AND ')}` : '';
+
+    const count = async (table) => {
+      const row = await ctx.db.prepare(`SELECT COUNT(*) AS n FROM ${table}${clause}`)
+        .bind(...binds).first().catch(() => null);
+      return row?.n ?? 0;
+    };
+
+    inRange = {
+      from: from ?? null,
+      to: to ?? null,
+      days: await count('service_days'),
+      purchases: await count('purchases'),
+      rounds: await count('hk_rounds'),
+      bed_checks: await count('hk_checks'),
+    };
+  }
 
   return json({
     counts: { ...(row ?? {}), ...(housekeeping ?? {}) },
     housekeeping: Boolean(housekeeping),
+    site: siteOf(ctx.env),
+    inRange,
     confirmPhrase: CONFIRM_PHRASE,
   });
 }
@@ -453,20 +497,35 @@ export async function eraseData(ctx) {
   const scope = str(body.scope, 'Scope', { max: 20, fallback: 'records' });
   if (!['records', 'everything'].includes(scope)) throw badRequest('Unknown scope');
 
-  const from = body.from ? str(body.from, 'From date', { max: 10 }) : null;
-  const to = body.to ? str(body.to, 'To date', { max: 10 }) : null;
+  // Roomy on purpose, so it is the date check below that speaks rather than a
+  // length limit: "From date must be 10 characters or fewer" is a true thing to
+  // say about "last tuesday" and a useless one.
+  const from = body.from ? str(body.from, 'From date', { max: 40 }) : null;
+  const to = body.to ? str(body.to, 'To date', { max: 40 }) : null;
   if (from && !isDay(from)) throw badRequest('Invalid start date');
   if (to && !isDay(to)) throw badRequest('Invalid end date');
   if (from && to && from > to) throw badRequest('The start date is after the end date');
 
   if (scope === 'everything' && (from || to)) {
-    throw badRequest('A date range only applies to recorded days, not to the ingredient list.');
+    throw badRequest(siteOf(ctx.env) === 'housekeeping'
+      ? 'A date range only applies to the checks recorded, not to the dorm rooms and beds.'
+      : 'A date range only applies to recorded days, not to the ingredient list.');
   }
 
-  const before = await ctx.db.prepare(
+  const tally = () => ctx.db.prepare(
     `SELECT (SELECT COUNT(*) FROM service_days) AS days,
             (SELECT COUNT(*) FROM purchases) AS purchases`,
   ).first();
+
+  // Counted separately and tolerated missing: a database without the bed check
+  // tables should still be able to erase the rest.
+  const hkTally = () => ctx.db.prepare(
+    `SELECT (SELECT COUNT(*) FROM hk_rounds) AS rounds,
+            (SELECT COUNT(*) FROM hk_checks) AS bed_checks`,
+  ).first().catch(() => ({ rounds: 0, bed_checks: 0 }));
+
+  const before = await tally();
+  const hkBefore = await hkTally();
 
   const statements = [];
   const range = (column) => {
@@ -523,6 +582,7 @@ export async function eraseData(ctx) {
             (SELECT COUNT(*) FROM purchases) AS purchases,
             (SELECT COUNT(*) FROM ingredients) AS ingredients`,
   ).first();
+  const hkAfter = await hkTally();
 
   return json({
     ok: true,
@@ -531,8 +591,10 @@ export async function eraseData(ctx) {
     removed: {
       days: (before?.days ?? 0) - (after?.days ?? 0),
       purchases: (before?.purchases ?? 0) - (after?.purchases ?? 0),
+      rounds: (hkBefore?.rounds ?? 0) - (hkAfter?.rounds ?? 0),
+      bed_checks: (hkBefore?.bed_checks ?? 0) - (hkAfter?.bed_checks ?? 0),
     },
-    remaining: after,
+    remaining: { ...after, ...hkAfter },
   });
 }
 

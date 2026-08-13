@@ -888,22 +888,113 @@ function pushCard(data, reload) {
 
 function eraseCard(data, reload) {
   const counts = data.counts || {};
+  const beds = BRAND.app === 'housekeeping';
 
-  const scope = h('select',
-    h('option', { value: 'records' }, 'Recorded days, usage, deliveries and stock counts'),
-    h('option', { value: 'everything' }, 'All of that, plus the whole ingredient list'),
-  );
+  const scope = beds
+    ? h('select',
+      h('option', { value: 'records' }, 'The checks recorded — rounds and every bed answered for'),
+      h('option', { value: 'everything' }, 'All of that, plus the dorm rooms and beds themselves'))
+    : h('select',
+      h('option', { value: 'records' }, 'Recorded days, usage, deliveries and stock counts'),
+      h('option', { value: 'everything' }, 'All of that, plus the whole ingredient list'));
+
   const from = h('input', { type: 'date' });
   const to = h('input', { type: 'date' });
   const confirmBox = h('input', { type: 'text', placeholder: `Type ${data.confirmPhrase} to confirm` });
+  const preview = h('div.erase-preview');
+  const button = h('button.btn-danger', { onclick: erase }, 'Erase permanently');
 
-  const erase = async (event) => {
-    const scopeLabel = scope.value === 'everything'
-      ? 'every recorded day AND the entire ingredient list'
-      : 'every recorded day, delivery and stock count';
+  /**
+   * What the chosen period actually holds.
+   *
+   * Erasing is the one action here with no undo, and a pair of dates is not
+   * something anybody can check by looking at it. So the screen goes and counts
+   * before you commit — and the button stays out of reach until it has, because
+   * "delete everything between two dates I have not verified" is exactly the
+   * mistake this panel exists to prevent.
+   */
+  let counted = null;
+
+  const drawPreview = async () => {
+    if (!from.value && !to.value) {
+      counted = null;
+      mount(preview, h('p.muted', { style: { margin: 0, fontSize: '.85rem' } },
+        'No period chosen — this will erase everything of the kind above.'));
+      button.textContent = 'Erase everything permanently';
+      return;
+    }
+
+    if (from.value && to.value && from.value > to.value) {
+      counted = null;
+      mount(preview, h('div.alert.warn', h('span.alert-icon', '⚠️'),
+        h('div', h('div.alert-detail', 'The start date is after the end date.'))));
+      return;
+    }
+
+    mount(preview, h('p.muted', { style: { margin: 0, fontSize: '.85rem' } }, 'Counting…'));
+    try {
+      const summary = await api.dataSummary(from.value || null, to.value || null);
+      counted = summary.inRange;
+      const parts = beds
+        ? [
+          [counted.rounds, 'check', 'checks'],
+          [counted.bed_checks, 'bed answered for', 'beds answered for'],
+        ]
+        : [
+          [counted.days, 'recorded day', 'recorded days'],
+          [counted.purchases, 'delivery', 'deliveries'],
+        ];
+
+      const total = parts.reduce((n, [count]) => n + count, 0);
+      const said = parts
+        .filter(([count]) => count > 0)
+        .map(([count, one, many]) => `${fmtNum(count, 0)} ${count === 1 ? one : many}`)
+        .join(' and ');
+
+      mount(preview, total
+        ? h('div.alert.high',
+          h('span.alert-icon', '⛔'),
+          h('div',
+            h('div.alert-title', `This will delete ${said}`),
+            h('div.alert-detail',
+              `Between ${from.value || 'the very beginning'} and ${to.value || 'today'}. `
+              + 'There is no undo.'),
+          ))
+        : h('div.alert.info',
+          h('span.alert-icon', 'ℹ️'),
+          h('div', h('div.alert-detail', 'Nothing was recorded in that period — there is nothing to erase.'))));
+
+      button.textContent = total ? `Erase these ${fmtNum(total, 0)} records permanently` : 'Nothing to erase';
+    } catch (err) {
+      counted = null;
+      mount(preview, h('div.alert.warn', h('span.alert-icon', '⚠️'),
+        h('div', h('div.alert-detail', err.message))));
+    }
+  };
+
+  from.addEventListener('change', drawPreview);
+  to.addEventListener('change', drawPreview);
+  drawPreview();
+
+  async function erase(event) {
     const ranged = from.value || to.value;
+    const scopeLabel = beds
+      ? (scope.value === 'everything'
+        ? 'every check ever recorded AND the dorm rooms and beds'
+        : 'every check ever recorded')
+      : (scope.value === 'everything'
+        ? 'every recorded day AND the entire ingredient list'
+        : 'every recorded day, delivery and stock count');
+
     const message = ranged
-      ? `Delete recorded days between ${from.value || 'the beginning'} and ${to.value || 'today'}?\n\nThis cannot be undone.`
+      ? `Delete everything recorded between ${from.value || 'the beginning'} and `
+        + `${to.value || 'today'}?\n\n`
+        + (counted
+          ? `${beds
+            ? `${counted.rounds} checks and ${counted.bed_checks} beds answered for`
+            : `${counted.days} days and ${counted.purchases} deliveries`} will go.\n\n`
+          : '')
+        + 'This cannot be undone.'
       : `Delete ${scopeLabel}?\n\nThis cannot be undone.`;
 
     if (!confirm(message)) return;
@@ -916,19 +1007,43 @@ function eraseCard(data, reload) {
         from: from.value || null,
         to: to.value || null,
       });
-      toast(`Erased ${result.removed.days} days and ${result.removed.purchases} deliveries`, 'good');
+
+      const removed = result.removed || {};
+      toast(beds
+        ? `Erased ${removed.rounds ?? 0} checks and ${removed.bed_checks ?? 0} bed records`
+        : `Erased ${removed.days ?? 0} days and ${removed.purchases ?? 0} deliveries`, 'good');
       reload();
     } catch (err) {
       toast(err.message, 'bad');
       event.target.disabled = false;
     }
-  };
+  }
 
-  return card('Erase data', {
-    note: 'For clearing out a trial run before going live',
-    wide: true,
-  },
-    h('div.grid.grid-4', { style: { marginBottom: '1rem' } },
+  const tiles = beds
+    ? [
+      h('div.stat',
+        h('div.stat-label', 'Checks recorded'),
+        h('div.stat-value', fmtNum(counts.rounds, 0)),
+        h('div.stat-sub', counts.first_round
+          ? `${fmtDay(counts.first_round)} → ${fmtDay(counts.last_round)}`
+          : 'none yet'),
+      ),
+      h('div.stat',
+        h('div.stat-label', 'Beds answered for'),
+        h('div.stat-value', fmtNum(counts.bed_checks, 0)),
+      ),
+      h('div.stat',
+        h('div.stat-label', 'Dorms set up'),
+        h('div.stat-value', fmtNum(counts.dorm_rooms, 0)),
+        h('div.stat-sub', `${fmtNum(counts.beds, 0)} beds`),
+      ),
+      h('div.stat',
+        h('div.stat-label', 'Kept either way'),
+        h('div.stat-value', fmtNum(counts.users, 0)),
+        h('div.stat-sub', 'people, and all your settings'),
+      ),
+    ]
+    : [
       h('div.stat',
         h('div.stat-label', 'Recorded days'),
         h('div.stat-value', fmtNum(counts.days, 0)),
@@ -947,27 +1062,39 @@ function eraseCard(data, reload) {
         h('div.stat-value', fmtNum(counts.users, 0)),
         h('div.stat-sub', 'people, and all your settings'),
       ),
-    ),
+    ];
+
+  return card(beds ? 'Erase bed checks' : 'Erase data', {
+    note: 'Clear a period, or a trial run, before going live',
+    wide: true,
+  },
+    h('div.grid.grid-4', { style: { marginBottom: '1rem' } }, tiles),
 
     h('div.alert.warn',
       h('span.alert-icon', '⚠️'),
       h('div',
         h('div.alert-title', 'This cannot be undone'),
         h('div.alert-detail',
-          'There is no undo and no recycle bin. If you only want to remove a few bad mornings, '
-          + 'set a date range below rather than erasing everything. '
+          'There is no undo and no recycle bin. To remove one bad week rather than everything, '
+          + 'set the dates below — the panel counts what falls inside them before you commit. '
           + 'Your people, PINs and settings are never touched.'),
       )),
 
     h('div.field-row',
       h('label.field', h('span', 'What to erase'), scope),
-      h('label.field', h('span', 'From (optional)'), from),
-      h('label.field', h('span', 'To (optional)'), to),
+      h('label.field', h('span', 'From'), from),
+      h('label.field', h('span', 'To'), to),
       h('label.field', h('span', `Type ${data.confirmPhrase}`), confirmBox),
     ),
-    h('p.muted', { style: { fontSize: '.82rem' } },
-      'Leave both dates empty to erase everything of the chosen kind. A date range only applies to '
-      + 'recorded days, usage, deliveries and counts — never to the ingredient list.'),
-    h('button.btn-danger', { onclick: erase }, 'Erase permanently'),
+
+    preview,
+
+    h('p.muted', { style: { fontSize: '.82rem', marginTop: '.7rem' } },
+      beds
+        ? 'Leave both dates empty to erase every check ever recorded. A period only applies to the '
+          + 'checks — never to the dorm rooms and beds, which are removed only by the second option.'
+        : 'Leave both dates empty to erase everything of the chosen kind. A date range only applies to '
+          + 'recorded days, usage, deliveries and counts — never to the ingredient list.'),
+    button,
   );
 }

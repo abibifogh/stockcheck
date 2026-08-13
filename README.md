@@ -136,7 +136,7 @@ unresolved rather than quietly clearing itself.
 | **Closed periods** | Lock a date range once it has been reported on. Nothing inside it can be added, changed or deleted — by anyone, including an administrator, until it is reopened. |
 | **Bulk entry** | Download a spreadsheet template, fill in a backlog, upload it. Always previews before it writes. |
 | **Email alerts** | A summary of each submitted day sheet, and of each submitted bed check, to whichever addresses you choose — two separate lists, one sender. |
-| **Erase data** | Clear a trial run before going live, with a typed confirmation. Removes day sheets, deliveries, counts and bed check rounds; keeps people, settings, the ingredient list and the dorm layout. |
+| **Erase a period** | Delete everything recorded between two dates, with a typed confirmation. The panel counts what falls inside the dates first — so many checks, so many beds answered for — and that count comes from the same columns the delete uses, so it cannot promise one thing and do another. Only activity goes: people, settings, the ingredient list and the dorm layout are never touched by a period. |
 
 ---
 

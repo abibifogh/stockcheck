@@ -1055,3 +1055,9 @@ body:has(.entry-footer) .toasts[popover] { bottom: calc(4.75rem + env(safe-area-
 .bell-when { font-size: .72rem; color: var(--text-faint); margin-top: .15rem; }
 
 @media print { .bell-wrap { display: none; } }
+
+/* The erase panel's count of what a chosen period holds. Sits between the
+   dates and the button on purpose: it is the last thing read before the one
+   action in this system that cannot be undone. */
+.erase-preview { margin: .9rem 0 0; }
+.erase-preview .alert { margin-bottom: 0; }

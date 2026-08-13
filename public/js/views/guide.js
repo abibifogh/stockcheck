@@ -974,6 +974,10 @@ const SECTIONS = [
       note('“Not tracked” is a real answer.', 'A bed left as not tracked is still checked and still '
         + 'has to carry a name tag. It simply raises no surprise either way. Only beds you have told '
         + 'the system about can be reported as occupied when they should have been free.'),
+      note('Erasing a period.', 'Under Users & data there is an “Erase bed checks” panel. Set a '
+        + 'From and To date and it counts what falls inside them — so many checks, so many beds — '
+        + 'before you confirm. Only that period goes: the dorms, the beds, the people and every '
+        + 'other day are untouched. There is no undo, which is why it counts first.'),
       note('The roster is never shown to the housekeeper.', 'Somebody who can see what the answer is '
         + 'supposed to be before they answer is not really checking. It appears on the reports, and on '
         + 'the setup screen, and nowhere else.'),
