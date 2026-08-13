@@ -374,7 +374,12 @@ export async function renderEntry(params) {
 
   paintTotals();
   paintList();
-  setStatus(submitted ? 'Submitted ✓' : data.service.day && Object.keys(data.usage).length ? 'Draft saved' : 'Not started', submitted ? 'good' : '');
+  setStatus(
+    submitted ? 'Submitted ✓'
+      : data.service.day && Object.keys(data.usage).length ? 'Draft saved'
+        : 'Not started',
+    submitted ? 'good' : '',
+  );
 
   // A page reload mid-service should not lose the morning.
   window.addEventListener('beforeunload', (event) => {
@@ -398,6 +403,18 @@ export async function renderEntry(params) {
           `${data.lock.from} to ${data.lock.to}${data.lock.reason ? ` — ${data.lock.reason}` : ''}. `
           + 'The figures cannot be changed. Ask an administrator to unlock the period first.'),
       )) : null,
+    // A blank sheet on a day the cook knows they filled in is alarming unless
+    // somebody says why, so this goes above everything else.
+    data.clearedForEntry ? h('div.alert.info',
+      h('span.alert-icon', '✓'),
+      h('div',
+        h('div.alert-title', 'This day has already been sent'),
+        h('div.alert-detail',
+          'Your figures are recorded and safe — the form starts empty so a correction is counted '
+          + 'again rather than nudged. If something was wrong, fill the sheet in afresh and submit; '
+          + 'a manager compares it against what was sent first. If nothing is wrong, you are done '
+          + 'and can leave this page.'),
+      )) : null,
     data.pendingRevision ? h('div.alert.info',
       h('span.alert-icon', '⏳'),
       h('div',
@@ -405,7 +422,9 @@ export async function renderEntry(params) {
         h('div.alert-detail',
           `Sent by ${data.pendingRevision.submitted_by ?? 'someone'} on `
           + `${String(data.pendingRevision.submitted_at).slice(0, 16).replace('T', ' ')}. `
-          + 'The recorded figures below stay as they are until a manager accepts it.'),
+          + (data.clearedForEntry
+            ? 'The recorded figures stay as they are until a manager accepts it.'
+            : 'The recorded figures below stay as they are until a manager accepts it.')),
       )) : null,
     guestCard,
     listHost,

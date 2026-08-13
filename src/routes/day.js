@@ -29,6 +29,19 @@ export async function getDay(ctx, day) {
   const ds = await loadDataset(db);
   const guests = (Number(service?.inhouse_guests) || 0) + (Number(service?.outside_guests) || 0);
 
+  // Somebody whose whole job here is the entry screen. Anyone who can also see
+  // reports is reviewing rather than recording, and needs the figures in front
+  // of them.
+  const entryOnly = ctx.session.permissions.length === 1
+    && ctx.session.permissions[0] === 'entry';
+
+  // A submitted day opens as a blank sheet for the kitchen. Re-submitting is
+  // still allowed and still goes for approval — but it is entered as a fresh
+  // count rather than as a nudge to figures already agreed, which is the whole
+  // point of asking for it again. The stored figures are untouched; they are
+  // simply not sent to a browser that has no business redisplaying them.
+  const clearForEntry = entryOnly && Boolean(service?.submitted_at);
+
   // The fee is set by an administrator, not typed each morning. A day already
   // recorded keeps whatever was charged then, so changing the fee later never
   // rewrites past revenue.
@@ -38,14 +51,27 @@ export async function getDay(ctx, day) {
   return json({
     day,
     today: todayIn(ds.timezone),
-    service: service ?? {
-      day,
-      inhouse_guests: null,
-      outside_guests: null,
-      outsider_fee: currentFee,
-      note: null,
-      submitted_at: null,
-    },
+    service: clearForEntry
+      ? {
+          ...service,
+          inhouse_guests: null,
+          outside_guests: null,
+          note: null,
+          // Kept: the screen must still say the day was submitted, or a cook
+          // has no way of knowing they are sending a correction.
+          submitted_at: service.submitted_at,
+        }
+      : service ?? {
+        day,
+        inhouse_guests: null,
+        outside_guests: null,
+        outsider_fee: currentFee,
+        note: null,
+        submitted_at: null,
+      },
+    // Tells the screen to explain itself, so a blank form does not read as
+    // lost work.
+    clearedForEntry: clearForEntry,
     outsiderFee: service ? Number(service.outsider_fee) || 0 : currentFee,
     allowFillUsual: ds.settings.allow_fill_usual !== '0',
     requireComplete: ds.settings.require_complete_entry !== '0',
@@ -56,13 +82,13 @@ export async function getDay(ctx, day) {
     // short, so it applies to people whose whole job here is the entry screen.
     // Anyone who can also see reports keeps the full list, since they are the
     // ones who need an occasional item when it actually gets used.
-    restrictToEveryday: ds.settings.restrict_cooks_to_everyday === '1'
-      && ctx.session.permissions.length === 1
-      && ctx.session.permissions[0] === 'entry',
+    restrictToEveryday: ds.settings.restrict_cooks_to_everyday === '1' && entryOnly,
     locked: Boolean(lock),
     lock: lock ? { from: lock.from_day, to: lock.to_day, reason: lock.reason } : null,
     pendingRevision: pending ?? null,
-    usage: Object.fromEntries((usage.results ?? []).map((r) => [r.ingredient_id, r.qty])),
+    usage: clearForEntry
+      ? {}
+      : Object.fromEntries((usage.results ?? []).map((r) => [r.ingredient_id, r.qty])),
     hints: entryHints(ds, day, guests),
   });
 }
