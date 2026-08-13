@@ -1,0 +1,102 @@
+name: Housekeeping database
+
+# Run a schema file against the housekeeping database from a button, rather
+# than by pasting SQL into a console.
+#
+# Actions → Housekeeping database → Run workflow → pick a file → Run.
+#
+# Nothing here runs on its own: schema changes are deliberate, and a workflow
+# that fires on every push would apply one the moment somebody merged it,
+# possibly before the code that needs it is live. `workflow_dispatch` means it
+# happens when a person decides it happens.
+#
+# The files are the same ones anybody would otherwise paste by hand, so this
+# adds a way to run them and no new behaviour to get wrong.
+
+on:
+  workflow_dispatch:
+    inputs:
+      file:
+        description: Which schema file to run
+        required: true
+        default: housekeeping-upgrade-notices.sql
+        type: choice
+        options:
+          # Adds the in-app notices tables. Safe to run repeatedly.
+          - housekeeping-upgrade-notices.sql
+          # Lets a notice name who it is for, so a bed check reaches everybody
+          # and a stock count waiting for approval reaches administrators. Run
+          # once — it adds a column, and adding it twice is an error that means
+          # the work is already done.
+          - housekeeping-upgrade-notice-audience.sql
+          # One check a day to three. Run once — it adds a column, and adding
+          # it twice is an error that means the work is already done.
+          - housekeeping-upgrade-rounds.sql
+          # Builds a housekeeping database from nothing. Safe to run
+          # repeatedly, and wrong for a database part-way along.
+          - housekeeping-database.sql
+      confirm:
+        description: Type the database name to confirm
+        required: true
+        default: ''
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      # Typing the database name is the whole safety mechanism. This workflow
+      # writes to a live database, and a mis-click from the Actions tab should
+      # not be enough to do it.
+      - name: Check the confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "housekeeping" ]; then
+            echo "::error::Type 'housekeeping' in the confirm box to run this."
+            exit 1
+          fi
+
+      - name: Check for Cloudflare credentials
+        id: creds
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -n "$CF_TOKEN" ] && [ -n "$CF_ACCOUNT" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::No Cloudflare credentials in this repository." \
+              "Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID under" \
+              "Settings → Secrets and variables → Actions. The token needs D1 edit permission."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # Read back what was actually run, into the job summary. A schema change
+      # you cannot see afterwards is a schema change nobody trusts.
+      - name: Run ${{ inputs.file }}
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >
+            d1 execute housekeeping --remote
+            --config wrangler.housekeeping.toml
+            --file=./seed/${{ inputs.file }}
+
+      - name: What the database looks like now
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >
+            d1 execute housekeeping --remote
+            --config wrangler.housekeeping.toml
+            --command "SELECT (SELECT COUNT(*) FROM hk_rooms) AS rooms,
+                              (SELECT COUNT(*) FROM hk_beds) AS beds,
+                              (SELECT COUNT(*) FROM pragma_table_info('hk_rounds') WHERE name='slot') AS three_checks,
+                              (SELECT COUNT(*) FROM sqlite_master WHERE name='app_notices') AS notices"

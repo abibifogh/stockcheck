@@ -521,8 +521,10 @@ export async function createStockCount(ctx) {
 export async function pendingStockCounts(ctx) {
   const ds = await loadDataset(ctx.db);
   const rows = await ctx.db.prepare(
-    `SELECT c.*, i.name AS item_name, i.unit
-       FROM stock_counts c JOIN ingredients i ON i.id = c.ingredient_id
+    `SELECT c.*, i.name AS item_name, i.unit, cat.name AS category_name
+       FROM stock_counts c
+       JOIN ingredients i ON i.id = c.ingredient_id
+       LEFT JOIN categories cat ON cat.id = i.category_id
       WHERE c.status = 'pending'
       ORDER BY c.day DESC, i.name`,
   ).all();
@@ -537,6 +539,9 @@ export async function pendingStockCounts(ctx) {
       ingredientId: row.ingredient_id,
       name: row.item_name,
       unit: row.unit,
+      // Carried so the stock screen's category filter can narrow this list
+      // alongside every other one on the page.
+      categoryName: row.category_name ?? 'Uncategorised',
       countedQty: Number(row.counted_qty),
       bookQty: Math.round(book * 1000) / 1000,
       difference,

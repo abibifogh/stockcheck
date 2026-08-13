@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import { deriveLoginKey } from '../crypto.js';
 import { h, mount, toast } from '../util.js';
+import { BRAND } from '../brand.js';
 
 /** PIN keypad. Big targets, no keyboard needed, works with gloves on. */
 export function renderLogin(onSuccess) {
@@ -88,7 +89,9 @@ export function renderLogin(onSuccess) {
 
   const pinPane = h('div', display, error, keypad,
     h('p.muted', { style: { fontSize: '.75rem', marginTop: '1rem' } },
-      'Cooks and managers sign in with their own PIN.'));
+      BRAND.app === 'housekeeping'
+        ? 'Housekeepers and managers sign in with their own PIN.'
+        : 'Cooks and managers sign in with their own PIN.'));
 
   const passwordPane = h('div.hidden',
     h('label.field', { style: { textAlign: 'left' } }, h('span', 'Email address'), email),
@@ -117,8 +120,8 @@ export function renderLogin(onSuccess) {
 
   const wrap = h('div.login-wrap',
     h('div.card.login-card',
-      h('div', { style: { fontSize: '2rem' } }, '🍳'),
-      h('h1', 'Breakfast Control'),
+      h('div', { style: { fontSize: '2rem' } }, BRAND.mark),
+      h('h1', BRAND.name),
       h('p.muted', { style: { fontSize: '.88rem', marginBottom: '.9rem' } }, 'Sign in to continue'),
       modeToggle,
       pinPane,

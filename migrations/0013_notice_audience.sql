@@ -1,0 +1,15 @@
+-- Who a notice is for.
+--
+-- The bell started with one kind of event — a submitted bed check — which
+-- everybody signed in had a reason to see. It now also carries stock counts
+-- waiting for approval, scheduled counts falling due, and what the bakery
+-- reported, and those do not belong to everybody: a craft shop assistant has
+-- no use for "8 counted parts waiting", and a technician has none for the
+-- kitchen's morning sheet.
+--
+-- So a notice can name the permission it is for. NULL means everybody, which
+-- is what every existing row is and what the bed check stays.
+--
+-- SQLite has no "ADD COLUMN IF NOT EXISTS", so running this twice reports
+-- "duplicate column name" — harmless, and means it is already done.
+ALTER TABLE app_notices ADD COLUMN audience TEXT;

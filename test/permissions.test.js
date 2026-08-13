@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  PERMISSION_KEYS, can, defaultPermissions, effectivePermissions, isRole,
+  PERMISSION_KEYS, allows, can, defaultPermissions, effectivePermissions, isRole,
 } from '../src/lib/permissions.js';
 import { isEmail, parseRecipients, renderDailyEmail } from '../src/lib/email.js';
 
@@ -51,6 +51,47 @@ test('a corrupted override falls back to the role rather than locking someone ou
 test('an admin always keeps access to the screen that can undo a mistake', () => {
   const user = { role: 'admin', permissions: JSON.stringify(['entry']) };
   assert.ok(effectivePermissions(user).includes('users'), 'an admin must not be able to lock themselves out');
+});
+
+// --------------------------------------------------------------- the roster --
+
+test('the roster can be granted without the power to delete a dorm', () => {
+  const desk = { role: 'receptionist', permissions: JSON.stringify(['hk_check', 'hk_roster']) };
+  const list = effectivePermissions(desk);
+  assert.ok(list.includes('hk_check'), 'they still walk the check');
+  assert.ok(list.includes('hk_roster'), 'and they set who is expected tonight');
+  assert.ok(!list.includes('hk_setup'), 'but they cannot rename or remove a room');
+  assert.ok(!list.includes('hk_reports'));
+});
+
+test('anybody who can build the dorms can say who is expected in them', () => {
+  // The roster sits on the setup screen as well, and a setup holder who could
+  // not touch it would be looking at a control that refused them.
+  const list = effectivePermissions({ role: 'housekeeper', permissions: JSON.stringify(['hk_setup']) });
+  assert.ok(list.includes('hk_roster'));
+});
+
+test('a route may accept either of two permissions', () => {
+  // The roster endpoint names both; the screens that rename and delete rooms
+  // still name setup alone.
+  assert.equal(allows(['hk_roster', 'hk_setup'], ['hk_check', 'hk_roster']), true);
+  assert.equal(allows(['hk_roster', 'hk_setup'], ['hk_setup']), true);
+  assert.equal(allows(['hk_roster', 'hk_setup'], ['hk_check']), false);
+  assert.equal(allows('hk_setup', ['hk_roster']), false, 'the roster is not setup');
+  assert.equal(allows('hk_check', ['hk_check']), true);
+  // A route with nothing to check only needs somebody signed in.
+  assert.equal(allows(null, []), true);
+  assert.equal(allows([], []), true);
+});
+
+test('a checker is not handed the answer sheet by default', () => {
+  // Somebody who knows the bed should be free before they look at it is not
+  // really checking it, so neither walking role gets the roster unless it is
+  // deliberately granted.
+  for (const role of ['receptionist', 'housekeeper']) {
+    assert.deepEqual(defaultPermissions(role), ['hk_check'], `${role} defaults`);
+  }
+  assert.ok(defaultPermissions('housekeeping_manager').includes('hk_roster'));
 });
 
 test('no permissions at all for someone not signed in', () => {

@@ -30,6 +30,17 @@ export const PERMISSIONS = [
   { key: 'shop_stock', label: 'Craft shop stock', detail: 'What is on the shelf, restock list, counts' },
   { key: 'shop_purchases', label: 'Craft shop buying', detail: 'Record stock bought in, with cost' },
   { key: 'shop_setup', label: 'Craft shop setup', detail: 'The product list and its prices' },
+
+  // Housekeeping. Separate again, and for the same reason: the housekeeper who
+  // walks the dorms every morning should be handed the bed check and nothing
+  // else — not the roster she is checking against, and certainly not the costs.
+  { key: 'hk_check', label: 'Bed check', detail: 'Walk the dorms and record each bed' },
+  { key: 'hk_reports', label: 'Housekeeping reports', detail: 'Name tags, surprise occupancy, room by room' },
+  // Deliberately narrower than setup. The front desk knows who is booked into
+  // which bed tonight; that is no reason to let them rename a dorm or delete
+  // one, and a permission that bundles the two would force the choice.
+  { key: 'hk_roster', label: 'The roster', detail: 'Set who is expected in each bed tonight' },
+  { key: 'hk_setup', label: 'Housekeeping setup', detail: 'Dorm rooms and beds — and the roster with them' },
 ];
 
 export const PERMISSION_KEYS = PERMISSIONS.map((p) => p.key);
@@ -80,6 +91,24 @@ export const ROLES = [
     defaults: ['shop_sell', 'shop_reports', 'shop_stock', 'shop_purchases', 'shop_setup'],
   },
   {
+    key: 'receptionist',
+    label: 'Receptionist',
+    detail: 'Records the morning and evening bed checks from the desk. Sees nothing else.',
+    defaults: ['hk_check'],
+  },
+  {
+    key: 'housekeeper',
+    label: 'Housekeeper',
+    detail: 'Walks the dorms and records the beds. Sees nothing else.',
+    defaults: ['hk_check'],
+  },
+  {
+    key: 'housekeeping_manager',
+    label: 'Housekeeping manager',
+    detail: 'Runs the bed check: the round, the reports, and the roster of who is expected where.',
+    defaults: ['hk_check', 'hk_reports', 'hk_roster', 'hk_setup'],
+  },
+  {
     key: 'admin',
     label: 'Administrator',
     detail: 'Everything, including managing people and settings.',
@@ -88,6 +117,38 @@ export const ROLES = [
 ];
 
 const ROLE_MAP = new Map(ROLES.map((r) => [r.key, r]));
+
+/**
+ * What a given site is allowed to hand out.
+ *
+ * On a housekeeping-only deployment, offering somebody "Daily entry" or
+ * "Maintenance purchases" would be offering them a screen that does not exist
+ * there. So the People form is given the housekeeping permissions and the roles
+ * built from them, and nothing else.
+ *
+ * Administrator is kept everywhere: it is the role that can manage people, and
+ * a site with no way to appoint one is a site nobody can look after.
+ */
+const HOUSEKEEPING_KEYS = ['hk_check', 'hk_reports', 'hk_roster', 'hk_setup'];
+
+export function permissionsFor(site) {
+  if (site !== 'housekeeping') return PERMISSIONS;
+  return PERMISSIONS.filter((p) => HOUSEKEEPING_KEYS.includes(p.key));
+}
+
+export function rolesFor(site) {
+  if (site !== 'housekeeping') return ROLES;
+  return ROLES
+    .filter((r) => r.key === 'admin' || r.defaults.some((d) => HOUSEKEEPING_KEYS.includes(d)))
+    .map((role) => ({
+      ...role,
+      // An administrator here administers this site, so their defaults are this
+      // site's sections rather than every section in the codebase.
+      defaults: role.key === 'admin'
+        ? [...HOUSEKEEPING_KEYS, 'users']
+        : role.defaults.filter((d) => HOUSEKEEPING_KEYS.includes(d)),
+    }));
+}
 
 export function isRole(value) {
   return ROLE_MAP.has(value);
@@ -123,10 +184,32 @@ export function effectivePermissions(user) {
   }
 
   if (user.role === 'admin' && !list.includes('users')) list.push('users');
+  // Anybody who can build the dorms can say who is expected in them: the roster
+  // sits on the same screen, and a setup holder who could not touch it would be
+  // looking at a control that refused them.
+  if (list.includes('hk_setup') && !list.includes('hk_roster')) list.push('hk_roster');
   return list;
 }
 
 export function can(user, permission) {
   if (!permission) return true;
   return effectivePermissions(user).includes(permission);
+}
+
+/**
+ * Does a signed-in person's list satisfy what a route asks for?
+ *
+ * A route may name a list instead of a single permission, and a list means
+ * "any one of these". The roster is the case that needed it: it is reachable
+ * both by the person who maintains the dorms and by the front desk who only
+ * fills it in, and collapsing those into one permission would mean handing the
+ * front desk the power to delete a dorm.
+ *
+ * `null` — a route with nothing to check — lets anybody signed in through.
+ */
+export function allows(required, held = []) {
+  if (!required) return true;
+  const needed = Array.isArray(required) ? required : [required];
+  if (!needed.length) return true;
+  return needed.some((p) => held.includes(p));
 }

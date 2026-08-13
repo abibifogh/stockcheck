@@ -1,34 +1,12 @@
--- In-app notifications, and scheduled stock counts.
+-- Scheduled stock counts.
+--
+-- The in-app inbox this file originally also created is gone: the bell that
+-- ships with the housekeeping work already does that job, and two bells in one
+-- header is one too many. Its tables are left alone rather than dropped —
+-- anybody who ran the earlier version of this file has them, and an empty table
+-- costs nothing while a DROP on a live database is a decision.
 --
 -- Safe to run more than once.
-
--- ---------------------------------------------------------------- inbox --
--- One row per event, not one per recipient. A day sheet going to five managers
--- is one notification with an audience, which keeps the table the size of what
--- happened rather than the size of who was told.
-CREATE TABLE IF NOT EXISTS notifications (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind       TEXT NOT NULL,           -- day_submitted | count_pending | stocktake_due
-  title      TEXT NOT NULL,
-  body       TEXT,
-  link       TEXT,                    -- where in the app to go
-  -- Exactly one of these decides who sees it: a single person, or everyone
-  -- holding a permission.
-  user_id    INTEGER REFERENCES users (id) ON DELETE CASCADE,
-  audience   TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_notifications_new ON notifications (created_at DESC);
-
--- Read state per person. Absent means unread, which makes "mark all read" a
--- write of only what somebody has actually seen.
-CREATE TABLE IF NOT EXISTS notification_reads (
-  notification_id INTEGER NOT NULL REFERENCES notifications (id) ON DELETE CASCADE,
-  user_id         INTEGER NOT NULL,
-  read_at         TEXT NOT NULL DEFAULT (datetime('now')),
-  PRIMARY KEY (notification_id, user_id)
-);
 
 -- ----------------------------------------------------------- stocktakes --
 CREATE TABLE IF NOT EXISTS mx_stocktake_schedules (

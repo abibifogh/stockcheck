@@ -1,4 +1,4 @@
-import { deltaBadge, fmtMoney, fmtNum, h, mount } from '../util.js';
+import { deltaBadge, fmtMoney, fmtNum, h } from '../util.js';
 import { sparkline } from '../charts.js';
 
 export function statTile({ label, value, sub, delta, higherIsBetter = false, spark, accent }) {
@@ -45,142 +45,108 @@ export function card(title, { note, actions, wide } = {}, ...children) {
 /**
  * columns: [{ key, label, align, format, cls }]
  * Rows are plain objects; `format` receives (value, row).
+ *
+ * `groupBy` turns the flat list into banded sections — one heading row per
+ * group, the rows under it in the order they arrived. It stays one table
+ * rather than a table per group so the columns still line up down the page,
+ * which is the whole point of reading a stock list. `groupSummary` gets the
+ * rows of a group and returns whatever is worth putting on its heading, such
+ * as what that group is worth.
  */
-export function table(columns, rows, { rowClass = null, empty = 'No data yet.' } = {}) {
+export function table(columns, rows, {
+  rowClass = null, empty = 'No data yet.', groupBy = null, groupSummary = null,
+} = {}) {
   if (!rows?.length) return h('div.empty', h('p', empty));
+
+  const rowEl = (row) => h('tr', { class: rowClass ? rowClass(row) : '' },
+    columns.map((c) => {
+      const value = row[c.key];
+      const content = c.format ? c.format(value, row) : (value ?? '—');
+      return h(`td${c.align === 'right' ? '.num' : ''}${c.cls ? `.${c.cls}` : ''}`, content);
+    }));
 
   return h('div.table-wrap',
     h('table',
       h('thead', h('tr', columns.map((c) =>
-        h(`th${c.align === 'right' ? '.num' : ''}${c.cls ? `.${c.cls}` : ''}`, c.label)))),
-      h('tbody', rows.map((row) => h('tr', { class: rowClass ? rowClass(row) : '' },
-        columns.map((c) => {
-          const value = row[c.key];
-          const content = c.format ? c.format(value, row) : (value ?? '—');
-          return h(`td${c.align === 'right' ? '.num' : ''}${c.cls ? `.${c.cls}` : ''}`, content);
-        })))),
+        h(`th${c.align === 'right' ? '.num' : ''}`, c.label)))),
+      h('tbody', groupBy ? groupedBody(rows, groupBy, groupSummary, columns.length, rowEl)
+        : rows.map(rowEl)),
     ),
   );
 }
 
-/**
- * The same table, with a row of category chips above it and an option to
- * break it into groups.
- *
- * A stock list of forty items is a list nobody reads to the bottom. Two
- * questions get asked of it — "show me only the dairy" and "what is each
- * section worth" — and this answers both without either screen inventing its
- * own version.
- *
- * One table with a <tbody> per group rather than a table per group, so the
- * columns line up down the whole page. Separate tables size their columns
- * independently and the result reads as several unrelated lists.
- *
- * columns:   as `table`
- * groupOf:   row => the group's name
- * summarise: rows => a short line beside each group heading
- * storageKey: remembers whether this screen is grouped. The filter is
- *             deliberately not remembered — coming back tomorrow to a screen
- *             that silently hides most of the stock is how somebody concludes
- *             the data is gone.
- */
-export function groupedTable(columns, rows, {
-  groupOf = (r) => r.categoryName || 'Uncategorised',
-  summarise = null,
-  rowClass = null,
-  empty = 'No data yet.',
-  storageKey = null,
-  label = 'item',
-} = {}) {
-  if (!rows?.length) return h('div.empty', h('p', empty));
+function groupedBody(rows, groupBy, groupSummary, span, rowEl) {
+  const groups = new Map();
+  for (const row of rows) {
+    const label = groupBy(row) || UNGROUPED;
+    if (!groups.has(label)) groups.set(label, []);
+    groups.get(label).push(row);
+  }
 
-  const groups = [...new Set(rows.map(groupOf))].sort((a, b) => a.localeCompare(b));
-  let chosen = null; // null means everything
-  let grouped = storageKey ? localStorage.getItem(`bf.group.${storageKey}`) === '1' : false;
+  const out = [];
+  for (const label of sortGroups([...groups.keys()])) {
+    const group = groups.get(label);
+    out.push(h('tr.row-group', h('td', { colspan: span },
+      h('span.row-group-name', label),
+      h('span.row-group-meta', `${group.length} ${group.length === 1 ? 'item' : 'items'}`),
+      groupSummary ? h('span.row-group-meta', groupSummary(group)) : null,
+    )));
+    out.push(...group.map(rowEl));
+  }
+  return out;
+}
 
-  const chipRow = h('div.filter-chips');
-  const body = h('div');
+const UNGROUPED = 'Uncategorised';
 
-  const visible = () => (chosen == null ? rows : rows.filter((r) => groupOf(r) === chosen));
-
-  const drawChips = () => {
-    const count = (name) => rows.filter((r) => groupOf(r) === name).length;
-
-    mount(chipRow,
-      h('button.mx-chip', {
-        class: chosen == null ? 'mx-chip on' : 'mx-chip',
-        onclick: () => { chosen = null; draw(); },
-      }, `All ${rows.length}`),
-      ...groups.map((name) => h('button.mx-chip', {
-        class: chosen === name ? 'mx-chip on' : 'mx-chip',
-        onclick: () => { chosen = chosen === name ? null : name; draw(); },
-      }, `${name} ${count(name)}`)),
-      // Grouping a list that is already down to one category would draw a
-      // single heading over the whole thing, which is just noise.
-      groups.length > 1 && chosen == null
-        ? h('button.mx-chip.filter-toggle', {
-          class: grouped ? 'mx-chip filter-toggle on' : 'mx-chip filter-toggle',
-          onclick: () => {
-            grouped = !grouped;
-            if (storageKey) localStorage.setItem(`bf.group.${storageKey}`, grouped ? '1' : '0');
-            draw();
-          },
-        }, grouped ? '▾ Grouped' : '▸ Group by category')
-        : null,
-    );
-  };
-
-  const headRow = () => h('tr', columns.map((c) =>
-    h(`th${c.align === 'right' ? '.num' : ''}${c.cls ? `.${c.cls}` : ''}`, c.label)));
-
-  const cells = (row) => columns.map((c) => {
-    const value = row[c.key];
-    const content = c.format ? c.format(value, row) : (value ?? '—');
-    return h(`td${c.align === 'right' ? '.num' : ''}${c.cls ? `.${c.cls}` : ''}`, content);
+/** Alphabetical, but whatever has no category sits at the bottom where it belongs. */
+function sortGroups(labels) {
+  return labels.sort((a, b) => {
+    if (a === UNGROUPED) return 1;
+    if (b === UNGROUPED) return -1;
+    return a.localeCompare(b);
   });
+}
 
-  const bodyFor = (list) => h('tbody', list.map((row) =>
-    h('tr', { class: rowClass ? rowClass(row) : '' }, cells(row))));
+/**
+ * The category chips above a stock list, and the switch that bands it.
+ *
+ * Returns null when there is nothing to choose between — a store with one
+ * category does not need a filter, and an empty control is worse than none.
+ *
+ * The counts are on the chips deliberately: "Cleaning (14)" tells you whether
+ * it is worth pressing before you press it.
+ */
+export function categoryBar({
+  rows, key = 'categoryName', selected = null, grouped = false, onSelect, onGroup,
+}) {
+  const counts = new Map();
+  for (const row of rows ?? []) {
+    const name = row[key] || UNGROUPED;
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  if (counts.size < 2) return null;
 
-  const draw = () => {
-    drawChips();
-    const shown = visible();
+  const chip = (label, value, n) => h('button', {
+    class: selected === value ? 'active' : '',
+    onclick: () => onSelect(value),
+  }, label, h('span.seg-count', n));
 
-    if (!shown.length) {
-      mount(body, h('div.empty', h('p', `Nothing in ${chosen}.`)));
-      return;
-    }
+  return h('div.toolbar.filter-bar',
+    h('div.seg.seg-wrap',
+      chip('All', null, rows.length),
+      ...sortGroups([...counts.keys()]).map((name) => chip(name, name, counts.get(name))),
+    ),
+    h('label.inline-check',
+      h('input', { type: 'checkbox', checked: grouped, onchange: (e) => onGroup(e.target.checked) }),
+      h('span', 'Group by category'),
+    ),
+  );
+}
 
-    if (!grouped || chosen != null) {
-      mount(body, h('div.table-wrap',
-        h('table', h('thead', headRow()), bodyFor(shown))));
-      return;
-    }
-
-    const sections = groups
-      .map((name) => ({ name, list: shown.filter((r) => groupOf(r) === name) }))
-      .filter((s) => s.list.length);
-
-    mount(body, h('div.table-wrap',
-      h('table',
-        h('thead', headRow()),
-        ...sections.flatMap((section) => [
-          h('tbody.group-head',
-            h('tr',
-              h('th', { colspan: String(columns.length) },
-                h('span.group-name', section.name),
-                h('span.group-note',
-                  summarise
-                    ? summarise(section.list)
-                    : `${section.list.length} ${section.list.length === 1 ? label : `${label}s`}`),
-              ))),
-          bodyFor(section.list),
-        ]),
-      )));
-  };
-
-  draw();
-  return h('div', chipRow, body);
+/** The rows a chip selection leaves behind. `null` means all of them. */
+export function inCategory(rows, selected, key = 'categoryName') {
+  if (!selected) return rows ?? [];
+  return (rows ?? []).filter((row) => (row[key] || UNGROUPED) === selected);
 }
 
 /** A signed money figure that reads red when it costs you more. */

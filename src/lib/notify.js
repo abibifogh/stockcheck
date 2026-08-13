@@ -1,14 +1,19 @@
-import { isMissingTable } from './http.js';
 import { effectivePermissions } from './permissions.js';
 import { parseRecipients, sendEmail } from './email.js';
+import { createNotice } from './notices.js';
 
 /**
  * Telling people things.
  *
- * Two channels, one call. In-app notifications land in the bell whether or not
+ * Two channels, one call. The in-app half goes to the same bell the bed check
+ * writes to — one bell, one table, one place to look. It lands whether or not
  * anybody has set up email, which matters because email needs an account, a
- * verified domain and a key — and until all three exist, a system that only
+ * verified domain and a key, and until all three exist a system that only
  * emails is a system that tells nobody anything.
+ *
+ * What is added here on top of the bell is the audience. A bed check concerns
+ * everybody on shift; a count waiting for approval concerns administrators,
+ * and a craft shop assistant has no use for it.
  *
  * Nothing here throws. A notification is a courtesy on top of work that has
  * already succeeded; a failure to mention it must never undo the thing it was
@@ -37,22 +42,12 @@ async function usersWith(db, permission) {
  * addressed to administrators still reaches somebody promoted tomorrow, and
  * stops reaching somebody demoted yesterday.
  */
-export async function notify(db, { kind, title, body = null, link = null, audience = null, userId = null }) {
-  try {
-    const settings = await readSettings(db);
-    if (settings.notify_in_app === '0') return null;
-
-    const row = await db.prepare(
-      `INSERT INTO notifications (kind, title, body, link, user_id, audience)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6) RETURNING id`,
-    ).bind(kind, title, body, link, userId, audience).first();
-    return row?.id ?? null;
-  } catch (err) {
-    // A missing table means the migration has not been run yet; anything else
-    // is still not worth failing the caller's save over.
-    if (isMissingTable(err)) return null;
-    return null;
-  }
+export async function notify(db, {
+  kind, title, body = null, link = null, audience = null, level = 'info', actor = null,
+}) {
+  const settings = await readSettings(db);
+  if (settings.notify_in_app === '0') return null;
+  return createNotice(db, { kind, level, title, body, link, audience, actor });
 }
 
 function escapeHtml(value) {
@@ -163,66 +158,4 @@ export async function announce(db, env, {
   return emailAudience(db, env, {
     kind, audience, subject: subject ?? title, title, body, link, linkLabel, alsoUserIds,
   });
-}
-
-/**
- * What one person has waiting.
- *
- * A notification counts as theirs when it names them, or when it was addressed
- * to a permission they hold. Read state is per person, so one manager clearing
- * their bell does not clear anybody else's.
- */
-export async function inboxFor(db, user, { limit = 30 } = {}) {
-  const permissions = effectivePermissions(user);
-  const userId = user?.id ?? 0;
-
-  try {
-    const holes = permissions.length ? permissions.map(() => '?').join(',') : "''";
-    const rows = await db.prepare(
-      `SELECT n.id, n.kind, n.title, n.body, n.link, n.created_at, r.read_at
-         FROM notifications n
-         LEFT JOIN notification_reads r
-           ON r.notification_id = n.id AND r.user_id = ?1
-        WHERE n.user_id = ?1 OR n.audience IN (${holes})
-        ORDER BY n.id DESC
-        LIMIT ${Math.max(1, Math.min(100, Number(limit) || 30))}`,
-    ).bind(userId, ...permissions).all();
-
-    const notifications = (rows.results ?? []).map((r) => ({
-      id: r.id,
-      kind: r.kind,
-      title: r.title,
-      body: r.body,
-      link: r.link,
-      at: r.created_at,
-      read: Boolean(r.read_at),
-    }));
-
-    return { notifications, unread: notifications.filter((n) => !n.read).length };
-  } catch (err) {
-    if (isMissingTable(err)) return { notifications: [], unread: 0, pendingMigration: true };
-    throw err;
-  }
-}
-
-/** Mark some — or everything currently visible — as read. */
-export async function markRead(db, user, ids = null) {
-  const userId = user?.id ?? 0;
-  try {
-    let targets = ids;
-    if (!Array.isArray(targets) || !targets.length) {
-      const inbox = await inboxFor(db, user, { limit: 100 });
-      targets = inbox.notifications.filter((n) => !n.read).map((n) => n.id);
-    }
-    if (!targets.length) return 0;
-
-    const statements = targets.map((id) => db.prepare(
-      'INSERT OR IGNORE INTO notification_reads (notification_id, user_id) VALUES (?, ?)',
-    ).bind(Number(id), userId));
-    await db.batch(statements);
-    return targets.length;
-  } catch (err) {
-    if (isMissingTable(err)) return 0;
-    throw err;
-  }
 }

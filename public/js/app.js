@@ -28,6 +28,13 @@ import { renderShopSales } from './views/shop-sales.js';
 import { renderShopStock } from './views/shop-stock.js';
 import { renderShopPurchases } from './views/shop-purchases.js';
 import { renderShopSetup } from './views/shop-setup.js';
+import { renderHkCheck } from './views/hk-check.js';
+import { renderHkOverview, renderHkReport } from './views/hk-reports.js';
+import { renderHkRoom } from './views/hk-room.js';
+import { renderHkSetup } from './views/hk-setup.js';
+import { renderHkRoster } from './views/hk-roster.js';
+import { BRAND } from './brand.js';
+import { noticeBell } from './views/notices.js';
 
 export const state = {
   role: null,
@@ -40,30 +47,42 @@ export const state = {
 };
 
 const ROUTES = [
-  { path: 'entry', label: 'Daily entry', permission: 'entry', render: renderEntry, group: 'Breakfast' },
-  { path: 'production', label: 'Bakery', permission: 'bakery', render: renderProduction, group: 'Breakfast' },
-  { path: 'overview', label: 'Overview', permission: 'reports', render: renderOverview, group: 'Breakfast' },
-  { path: 'daily', label: 'Day', permission: 'reports', render: renderDaily, group: 'Breakfast' },
-  { path: 'weekly', label: 'Week', permission: 'reports', render: renderWeekly, group: 'Breakfast' },
-  { path: 'monthly', label: 'Month', permission: 'reports', render: renderMonthly, group: 'Breakfast' },
-  { path: 'compare', label: 'Compare', permission: 'reports', render: renderCompare, group: 'Breakfast' },
-  { path: 'approvals', label: 'Approvals', permission: 'approvals', render: renderApprovals, group: 'Breakfast' },
-  { path: 'stock', label: 'Stock', permission: 'stock', render: renderStock, group: 'Breakfast' },
-  { path: 'purchases', label: 'Purchases', permission: 'purchases', render: renderPurchases, group: 'Breakfast' },
-  { path: 'setup', label: 'Setup', permission: 'setup', render: renderSetup, group: 'Breakfast' },
+  { path: 'entry', label: 'Daily entry', permission: 'entry', render: renderEntry, group: 'Breakfast', site: 'full' },
+  { path: 'production', label: 'Bakery', permission: 'bakery', render: renderProduction, group: 'Breakfast', site: 'full' },
+  { path: 'overview', label: 'Overview', permission: 'reports', render: renderOverview, group: 'Breakfast', site: 'full' },
+  { path: 'daily', label: 'Day', permission: 'reports', render: renderDaily, group: 'Breakfast', site: 'full' },
+  { path: 'weekly', label: 'Week', permission: 'reports', render: renderWeekly, group: 'Breakfast', site: 'full' },
+  { path: 'monthly', label: 'Month', permission: 'reports', render: renderMonthly, group: 'Breakfast', site: 'full' },
+  { path: 'compare', label: 'Compare', permission: 'reports', render: renderCompare, group: 'Breakfast', site: 'full' },
+  { path: 'approvals', label: 'Approvals', permission: 'approvals', render: renderApprovals, group: 'Breakfast', site: 'full' },
+  { path: 'stock', label: 'Stock', permission: 'stock', render: renderStock, group: 'Breakfast', site: 'full' },
+  { path: 'purchases', label: 'Purchases', permission: 'purchases', render: renderPurchases, group: 'Breakfast', site: 'full' },
+  { path: 'setup', label: 'Setup', permission: 'setup', render: renderSetup, group: 'Breakfast', site: 'full' },
   { path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin },
   // ------------------------------------------------------------ maintenance --
   // A second store with its own screens. Grouped in the menu so somebody who
   // works in both does not have to hunt for which "Stock" is which.
-  { path: 'mx-issue', label: 'Issue parts', permission: 'mx_issue', render: renderMxIssue, group: 'Maintenance' },
-  { path: 'mx-overview', label: 'Store', permission: 'mx_reports', render: renderMxOverview, group: 'Maintenance' },
-  { path: 'mx-report', label: 'Report', permission: 'mx_reports', render: renderMxReport, group: 'Maintenance' },
-  { path: 'mx-compare', label: 'Compare', permission: 'mx_reports', render: renderMxCompare, group: 'Maintenance' },
-  { path: 'mx-stock', label: 'Parts', permission: 'mx_stock', render: renderMxStock, group: 'Maintenance' },
-  { path: 'mx-purchases', label: 'Bought', permission: 'mx_purchases', render: renderMxPurchases, group: 'Maintenance' },
-  { path: 'mx-setup', label: 'Setup', permission: 'mx_setup', render: renderMxSetup, group: 'Maintenance' },
+  { path: 'mx-issue', label: 'Issue parts', permission: 'mx_issue', render: renderMxIssue, group: 'Maintenance', site: 'full' },
+  { path: 'mx-overview', label: 'Store', permission: 'mx_reports', render: renderMxOverview, group: 'Maintenance', site: 'full' },
+  { path: 'mx-report', label: 'Report', permission: 'mx_reports', render: renderMxReport, group: 'Maintenance', site: 'full' },
+  { path: 'mx-compare', label: 'Compare', permission: 'mx_reports', render: renderMxCompare, group: 'Maintenance', site: 'full' },
+  { path: 'mx-stock', label: 'Parts', permission: 'mx_stock', render: renderMxStock, group: 'Maintenance', site: 'full' },
+  { path: 'mx-purchases', label: 'Bought', permission: 'mx_purchases', render: renderMxPurchases, group: 'Maintenance', site: 'full' },
+  { path: 'mx-setup', label: 'Setup', permission: 'mx_setup', render: renderMxSetup, group: 'Maintenance', site: 'full' },
   // Reached by clicking a room in the report rather than from the menu.
-  { path: 'mx-area', label: 'Room', permission: 'mx_reports', render: renderMxArea, hidden: true },
+  { path: 'mx-area', label: 'Room', permission: 'mx_reports', render: renderMxArea, hidden: true, site: 'full' },
+
+  // ----------------------------------------------------------- housekeeping --
+  // The bed check comes first in its section because it is the only screen a
+  // housekeeper opens, and it is opened every single morning.
+  { path: 'hk-check', label: 'Bed check', permission: 'hk_check', render: renderHkCheck, group: 'Housekeeping' },
+  // The roster on its own page, for the desk that sets who is expected where
+  // without being handed the screen that renames and deletes dorms.
+  { path: 'hk-roster', label: 'Roster', permission: 'hk_roster', render: renderHkRoster, group: 'Housekeeping' },
+  { path: 'hk-overview', label: 'Dorms', permission: 'hk_reports', render: renderHkOverview, group: 'Housekeeping' },
+  { path: 'hk-report', label: 'Report', permission: 'hk_reports', render: renderHkReport, group: 'Housekeeping' },
+  { path: 'hk-setup', label: 'Setup', permission: 'hk_setup', render: renderHkSetup, group: 'Housekeeping' },
+  { path: 'hk-room', label: 'Dorm room', permission: 'hk_reports', render: renderHkRoom, hidden: true },
 
   // ------------------------------------------------------------- craft shop --
   // The till comes first: it is the screen somebody stands at all day, and the
@@ -88,8 +107,20 @@ export function can(permission) {
   return !permission || state.permissions.includes(permission);
 }
 
+/**
+ * Reachable at all on this site.
+ *
+ * A route marked `site: 'full'` belongs to the breakfast unit or the parts
+ * store, and the housekeeping deployment does not have them — not hidden behind
+ * a permission, absent. The Worker refuses their API on that site too, so this
+ * is the menu agreeing with the server rather than a second opinion.
+ */
+function onThisSite(route) {
+  return !route.site || route.site === BRAND.app || (route.site === 'full' && BRAND.app !== 'housekeeping');
+}
+
 function allowed(route) {
-  return can(route.permission);
+  return onThisSite(route) && can(route.permission);
 }
 
 function currentRoute() {
@@ -108,13 +139,25 @@ function currentRoute() {
  * everyone, so there is always one.
  */
 function defaultRoute() {
-  const preferred = [
-    'overview', 'entry', 'mx-overview', 'mx-issue',
+  // Reports before the entry screens, so somebody who runs a section lands on
+  // its dashboard and somebody who only fills it in lands on the form. On the
+  // housekeeping address the bed check comes first whoever you are — an
+  // administrator who typed housekeeping.niceoperation.com did not mean to
+  // arrive at the breakfast overview.
+  const preferred = BRAND.app === 'housekeeping'
+    ? ['hk-overview', 'hk-check', 'hk-roster', 'hk-setup', 'overview', 'entry',
+      'mx-overview', 'mx-issue', 'stock', 'purchases', 'setup', 'admin', 'guide']
     // The till before the shop's reports: an assistant who can do both is
     // still standing at a counter.
-    'shop-sell', 'shop-overview',
-    'production', 'stock', 'purchases', 'setup', 'admin',
-  ];
+    : ['overview', 'entry', 'hk-overview', 'hk-check', 'hk-roster', 'mx-overview',
+      'mx-issue', 'shop-sell', 'shop-overview', 'production',
+      'stock', 'purchases', 'setup', 'admin', 'guide'];
+
+  // The fallback matters as much as the list. Naming a specific route here
+  // once sent anybody whose permissions were not on it — a baker, say — to a
+  // screen they could not open, which loops straight back here and leaves them
+  // staring at the sign-in page they just cleared. So the last resort is the
+  // first route they can actually open, and Help is open to everyone.
   const wanted = preferred.find((path) => allowed(ROUTES.find((r) => r.path === path)));
   return wanted ?? ROUTES.find((r) => allowed(r) && !r.hidden)?.path ?? 'guide';
 }
@@ -224,126 +267,6 @@ function closeDrawer() {
   document.querySelector('.shell')?.classList.remove('nav-open');
 }
 
-/**
- * The bell.
- *
- * Email is the channel that reaches somebody who is not looking at the system;
- * this is the one that reaches somebody who is. It is deliberately quiet: a
- * count, a list, and nothing that interrupts what you were doing.
- */
-const inbox = { notifications: [], unread: 0, loadedAt: 0 };
-let inboxTimer = null;
-
-function bellButton() {
-  const badge = h('span.bell-badge', { style: { display: 'none' } }, '');
-  const button = h('button.btn-ghost.btn-sm.bell', {
-    title: 'Notifications',
-    onclick: (event) => {
-      event.stopPropagation();
-      toggleInboxPanel(button);
-    },
-  }, '🔔', badge);
-
-  const paint = () => {
-    badge.textContent = inbox.unread > 9 ? '9+' : String(inbox.unread);
-    badge.style.display = inbox.unread ? '' : 'none';
-    button.classList.toggle('has-unread', inbox.unread > 0);
-  };
-  paint();
-
-  const refresh = async () => {
-    try {
-      const data = await api.inbox(30);
-      inbox.notifications = data.notifications ?? [];
-      inbox.unread = data.unread ?? 0;
-      inbox.loadedAt = Date.now();
-      paint();
-    } catch { /* a bell that cannot load is not worth an error message */ }
-  };
-
-  refresh();
-  clearInterval(inboxTimer);
-  // Two minutes: often enough that a manager notices a report while it still
-  // matters, rare enough to be invisible on the free plan's request budget.
-  inboxTimer = setInterval(() => {
-    if (document.visibilityState === 'visible') refresh();
-  }, 120000);
-
-  return button;
-}
-
-function closeInboxPanel() {
-  document.querySelector('.inbox-panel')?.remove();
-}
-
-function toggleInboxPanel(anchor) {
-  if (document.querySelector('.inbox-panel')) {
-    closeInboxPanel();
-    return;
-  }
-
-  const openOne = async (note) => {
-    closeInboxPanel();
-    if (!note.read) {
-      note.read = true;
-      inbox.unread = Math.max(0, inbox.unread - 1);
-      api.markInboxRead([note.id]).catch(() => {});
-    }
-    if (note.link) location.hash = note.link.replace(/^#/, '#');
-    render();
-  };
-
-  const items = inbox.notifications.length
-    ? inbox.notifications.map((note) => h(`div.inbox-item${note.read ? '' : '.unread'}`, {
-      onclick: () => openOne(note),
-    },
-    h('div.inbox-title', note.title),
-    note.body ? h('div.inbox-body', note.body) : null,
-    h('div.inbox-when', whenLabel(note.at)),
-    ))
-    : [h('div.inbox-empty', h('p.muted', 'Nothing new. Submitted reports and counts waiting for approval show up here.'))];
-
-  const panel = h('div.inbox-panel', { onclick: (e) => e.stopPropagation() },
-    h('div.inbox-head',
-      h('strong', 'Notifications'),
-      inbox.unread
-        ? h('button.btn-ghost.btn-sm', {
-          onclick: async () => {
-            inbox.notifications.forEach((n) => { n.read = true; });
-            inbox.unread = 0;
-            closeInboxPanel();
-            document.querySelector('.bell')?.classList.remove('has-unread');
-            const badge = document.querySelector('.bell-badge');
-            if (badge) badge.style.display = 'none';
-            await api.markInboxRead().catch(() => {});
-          },
-        }, 'Mark all read')
-        : null,
-    ),
-    h('div.inbox-list', ...items),
-  );
-
-  anchor.parentElement.appendChild(panel);
-  // Clicking anywhere else puts it away, which is what a dropdown is expected
-  // to do and saves needing a close button on a phone.
-  setTimeout(() => document.addEventListener('click', closeInboxPanel, { once: true }), 0);
-}
-
-/** "3 minutes ago", without pulling in a date library. */
-function whenLabel(at) {
-  if (!at) return '';
-  const then = new Date(String(at).replace(' ', 'T') + (String(at).endsWith('Z') ? '' : 'Z'));
-  const seconds = Math.max(0, (Date.now() - then.getTime()) / 1000);
-  if (seconds < 90) return 'just now';
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes} minutes ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
-  const days = Math.round(hours / 24);
-  if (days < 8) return `${days} ${days === 1 ? 'day' : 'days'} ago`;
-  return then.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-}
-
 function shell(content) {
   const menuButton = h('button.btn-ghost.btn-sm.nav-toggle', {
     title: 'Menu',
@@ -354,14 +277,14 @@ function shell(content) {
     h('header.topbar',
       menuButton,
       h('div.brand',
-        h('span.brand-mark', '🍳'),
+        h('span.brand-mark', BRAND.mark),
         h('div',
-          state.settings.property_name || 'Breakfast Control',
+          state.settings.property_name || BRAND.name,
           h('span.brand-sub', state.name ? `${state.name} · ${roleLabel(state.role)}` : roleLabel(state.role)),
         ),
       ),
       h('div.topbar-spacer'),
-      bellButton(),
+      noticeBell(),
       h('button.btn-ghost.btn-sm', {
         title: 'Switch light / dark',
         onclick: toggleTheme,
@@ -510,12 +433,15 @@ function resetSession() {
 
 const ROLE_LABELS = {
   cook: 'Kitchen',
-  baker: 'Bakery',
   manager: 'Manager',
-  technician: 'Maintenance',
-  maintenance_manager: 'Maintenance manager',
+  baker: 'Bakery',
+  technician: 'Technician',
+  maintenance_manager: 'Maintenance',
   shop_assistant: 'Craft shop',
   shop_manager: 'Shop manager',
+  receptionist: 'Reception',
+  housekeeper: 'Housekeeping',
+  housekeeping_manager: 'Housekeeping manager',
   admin: 'Administrator',
 };
 function roleLabel(role) {
