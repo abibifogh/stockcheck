@@ -6,6 +6,7 @@ import {
   overview as overviewReport, periodReport, roomDetail, slotForTime, slotOf,
 } from '../lib/housekeeping.js';
 import { notifyRoundSubmitted } from '../lib/email.js';
+import { createNotice, roundNotice } from '../lib/notices.js';
 import { addDays, diffDays, isDay, todayIn } from '../util/dates.js';
 
 /**
@@ -311,6 +312,18 @@ export async function submitRound(ctx, day, slot) {
       }),
     ),
   ]);
+
+  // Recorded before the email is even attempted, and not in the background: the
+  // bell is the one channel that cannot fail on somebody else's infrastructure,
+  // so it is the one that must be there by the time the response lands.
+  await createNotice(ctx.db, roundNotice({
+    slotLabel: slotOf(slot).label,
+    day,
+    submittedBy: ctx.session.user.name,
+    totals: report.totals,
+    findings: report.findings.length,
+    resubmission,
+  }));
 
   // The email must never be able to hold up, or fail, somebody pressing Submit
   // in a corridor. Whether a mail provider is having a bad morning is not the

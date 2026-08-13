@@ -113,4 +113,9 @@ build(all.filter((f) => upgrades(f) && f.startsWith('0007')), 'seed/housekeeping
 // is its own file, and it is the migration verbatim.
 writeFileSync('seed/housekeeping-upgrade-rounds.sql', `${statementsOf('0008_check_rounds.sql')}\n`);
 
-console.log('wrote seed/housekeeping-database.sql and seed/housekeeping-tables.sql');
+// The in-app notices, for a database that already has everything else. Pure
+// CREATE TABLE IF NOT EXISTS, so unlike the rounds upgrade it can be run as
+// often as you like.
+writeFileSync('seed/housekeeping-upgrade-notices.sql', `${statementsOf('0009_notices.sql')}\n`);
+
+console.log('wrote the seed/ schema files');

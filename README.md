@@ -111,6 +111,15 @@ anybody can act on, then the unexpected occupancy, the rooms with gaps, and
 whatever was written down. Underneath it shows the day's other two checks and
 what is still outstanding after the last one to look.
 
+**Two ways of being told.** Every submitted check sends its email *and* records
+a notice in the app — the 🔔 in the top bar, with an unread count, the headline
+number, and a link to that day. They exist together on purpose: an email
+reaches somebody who is not looking at the system, and the bell reaches
+somebody who is. It also survives what email does not. A wrong sending domain,
+an expired key or an empty recipient list is otherwise invisible until somebody
+asks why they never heard about Tuesday; the bell says so at the time, naming
+the reason, and says plainly that the check itself is safe.
+
 **Why three, and what the system does with them.** A bed found untagged at
 eight and tagged by ten was dealt with; the same bed untagged at eight, at
 noon and at ten at night was not. Only the second kind is worth anybody's

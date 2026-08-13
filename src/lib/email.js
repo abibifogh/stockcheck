@@ -3,6 +3,7 @@ import {
   dayOverview, dayReport, loadDataset as loadHousekeeping, periodReport, slotOf,
 } from './housekeeping.js';
 import { addDays } from '../util/dates.js';
+import { createNotice } from './notices.js';
 
 /**
  * Notification email for a submitted day sheet.
@@ -196,16 +197,19 @@ export async function notifyDaySubmitted(db, env, { day, submittedBy, resubmissi
     const recipients = parseRecipients(settings.notify_recipients);
     if (!recipients.length) {
       await log('skipped', 'No recipients configured');
+      await failed('nobody is on the recipient list.');
       return;
     }
     if (!env.RESEND_API_KEY) {
       await log('failed', 'RESEND_API_KEY is not set on the Worker');
+      await failed('this site has no sending key set.');
       return;
     }
 
     const from = settings.email_from?.trim();
     if (!from) {
       await log('failed', 'No "from" address configured in Notifications');
+      await failed('no "from" address has been set.');
       return;
     }
 
@@ -230,6 +234,7 @@ export async function notifyDaySubmitted(db, env, { day, submittedBy, resubmissi
     await log('sent', null, recipients);
   } catch (err) {
     await log('failed', err?.message || String(err));
+    await failed(`${err?.message || String(err)}`.slice(0, 200));
   }
 }
 
@@ -413,6 +418,23 @@ export async function notifyRoundSubmitted(db, env, { day, slot = 'morning', sub
     .run()
     .catch(() => {});
 
+  /**
+   * An email that does not go is the failure nobody notices: the round was
+   * submitted, the screen said so, and the person who needed telling was not.
+   * The log has always recorded it — on a page almost nobody opens. So it is
+   * put on the bell as well, where somebody will actually meet it.
+   */
+  const failed = (why) => createNotice(db, {
+    kind: 'hk_email_failed',
+    level: 'warn',
+    title: 'The bed check email could not be sent',
+    body: `${slotOf(slot).label} for ${day} was recorded, but the email did not go out: ${why} `
+      + 'The check itself is safe — this is only about the message.',
+    link: '#/admin',
+    day,
+    slot,
+  });
+
   try {
     const settingsRows = await db.prepare('SELECT key, value FROM settings').all();
     const settings = Object.fromEntries((settingsRows.results ?? []).map((r) => [r.key, r.value]));
@@ -429,16 +451,19 @@ export async function notifyRoundSubmitted(db, env, { day, slot = 'morning', sub
 
     if (!recipients.length) {
       await log('skipped', 'No recipients configured');
+      await failed('nobody is on the recipient list.');
       return;
     }
     if (!env.RESEND_API_KEY) {
       await log('failed', 'RESEND_API_KEY is not set on the Worker');
+      await failed('this site has no sending key set.');
       return;
     }
 
     const from = settings.email_from?.trim();
     if (!from) {
       await log('failed', 'No "from" address configured in Notifications');
+      await failed('no "from" address has been set.');
       return;
     }
 
@@ -468,5 +493,6 @@ export async function notifyRoundSubmitted(db, env, { day, slot = 'morning', sub
     await log('sent', null, recipients);
   } catch (err) {
     await log('failed', err?.message || String(err));
+    await failed(`${err?.message || String(err)}`.slice(0, 200));
   }
 }

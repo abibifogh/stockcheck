@@ -6,6 +6,7 @@ import {
   PERMISSION_KEYS, effectivePermissions, isRole, permissionsFor, rolesFor,
 } from '../lib/permissions.js';
 import { siteOf } from '../lib/site.js';
+import { listNotices, markSeen } from '../lib/notices.js';
 import { isEmail, notifyDaySubmitted, notifyRoundSubmitted, parseRecipients } from '../lib/email.js';
 import { isDay } from '../util/dates.js';
 
@@ -596,6 +597,28 @@ export async function deleteLock(ctx, id) {
     ),
   ]);
 
+  return json({ ok: true });
+}
+
+// ---------------------------------------------------------------------------
+// In-app notices
+// ---------------------------------------------------------------------------
+
+/**
+ * What has happened since you last looked.
+ *
+ * Open to anyone signed in, deliberately. A housekeeper seeing that reception
+ * submitted the morning check is not a leak; it is the thing that stops two
+ * people walking the same round.
+ */
+export async function listNoticesRoute(ctx) {
+  const limit = Math.min(Number(ctx.url.searchParams.get('limit')) || 20, 100);
+  return json(await listNotices(ctx.db, ctx.session.user.id, limit));
+}
+
+export async function markNoticesSeen(ctx) {
+  const body = await readJson(ctx.request).catch(() => ({}));
+  await markSeen(ctx.db, ctx.session.user.id, body.lastId);
   return json({ ok: true });
 }
 

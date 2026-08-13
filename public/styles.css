@@ -1007,3 +1007,51 @@ body:has(.entry-footer) .toasts[popover] { bottom: calc(4.75rem + env(safe-area-
 .hk-round-card h4 { font-size: .9rem; font-weight: 680; margin: 0; }
 .hk-round-card .who { font-size: .74rem; color: var(--text-faint); }
 .hk-round-card .figures { font-size: .82rem; color: var(--text-dim); margin-top: .3rem; }
+
+/* ---- the bell ---------------------------------------------------------- */
+/* Submitted checks land here as well as in an inbox, so somebody who lives in
+   the app never has to open email to find out a round came in — and so a mail
+   failure has somewhere to say so. */
+
+.bell-wrap { position: relative; }
+.bell { position: relative; font-size: 1rem; }
+.bell.has-unread { color: var(--text); }
+.bell-count {
+  display: none; position: absolute; top: -2px; right: -2px;
+  min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 999px; background: var(--bad); color: #fff;
+  font-size: .65rem; font-weight: 700; line-height: 16px; text-align: center;
+}
+.bell-count.on { display: block; }
+
+.bell-panel {
+  display: none; position: absolute; right: 0; top: calc(100% + .5rem); z-index: 60;
+  width: min(360px, calc(100vw - 1.5rem));
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.bell-panel.open { display: block; }
+.bell-head {
+  padding: .6rem .8rem; border-bottom: 1px solid var(--border);
+  font-size: .85rem; background: var(--surface-2);
+}
+.bell-list { max-height: min(60vh, 460px); overflow-y: auto; overscroll-behavior: contain; padding: .3rem; }
+
+.bell-item {
+  display: flex; gap: .55rem; align-items: flex-start;
+  padding: .55rem .6rem; border-radius: var(--radius-sm);
+  text-decoration: none; color: inherit;
+  border-left: 3px solid transparent;
+}
+.bell-item:hover { background: var(--surface-2); }
+.bell-item.unread { background: color-mix(in srgb, var(--accent-soft) 55%, transparent); }
+.bell-item.level-high { border-left-color: var(--bad); }
+.bell-item.level-warn { border-left-color: var(--warn); }
+.bell-icon { font-size: .95rem; line-height: 1.35; }
+.bell-text { min-width: 0; }
+.bell-title { font-size: .88rem; font-weight: 640; line-height: 1.3; }
+.bell-body { font-size: .8rem; color: var(--text-dim); line-height: 1.35; margin-top: .1rem; }
+.bell-when { font-size: .72rem; color: var(--text-faint); margin-top: .15rem; }
+
+@media print { .bell-wrap { display: none; } }

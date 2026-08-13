@@ -26,6 +26,7 @@ import { renderHkOverview, renderHkReport } from './views/hk-reports.js';
 import { renderHkRoom } from './views/hk-room.js';
 import { renderHkSetup } from './views/hk-setup.js';
 import { BRAND } from './brand.js';
+import { noticeBell } from './views/notices.js';
 
 export const state = {
   role: null,
@@ -240,6 +241,7 @@ function shell(content) {
         ),
       ),
       h('div.topbar-spacer'),
+      noticeBell(),
       h('button.btn-ghost.btn-sm', {
         title: 'Switch light / dark',
         onclick: toggleTheme,

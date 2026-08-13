@@ -32,7 +32,8 @@ function apply(db, files) {
  */
 function shapeOf(db) {
   return db.prepare(
-    "SELECT type, name, sql FROM sqlite_master WHERE name LIKE 'hk_%' ORDER BY type, name",
+    `SELECT type, name, sql FROM sqlite_master
+      WHERE name LIKE 'hk_%' OR name LIKE 'app_%' ORDER BY type, name`,
   ).all().map((r) => {
     const sql = String(r.sql)
       .split('\n').map((line) => line.split('--')[0]).join(' ')

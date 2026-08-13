@@ -104,6 +104,11 @@ const ROUTES = [
 
   ['GET', '/api/audit', 'users', admin.auditTrail],
 
+  // The bell. Open to anyone signed in: a housekeeper seeing that reception
+  // submitted the morning check is what stops two people walking one round.
+  ['GET', '/api/notices', null, admin.listNoticesRoute],
+  ['POST', '/api/notices/seen', null, admin.markNoticesSeen],
+
   // ------------------------------------------------------------ maintenance --
   // A separate store with its own permissions, so a technician can be given the
   // issue screen and nothing else.

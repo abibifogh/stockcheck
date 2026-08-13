@@ -116,6 +116,9 @@ export const api = {
   updateNotifications: (body) => request('/api/notifications', { method: 'PUT', body }),
   testNotification: () => request('/api/notifications/test', { method: 'POST' }),
 
+  notices: (limit = 20) => request(`/api/notices?limit=${limit}`),
+  markNoticesSeen: (lastId) => request('/api/notices/seen', { method: 'POST', body: { lastId } }),
+
   dataSummary: () => request('/api/data/summary'),
   eraseData: (body) => request('/api/data/erase', { method: 'POST', body }),
 

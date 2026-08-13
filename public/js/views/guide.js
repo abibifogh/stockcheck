@@ -945,6 +945,10 @@ const SECTIONS = [
           'Somebody who never finds anything, on the same floors where everybody else does, is worth '
           + 'a quiet word.'],
       ),
+      note('The bell tells you the moment a check lands.', 'Every submitted check '
+        + 'appears under the 🔔 at the top of the screen, with the one number that matters — how '
+        + 'many beds had no name tag — and a link straight to that day. It also says when an '
+        + 'email could not be sent, which is the failure you would otherwise never hear about.'),
       note('Coverage keeps the rest honest.', 'Every rate on the page is calculated from the beds that '
         + 'were checked. Coverage tells you how much of the property that was, so a perfect week on a '
         + 'quarter of the beds cannot be mistaken for a perfect week.'),
