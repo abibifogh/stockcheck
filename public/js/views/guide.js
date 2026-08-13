@@ -641,6 +641,10 @@ const SECTIONS = [
         h('span', h('strong', 'Days cover —'), ' how long the current stock lasts at the recent rate of '
           + 'use. Under three days is flagged.'),
         h('span', h('strong', 'Record a physical count —'), ' what you actually counted on the shelf.'),
+        h('span', h('strong', 'The category chips at the top —'), ' press one and the whole page narrows '
+          + 'to it, the figures included, so “Store value” means the value of that category. '
+          + '“Group by category” instead keeps everything and bands the tables, with each band’s value '
+          + 'on its heading. The copied order list matches whatever is on screen.'),
       ),
       warn('Count the store once a month.', 'Everything else in this system is built on what people '
         + 'said they used. A physical count is the only thing that reveals waste, over-portioning and '
@@ -780,6 +784,11 @@ const SECTIONS = [
           'If the two periods are different lengths the screen says so. Read the per-day figures then, '
           + 'not the totals.'],
       ),
+      note('Narrowing the shelf to one kind of part.', 'The chips at the top of Parts on the shelf pick '
+        + 'a category — Electrical, Plumbing — and the whole page narrows to it, the figures included. '
+        + '“Group by category” instead keeps everything and bands the tables, with each band’s value on '
+        + 'its heading. Counts you have typed are kept while you move between categories, so one Save '
+        + 'records the lot.'),
     ),
   },
 

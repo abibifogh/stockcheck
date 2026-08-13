@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { state } from '../app.js';
 import { fmtDay, fmtMoney, fmtNum, h, mount, toast, todayISO } from '../util.js';
-import { card, exportButton, statTile, table } from './components.js';
+import { card, categoryBar, exportButton, inCategory, statTile, table } from './components.js';
 
 const STATUS_PILL = {
   negative: ['bad', 'Negative'],
@@ -13,37 +13,91 @@ const STATUS_PILL = {
 /**
  * Book stock derived from purchases minus usage, plus a place to record a
  * physical count so the gap between the two is visible rather than assumed.
+ *
+ * A category can be picked at the top, and it narrows the whole page — the
+ * figures as well as the lists. A store value that still counted the dairy
+ * while the table below showed only cleaning would be worse than no filter at
+ * all, and every list here is a subset of the same rows, so they can agree.
  */
 export async function renderStock(params) {
   const asOf = params.asOf || todayISO();
   const data = await api.stock(asOf);
   const host = h('div');
 
-  const reload = async () => mount(host, await renderStock({ asOf }));
+  let category = params.category ?? null;
+  let grouped = params.grouped ?? false;
 
-  const tiles = h('div.grid.grid-4', { style: { marginBottom: '1rem' } },
-    statTile({ label: 'Store value', value: fmtMoney(data.totalValue, { compact: true }), sub: 'at weighted average cost' }),
-    statTile({
-      label: 'Needs ordering',
-      value: fmtNum(data.reorder.length, 0),
-      sub: data.reorder.length ? 'below par or running out' : 'everything above par',
-      accent: data.reorder.length ? 'var(--warn)' : 'var(--good)',
-    }),
-    statTile({
-      label: 'Negative balances',
-      value: fmtNum(data.rows.filter((r) => r.status === 'negative').length, 0),
-      sub: 'deliveries likely not recorded',
-      accent: 'var(--bad)',
-    }),
-    statTile({
-      label: 'Counted variances',
-      value: fmtNum(data.shrinkage.length, 0),
-      sub: 'physical count differs from the book',
-      accent: data.shrinkage.length ? 'var(--warn)' : 'var(--good)',
-    }),
+  // Built once and re-used on every repaint so a half-typed count is not lost
+  // when somebody presses a category chip.
+  const countCard = card('Record a physical count', { note: 'Enter only what you actually counted' },
+    countForm(async () => mount(host, await renderStock({ asOf, category, grouped }))),
   );
 
-  const reorderCard = data.reorder.length
+  const paint = () => {
+    const rows = inCategory(data.rows, category);
+    const reorder = inCategory(data.reorder, category);
+    const shrinkage = inCategory(data.shrinkage, category);
+    const groupBy = grouped ? (r) => r.categoryName : null;
+    const groupValue = (group) =>
+      fmtMoney(group.reduce((n, r) => n + (r.value ?? 0), 0), { compact: true });
+
+    const bar = categoryBar({
+      rows: data.rows,
+      selected: category,
+      grouped,
+      onSelect: (value) => { category = value; paint(); },
+      onGroup: (value) => { grouped = value; paint(); },
+    });
+
+    const tiles = h('div.grid.grid-4', { style: { marginBottom: '1rem' } },
+      statTile({
+        label: 'Store value',
+        value: fmtMoney(rows.reduce((n, r) => n + r.value, 0), { compact: true }),
+        sub: category ? `${category} only` : 'at weighted average cost',
+      }),
+      statTile({
+        label: 'Needs ordering',
+        value: fmtNum(reorder.length, 0),
+        sub: reorder.length ? 'below par or running out' : 'everything above par',
+        accent: reorder.length ? 'var(--warn)' : 'var(--good)',
+      }),
+      statTile({
+        label: 'Negative balances',
+        value: fmtNum(rows.filter((r) => r.status === 'negative').length, 0),
+        sub: 'deliveries likely not recorded',
+        accent: 'var(--bad)',
+      }),
+      statTile({
+        label: 'Counted variances',
+        value: fmtNum(shrinkage.length, 0),
+        sub: 'physical count differs from the book',
+        accent: shrinkage.length ? 'var(--warn)' : 'var(--good)',
+      }),
+    );
+
+    mount(host,
+      h('div.page-head',
+        h('div',
+          h('h1', 'Stock'),
+          h('div.sub', 'Book stock = opening + purchases − recorded usage, valued at weighted average cost'),
+        ),
+        exportButton(api.exportUrl('stock', data.asOf, data.asOf), 'Export stock'),
+      ),
+      bar,
+      tiles,
+      reorderCard(reorder, groupBy, groupValue),
+      shrinkageCard(shrinkage, groupBy),
+      h('div.grid.grid-2', countCard, h('div')),
+      allCard(rows, data.asOf, category, groupBy, groupValue),
+    );
+  };
+
+  paint();
+  return host;
+}
+
+function reorderCard(reorder, groupBy, groupValue) {
+  return reorder.length
     ? card('Order list', { note: 'Suggested quantities bring each item back to its par level', wide: true },
       table([
         { key: 'name', label: 'Ingredient', format: (v, r) => h('div', h('div', v), h('small.muted', r.categoryName)) },
@@ -53,11 +107,13 @@ export async function renderStock(params) {
         { key: 'daysCover', label: 'Days cover', align: 'right', format: (v) => (v == null ? '—' : h(v < 3 ? 'b' : 'span', { style: v < 3 ? { color: 'var(--bad)' } : null }, fmtNum(v, 1))) },
         { key: 'suggestedOrder', label: 'Order', align: 'right', format: (v, r) => (v > 0 ? h('b', `${fmtNum(v, 2)} ${r.unit}`) : '—') },
         { key: 'status', label: 'Status', format: (v) => h(`span.pill.${STATUS_PILL[v][0]}`, STATUS_PILL[v][1]) },
-      ], data.reorder),
+      ], reorder, { groupBy, groupSummary: groupValue }),
       h('button.btn-sm', {
         style: { marginTop: '.7rem' },
         onclick: () => {
-          const lines = data.reorder
+          // What was copied matches what is on screen: filtered to the chosen
+          // category, and in the order the list is showing it.
+          const lines = reorder
             .filter((r) => r.suggestedOrder > 0)
             .map((r) => `${r.name}: ${fmtNum(r.suggestedOrder, 2)} ${r.unit}`)
             .join('\n');
@@ -67,8 +123,10 @@ export async function renderStock(params) {
         },
       }, '📋 Copy order list'))
     : null;
+}
 
-  const shrinkageCard = data.shrinkage.length
+function shrinkageCard(shrinkage, groupBy) {
+  return shrinkage.length
     ? card('Count variances', { note: 'Physical count against the book balance', wide: true },
       table([
         { key: 'name', label: 'Ingredient' },
@@ -76,16 +134,17 @@ export async function renderStock(params) {
         { key: 'lastCountQty', label: 'Counted', align: 'right', format: (v, r) => `${fmtNum(v, 2)} ${r.unit}` },
         { key: 'countVariance', label: 'Difference', align: 'right', format: (v, r) => h(`span.delta.${v < 0 ? 'up' : 'down'}`, `${v > 0 ? '+' : ''}${fmtNum(v, 2)} ${r.unit}`) },
         { key: 'countVarianceValue', label: 'Value', align: 'right', format: (v) => fmtMoney(v, { withSymbol: false }) },
-      ], data.shrinkage),
+      ], shrinkage, { groupBy }),
       h('p.muted', { style: { fontSize: '.82rem', marginTop: '.6rem', marginBottom: 0 } },
         'A shortfall means more left the store than was recorded as used — over-portioning, waste, unrecorded staff meals or loss. A surplus usually means a delivery was never keyed in.'))
     : null;
+}
 
-  const countCard = card('Record a physical count', { note: 'Enter only what you actually counted' },
-    countForm(reload),
-  );
-
-  const allCard = card('Full stock position', { note: `As at ${fmtDay(data.asOf)}`, wide: true },
+function allCard(rows, asOf, category, groupBy, groupValue) {
+  return card('Full stock position', {
+    note: category ? `${category} · as at ${fmtDay(asOf)}` : `As at ${fmtDay(asOf)}`,
+    wide: true,
+  },
     table([
       { key: 'name', label: 'Ingredient', format: (v, r) => h('div', h('div', v), h('small.muted', r.categoryName)) },
       { key: 'stock', label: 'On hand', align: 'right', format: (v, r) => `${fmtNum(v, 2)} ${r.unit}` },
@@ -95,24 +154,12 @@ export async function renderStock(params) {
       { key: 'daysCover', label: 'Days cover', align: 'right', format: (v) => (v == null ? '—' : fmtNum(v, 1)) },
       { key: 'parLevel', label: 'Par', align: 'right', format: (v, r) => (v ? `${fmtNum(v, 2)} ${r.unit}` : '—') },
       { key: 'status', label: 'Status', format: (v) => h(`span.pill.${STATUS_PILL[v][0]}`, STATUS_PILL[v][1]) },
-    ], data.rows, { empty: 'No active ingredients yet.' }),
+    ], rows, {
+      groupBy,
+      groupSummary: groupValue,
+      empty: category ? `Nothing in ${category}.` : 'No active ingredients yet.',
+    }),
   );
-
-  mount(host,
-    h('div.page-head',
-      h('div',
-        h('h1', 'Stock'),
-        h('div.sub', 'Book stock = opening + purchases − recorded usage, valued at weighted average cost'),
-      ),
-      exportButton(api.exportUrl('stock', data.asOf, data.asOf), 'Export stock'),
-    ),
-    tiles,
-    reorderCard,
-    shrinkageCard,
-    h('div.grid.grid-2', countCard, h('div')),
-    allCard,
-  );
-  return host;
 }
 
 function countForm(onSaved) {

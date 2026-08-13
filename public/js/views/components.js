@@ -45,22 +45,108 @@ export function card(title, { note, actions, wide } = {}, ...children) {
 /**
  * columns: [{ key, label, align, format, cls }]
  * Rows are plain objects; `format` receives (value, row).
+ *
+ * `groupBy` turns the flat list into banded sections — one heading row per
+ * group, the rows under it in the order they arrived. It stays one table
+ * rather than a table per group so the columns still line up down the page,
+ * which is the whole point of reading a stock list. `groupSummary` gets the
+ * rows of a group and returns whatever is worth putting on its heading, such
+ * as what that group is worth.
  */
-export function table(columns, rows, { rowClass = null, empty = 'No data yet.' } = {}) {
+export function table(columns, rows, {
+  rowClass = null, empty = 'No data yet.', groupBy = null, groupSummary = null,
+} = {}) {
   if (!rows?.length) return h('div.empty', h('p', empty));
+
+  const rowEl = (row) => h('tr', { class: rowClass ? rowClass(row) : '' },
+    columns.map((c) => {
+      const value = row[c.key];
+      const content = c.format ? c.format(value, row) : (value ?? '—');
+      return h(`td${c.align === 'right' ? '.num' : ''}${c.cls ? `.${c.cls}` : ''}`, content);
+    }));
 
   return h('div.table-wrap',
     h('table',
       h('thead', h('tr', columns.map((c) =>
         h(`th${c.align === 'right' ? '.num' : ''}`, c.label)))),
-      h('tbody', rows.map((row) => h('tr', { class: rowClass ? rowClass(row) : '' },
-        columns.map((c) => {
-          const value = row[c.key];
-          const content = c.format ? c.format(value, row) : (value ?? '—');
-          return h(`td${c.align === 'right' ? '.num' : ''}${c.cls ? `.${c.cls}` : ''}`, content);
-        })))),
+      h('tbody', groupBy ? groupedBody(rows, groupBy, groupSummary, columns.length, rowEl)
+        : rows.map(rowEl)),
     ),
   );
+}
+
+function groupedBody(rows, groupBy, groupSummary, span, rowEl) {
+  const groups = new Map();
+  for (const row of rows) {
+    const label = groupBy(row) || UNGROUPED;
+    if (!groups.has(label)) groups.set(label, []);
+    groups.get(label).push(row);
+  }
+
+  const out = [];
+  for (const label of sortGroups([...groups.keys()])) {
+    const group = groups.get(label);
+    out.push(h('tr.row-group', h('td', { colspan: span },
+      h('span.row-group-name', label),
+      h('span.row-group-meta', `${group.length} ${group.length === 1 ? 'item' : 'items'}`),
+      groupSummary ? h('span.row-group-meta', groupSummary(group)) : null,
+    )));
+    out.push(...group.map(rowEl));
+  }
+  return out;
+}
+
+const UNGROUPED = 'Uncategorised';
+
+/** Alphabetical, but whatever has no category sits at the bottom where it belongs. */
+function sortGroups(labels) {
+  return labels.sort((a, b) => {
+    if (a === UNGROUPED) return 1;
+    if (b === UNGROUPED) return -1;
+    return a.localeCompare(b);
+  });
+}
+
+/**
+ * The category chips above a stock list, and the switch that bands it.
+ *
+ * Returns null when there is nothing to choose between — a store with one
+ * category does not need a filter, and an empty control is worse than none.
+ *
+ * The counts are on the chips deliberately: "Cleaning (14)" tells you whether
+ * it is worth pressing before you press it.
+ */
+export function categoryBar({
+  rows, key = 'categoryName', selected = null, grouped = false, onSelect, onGroup,
+}) {
+  const counts = new Map();
+  for (const row of rows ?? []) {
+    const name = row[key] || UNGROUPED;
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  if (counts.size < 2) return null;
+
+  const chip = (label, value, n) => h('button', {
+    class: selected === value ? 'active' : '',
+    onclick: () => onSelect(value),
+  }, label, h('span.seg-count', n));
+
+  return h('div.toolbar.filter-bar',
+    h('div.seg.seg-wrap',
+      chip('All', null, rows.length),
+      ...sortGroups([...counts.keys()]).map((name) => chip(name, name, counts.get(name))),
+    ),
+    h('label.inline-check',
+      h('input', { type: 'checkbox', checked: grouped, onchange: (e) => onGroup(e.target.checked) }),
+      h('span', 'Group by category'),
+    ),
+  );
+}
+
+/** The rows a chip selection leaves behind. `null` means all of them. */
+export function inCategory(rows, selected, key = 'categoryName') {
+  if (!selected) return rows ?? [];
+  return (rows ?? []).filter((row) => (row[key] || UNGROUPED) === selected);
 }
 
 /** A signed money figure that reads red when it costs you more. */

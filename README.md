@@ -56,7 +56,7 @@ indistinguishable from "we forgot" and silently drags every average down.
 | **Week** | This week against last, weekday patterns, biggest risers and fallers, portioning consistency. |
 | **Month** | Full report: cost per guest trend, category mix, outsider economics, store movement, best/worst days, projection. |
 | **Approvals** | Corrections to days already submitted, shown as a before/after list to accept or reject. |
-| **Stock** | Book stock, days of cover, reorder list, physical-count variances. |
+| **Stock** | Book stock, days of cover, reorder list, physical-count variances. Filter the page to one category, or band every table by category. |
 | **Purchases** | Delivery log — multi-line, supplier picked from a list, unit costs pre-filled from the last price paid. |
 
 ### For housekeeping — the dorm bed check

@@ -244,6 +244,17 @@ td .muted { color: var(--text-faint); }
 .row-flag-high td:first-child { box-shadow: inset 3px 0 var(--bad); }
 .row-flag-low td:first-child { box-shadow: inset 3px 0 var(--accent); }
 
+/* A banded heading inside the table body, for lists grouped by category. */
+tbody tr.row-group td, tbody tr.row-group:hover td {
+  background: var(--surface-2);
+  padding-top: .55rem; padding-bottom: .45rem;
+}
+.row-group-name {
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .06em;
+  font-weight: 700; color: var(--text);
+}
+.row-group-meta { font-size: .75rem; color: var(--text-faint); margin-left: .6rem; }
+
 /* ------------------------------------------------------------- controls -- */
 button, .btn {
   font: inherit; font-weight: 600; font-size: .88rem;
@@ -289,6 +300,21 @@ label.field > span { display: block; font-size: .78rem; font-weight: 620; color:
 .seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 2px; }
 .seg button { border: none; background: transparent; border-radius: 999px; padding: .32rem .8rem; font-size: .82rem; color: var(--text-dim); }
 .seg button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+
+/* Many categories will not fit on one line of a phone, so this variant wraps. */
+.seg.seg-wrap { flex-wrap: wrap; max-width: 100%; }
+.seg-count {
+  margin-left: .35rem; font-size: .72rem; font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+.seg button.active .seg-count { color: var(--text-dim); }
+
+.filter-bar { justify-content: space-between; }
+.inline-check {
+  display: inline-flex; align-items: center; gap: .4rem;
+  font-size: .82rem; color: var(--text-dim); white-space: nowrap;
+}
+.inline-check input { width: auto; margin: 0; }
 
 .toolbar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: 1rem; }
 .toolbar input[type="date"], .toolbar input[type="month"], .toolbar select { width: auto; min-width: 150px; }
