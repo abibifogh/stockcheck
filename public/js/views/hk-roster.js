@@ -3,6 +3,49 @@ import { h, mount, toast } from '../util.js';
 import { card, table } from './components.js';
 
 /**
+ * What the roster can say about a bed, and what it looks like when it says it.
+ *
+ * One description, used by every screen that shows an expectation: this one,
+ * the setup screen, a room's own page, and the hint on the check screen for
+ * the few people allowed to see it. Green for a bed that should be empty, blue
+ * for one somebody is booked into, grey for one nobody is tracking — so a
+ * roster can be read down the page at a glance instead of word by word.
+ */
+export const ROSTER_STATES = {
+  free: { label: 'Should be free', short: 'rostered free', cls: 'roster-free' },
+  occupied: { label: 'Should be occupied', short: 'rostered occupied', cls: 'roster-occupied' },
+  none: { label: 'Not tracked', short: 'not tracked', cls: 'roster-none' },
+};
+
+const stateOf = (value) => ROSTER_STATES[value || 'none'] ?? ROSTER_STATES.none;
+
+/**
+ * The "Tonight the roster says" control, which wears its own answer.
+ *
+ * Setting `.value` from code does not fire a change event, so anything that
+ * sets a whole room at once must dispatch one — that is what repaints it.
+ */
+export function rosterSelect(value, onchange) {
+  const select = h('select.roster-select',
+    h('option', { value: '' }, ROSTER_STATES.none.label),
+    h('option', { value: 'free' }, ROSTER_STATES.free.label),
+    h('option', { value: 'occupied' }, ROSTER_STATES.occupied.label),
+  );
+  select.value = value ?? '';
+
+  const paint = () => { select.className = `roster-select ${stateOf(select.value).cls}`; };
+  select.addEventListener('change', () => { paint(); onchange?.(); });
+  paint();
+  return select;
+}
+
+/** The same three states, read-only, for the screens that only report them. */
+export function rosterTag(value, { short = false } = {}) {
+  const state = stateOf(value);
+  return h(`span.pill.${state.cls}`, short ? state.short : state.label);
+}
+
+/**
  * Tonight's roster, and nothing else.
  *
  * The front desk knows who is booked into which bed tonight, and that knowledge
@@ -31,9 +74,11 @@ export async function renderHkRoster() {
 
   const refreshCount = () => {
     const changed = [...edits.values()].filter(isChanged);
-    countEl.textContent = changed.length
-      ? `${changed.length} ${changed.length === 1 ? 'bed' : 'beds'} changed`
-      : tallyText(edits);
+    if (changed.length) {
+      mount(countEl, `${changed.length} ${changed.length === 1 ? 'bed' : 'beds'} changed`);
+    } else {
+      mount(countEl, tally(edits));
+    }
     saveBtn.disabled = changed.length === 0;
   };
 
@@ -104,15 +149,22 @@ function isChanged(edit) {
 }
 
 /** What the roster currently says, for the footer when nothing has been touched. */
-function tallyText(edits) {
+function tally(edits) {
   let occupied = 0;
   let free = 0;
   for (const edit of edits.values()) {
     if (edit.roster.value === 'occupied') occupied += 1;
     else if (edit.roster.value === 'free') free += 1;
   }
-  const untracked = edits.size - occupied - free;
-  return `${occupied} expected occupied · ${free} expected free · ${untracked} not tracked`;
+
+  const part = (n, state, word) => h(`span.${ROSTER_STATES[state].cls}`, `${n} ${word}`);
+  return h('span.roster-tally',
+    part(occupied, 'occupied', 'occupied'),
+    h('span.muted', ' · '),
+    part(free, 'free', 'free'),
+    h('span.muted', ' · '),
+    part(edits.size - occupied - free, 'none', 'not tracked'),
+  );
 }
 
 function roomCard(room, edits, onChange) {
@@ -120,12 +172,7 @@ function roomCard(room, edits, onChange) {
   const selects = [];
 
   const rows = beds.map((bed) => {
-    const roster = h('select', { onchange: onChange },
-      h('option', { value: '' }, 'Not tracked'),
-      h('option', { value: 'free' }, 'Should be free'),
-      h('option', { value: 'occupied' }, 'Should be occupied'),
-    );
-    roster.value = bed.expected_state ?? '';
+    const roster = rosterSelect(bed.expected_state, onChange);
 
     const note = h('input', {
       type: 'text', value: bed.expected_note ?? '', maxlength: 120,
@@ -145,8 +192,12 @@ function roomCard(room, edits, onChange) {
   });
 
   const setAll = (value) => {
-    for (const select of selects) select.value = value;
-    onChange();
+    for (const select of selects) {
+      select.value = value;
+      // Setting `.value` in code fires nothing, and the control colours itself
+      // on change — so say it changed.
+      select.dispatchEvent(new Event('change'));
+    }
   };
 
   return card(room.name, {

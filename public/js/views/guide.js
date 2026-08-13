@@ -919,7 +919,10 @@ const SECTIONS = [
         h('span', h('strong', 'Open Roster under Housekeeping.'), ' Every dorm is listed with its '
           + 'beds — the same beds the check screen walks.'),
         h('span', h('strong', 'Set each bed.'), ' Should be free, should be occupied, or not tracked. '
-          + '“Set every bed to” does a whole room at once, then change the few that differ.'),
+          + '“Set every bed to” does a whole room at once, then change the few that differ. Each '
+          + 'answer colours itself — green for a bed that should be empty, blue for one somebody is '
+          + 'booked into, grey for one nobody is tracking — so a room can be checked at a glance '
+          + 'rather than read line by line.'),
         h('span', h('strong', 'Add who is expected, if it helps.'), ' A guest name or a booking '
           + 'reference beside a bed. It is optional, and it shows on the reports beside anything odd '
           + 'that bed turns up.'),

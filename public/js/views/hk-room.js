@@ -5,6 +5,7 @@ import { lineChart } from '../charts.js';
 import { card, emptyState, statTile, table } from './components.js';
 import { printButton } from '../print.js';
 import { severityPill } from './hk-reports.js';
+import { rosterTag } from './hk-roster.js';
 
 /**
  * One dorm room, over time.
@@ -109,10 +110,8 @@ export async function renderHkRoom(params = {}) {
         {
           key: 'expectedState',
           label: 'Roster now',
-          format: (v, r) => (v
-            ? h('span', v === 'occupied' ? 'occupied' : 'free',
-              r.expectedNote ? h('small.muted', ` · ${r.expectedNote}`) : null)
-            : h('span.muted', 'not tracked')),
+          format: (v, r) => h('span', rosterTag(v),
+            r.expectedNote ? h('small.muted', ` ${r.expectedNote}`) : null),
         },
       ], data.beds, { empty: 'This room has no beds set up yet.' })),
 

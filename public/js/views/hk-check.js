@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import { fmtDay, h, mount, toast } from '../util.js';
 import { card } from './components.js';
+import { rosterTag } from './hk-roster.js';
 
 /**
  * The dorm bed check.
@@ -215,9 +216,7 @@ export async function renderHkCheck(params = {}) {
           answer?.note ? h('span.hk-note-dot', { title: answer.note }, '✎') : null,
           // Shown only to somebody who can see the roster; the housekeeper
           // answering is deliberately not told what the answer should be.
-          bed.expectedState
-            ? h('small.muted', bed.expectedState === 'occupied' ? 'rostered occupied' : 'rostered free')
-            : null,
+          bed.expectedState ? rosterTag(bed.expectedState, { short: true }) : null,
         ),
         h('div.hk-choices',
           choice('Free', 'free', 'free'),

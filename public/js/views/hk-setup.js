@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import { confirmAction, h, mount, toast } from '../util.js';
 import { card, table } from './components.js';
+import { rosterSelect } from './hk-roster.js';
 
 /**
  * The dorms, their beds, and who is expected in them.
@@ -136,19 +137,9 @@ function roomCard(room, reload) {
   const rosters = new Map();
   const notes = new Map();
 
-  const rosterSelect = (bed) => {
-    const select = h('select',
-      h('option', { value: '' }, 'Not tracked'),
-      h('option', { value: 'free' }, 'Should be free'),
-      h('option', { value: 'occupied' }, 'Should be occupied'),
-    );
-    select.value = bed.expected_state ?? '';
-    return select;
-  };
-
   const bedRows = beds.map((bed) => {
     const label = h('input', { type: 'text', value: bed.label, maxlength: 40 });
-    const roster = rosterSelect(bed);
+    const roster = rosterSelect(bed.expected_state);
     const note = h('input', {
       type: 'text', value: bed.expected_note ?? '', maxlength: 120,
       placeholder: 'Guest or booking (optional)',
@@ -182,7 +173,12 @@ function roomCard(room, reload) {
   });
 
   const setAll = (value) => {
-    for (const select of rosters.values()) select.value = value;
+    for (const select of rosters.values()) {
+      select.value = value;
+      // The control colours itself on change, and setting `.value` in code
+      // fires nothing — so say it changed.
+      select.dispatchEvent(new Event('change'));
+    }
   };
 
   const save = async (event) => {

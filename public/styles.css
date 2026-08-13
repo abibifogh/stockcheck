@@ -886,6 +886,12 @@ body:has(.entry-footer) .toasts[popover] { bottom: calc(4.75rem + env(safe-area-
 .hk-bed-main { display: flex; align-items: center; gap: .6rem; }
 .hk-bed-label { display: flex; flex-direction: column; flex: 1; min-width: 0; line-height: 1.25; }
 .hk-bed-label small { font-size: .72rem; }
+/* The roster hint, for the few people allowed to see it. The column stretches
+   its children, and a pill as wide as the row would read as a button. */
+.hk-bed-label .pill {
+  align-self: flex-start; margin-top: .15rem;
+  font-size: .68rem; padding: .02rem .4rem;
+}
 .hk-note-dot { color: var(--accent); font-size: .8rem; }
 
 .hk-choices { display: flex; gap: .4rem; }
@@ -945,6 +951,33 @@ body:has(.entry-footer) .toasts[popover] { bottom: calc(4.75rem + env(safe-area-
   .hk-choices { flex: 1; }
   .hk-submit { flex: 1 1 100%; }
 }
+
+/* ---- what the roster says, everywhere it says it ------------------------
+   Green for a bed that should be empty, blue for one somebody is booked into,
+   grey for one nobody is tracking. Deliberately not the finding colours: an
+   expectation is not a verdict, and a page of red would be wrong.
+
+   The select keeps its native arrow — replacing it costs a phone its familiar
+   picker — so the colour is carried by a thick left edge as well as by the
+   background, because Safari is selective about painting a select. */
+.roster-select { font-weight: 620; border-left-width: 4px; }
+.roster-select.roster-free {
+  border-color: color-mix(in srgb, var(--good) 55%, var(--border-strong));
+  background: var(--good-soft); color: var(--good);
+}
+.roster-select.roster-occupied {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-strong));
+  background: var(--accent-soft); color: var(--accent);
+}
+.roster-select.roster-none { color: var(--text-dim); }
+
+.pill.roster-free { background: var(--good-soft); color: var(--good); border-color: transparent; }
+.pill.roster-occupied { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.pill.roster-none { color: var(--text-faint); }
+
+.roster-tally .roster-free { color: var(--good); }
+.roster-tally .roster-occupied { color: var(--accent); }
+.roster-tally .roster-none { color: var(--text-faint); }
 
 /* ---- what the findings look like everywhere they are shown ------------- */
 
