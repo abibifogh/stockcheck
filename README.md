@@ -143,6 +143,43 @@ unresolved rather than quietly clearing itself.
 | **People** | Individual accounts with their own list of sections they can open, enforced on the server rather than just hidden in the menu. Administrators sign in with an email address and password; cooks and managers use a PIN. |
 | **Closed periods** | Lock a date range once it has been reported on. Nothing inside it can be added, changed or deleted — by anyone, including an administrator, until it is reopened. |
 | **Bulk entry** | Download a spreadsheet template, fill in a backlog, upload it. Always previews before it writes. |
+| **Daily email** | A summary of each submitted day, with the analysis, to whichever addresses you choose. |
+| **Erase data** | Clear a trial run before going live, with a typed confirmation. Keeps people, settings and the ingredient list. |
+| **Approving counts** | A physical count in any of the three stores is a claim about the shelf; accepting it is what corrects the book. Whoever counts is never whoever decides. |
+
+### For the bakery — a link, and nothing else
+
+Bread baked on the premises is stock arriving; the only difference from a
+delivery is that no money changed hands. Without somewhere to record it, the
+morning sheet deducts loaves the system never saw arrive and the figure goes
+negative every week.
+
+| Feature | What it does |
+|---|---|
+| **A link** | An administrator issues one per bakery or per phone. It opens a single form listing only what you bake — no account, no PIN, nothing to remember. It shows no costs and reaches nothing else in the system. |
+| **Per cycle** | Several reports a day is the normal case. The cycle is guessed from the time and is one tap to change. "Already sent" shows what has gone in today, so a run never gets reported twice. |
+| **Straight into stock** | Production enters the ledger exactly as a delivery does, valued at what a unit costs you to make. It is kept out of Purchases, which is money that actually went to suppliers. |
+| **Revocable** | Only a fingerprint of the token is stored, so a link cannot be looked up later. Lost one? Revoke and reissue; what it already sent is untouched. |
+
+There is also a `baker` role for somebody who would rather sign in, and
+managers hold the same permission for covering a shift.
+
+### For the craft shop — a till
+
+The third store, and the only one that takes money. Cash or card; nothing else
+is offered, because nothing else is accepted.
+
+| Feature | What it does |
+|---|---|
+| **Till** | Tap the goods, choose cash or card, type what the customer handed over and the change appears. A receipt follows the sale, printable from the browser. Prices come from the server, never from the browser. |
+| **Voiding** | A wrong sale is voided, never deleted — it stays on the list with who voided it and why, stops counting towards takings, and the stock goes back on the shelf. |
+| **Takings** | Revenue and margin together on every screen. Cash and card are separated, because only one of the two can be short at the end of a day. |
+| **Stock** | The same weighted-average ledger as the other two stores, plus what the shelf would fetch at today's prices. Dead stock gets as much room as shortages: in a craft shop that is where the money goes. |
+| **Staff** | `shop_assistant` opens the till and nothing else in the whole system — and never sees what anything cost the hotel. `shop_manager` runs the shop. |
+
+A product with no selling price cannot be sold: the till greys it out and the
+server refuses it. A price of zero is almost always something nobody got round
+to pricing, and letting it through means giving stock away at the counter.
 | **Email alerts** | A summary of each submitted day sheet, and of each submitted bed check, to whichever addresses you choose — two separate lists, one sender. |
 | **Erase a period** | Delete everything recorded between two dates, with a typed confirmation. The panel counts what falls inside the dates first — so many checks, so many beds answered for — and that count comes from the same columns the delete uses, so it cannot promise one thing and do another. Only activity goes: people, settings, the ingredient list and the dorm layout are never touched by a period. |
 
@@ -233,6 +270,14 @@ The seed is a reasonable starting catalogue for a Ghanaian hotel breakfast.
 Delete what you don't buy and correct the units and par levels in **Setup →
 Ingredients** — it is meant as a head start, not a prescription.
 
+**Applying a migration by hand.** If you are pasting into the Cloudflare D1
+console rather than running wrangler, use the copies in
+[`migrations/console/`](migrations/console/) — not the originals. The console
+rejects a paste that begins with a comment (*"Requests without any query are not
+supported"*), and every migration here opens with one. Those copies are the same
+SQL with the comments stripped; regenerate them with `npm run sql:console` after
+adding or editing a migration.
+
 ### 4. Set the PINs and session key
 
 Three secrets. The session key should be long and random; the PINs are what
@@ -292,6 +337,13 @@ npm run deploy
 If the custom domain is not ready yet, comment out the `[[routes]]` block in
 `wrangler.toml` for this first deploy — Cloudflare rejects a route for a
 hostname it cannot resolve yet. You will get a `*.workers.dev` URL to test on.
+
+Deploying also registers the Cron Trigger in `wrangler.toml` (`0 6 * * *`).
+That daily tick is what notices a scheduled maintenance stock count has come
+round and tells the people asked to do it. Cron Triggers are included on the
+free plan. If it is ever removed or fails, nothing is lost: opening the parts
+screen or the maintenance setup screen also notices an overdue count and
+announces it then.
 
 ### 6. Point the domain at it
 
@@ -480,8 +532,10 @@ MANAGER_PIN=9999
 src/
   index.js            Worker entry: routing, auth endpoints
   lib/
-    ledger.js         Weighted-average costing and book stock
-    analytics.js      Daily / weekly / monthly / stock analysis
+    ledger.js         Weighted-average costing and book stock, shared by all three stores
+    analytics.js      Breakfast: daily / weekly / monthly / stock analysis
+    maintenance.js    Parts store: cost by room and area
+    shop.js           Craft shop: takings, margin and what is not selling
     auth.js           PIN login, signed session cookies
     http.js           JSON responses, input validation
     housekeeping.js   The dorm bed check: findings, coverage, room-by-day

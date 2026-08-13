@@ -17,7 +17,11 @@ import { DatabaseSync } from 'node:sqlite';
 const MIGRATIONS = readdirSync('migrations').sort();
 
 /** The hand-paste upgrades, in the order a database part-way along needs them. */
-const UPGRADE_FILES = ['housekeeping-upgrade-rounds.sql', 'housekeeping-upgrade-notices.sql'];
+const UPGRADE_FILES = [
+  'housekeeping-upgrade-rounds.sql',
+  'housekeeping-upgrade-notices.sql',
+  'housekeeping-upgrade-notice-audience.sql',
+];
 
 function apply(db, files) {
   db.exec('PRAGMA foreign_keys = ON;');
@@ -28,10 +32,13 @@ function apply(db, files) {
 /**
  * Every table and index, normalised down to what actually differs.
  *
- * Three things vary between the two routes without meaning anything: the
+ * Four things vary between the two routes without meaning anything: the
  * migrations keep their comments and the seed files strip them, a table that
- * has been rebuilt and renamed comes back with its name in quotes, and the
- * whitespace is laid out differently. None of that changes the database.
+ * has been rebuilt and renamed comes back with its name in quotes, the
+ * whitespace is laid out differently, and a column added by ALTER is appended
+ * to the stored DDL with its own spacing — "actor TEXT , audience TEXT)" where
+ * a fresh CREATE writes "actor TEXT, audience TEXT )". None of that changes the
+ * database.
  */
 function shapeOf(db) {
   return db.prepare(
@@ -42,6 +49,8 @@ function shapeOf(db) {
       .split('\n').map((line) => line.split('--')[0]).join(' ')
       .replace(/"/g, '')
       .replace(/\s+/g, ' ')
+      .replace(/\s+([,)])/g, '$1')
+      .replace(/\(\s+/g, '(')
       .trim();
     return `${r.type} ${r.name}: ${sql}`;
   });

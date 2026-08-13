@@ -39,6 +39,12 @@ export const FULL_SITE_PATHS = [
   '/api/ingredients',
   '/api/suppliers',
   '/api/mx',
+  // The two later stores, and the bakery's public link. Same reasoning: a
+  // hostel deployment has no craft shop and no oven, and an endpoint that
+  // exists is a promise.
+  '/api/shop',
+  '/api/bakery',
+  '/api/production',
 ];
 
 /**

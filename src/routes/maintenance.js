@@ -6,6 +6,8 @@ import {
   compare as compareRanges, loadDataset, overview as overviewReport, periodReport, stockReport,
 } from '../lib/maintenance.js';
 import { addDays, diffDays, isDay, todayIn } from '../util/dates.js';
+import { announce, readSettings } from '../lib/notify.js';
+import { closeDueTasks } from '../lib/stocktakes.js';
 
 /**
  * The maintenance store's API.
@@ -225,6 +227,14 @@ export async function deletePurchase(ctx, id) {
 // Counts
 // ---------------------------------------------------------------------------
 
+/**
+ * Record what was actually on the shelf.
+ *
+ * A count is a claim, not yet a correction. It is stored as pending and moves
+ * no figure until an administrator accepts it — recounting a store is exactly
+ * the moment somebody could quietly write off a shortfall, so the person who
+ * counts is never the person who decides.
+ */
 export async function saveCounts(ctx) {
   const body = await readJson(ctx.request);
   const day = str(body.day, 'Date', { required: true, max: 10 });
@@ -232,14 +242,172 @@ export async function saveCounts(ctx) {
 
   const counts = Array.isArray(body.counts) ? body.counts : [];
   if (!counts.length) throw badRequest('Nothing was counted.');
+  if (counts.length > 1000) throw badRequest('That is more than 1000 items in one count.');
+
+  for (const c of counts) {
+    const qty = Number(c.qty);
+    if (!Number.isFinite(qty) || qty < 0) throw badRequest('A counted quantity cannot be negative.');
+    if (qty > 1000000) throw badRequest('That counted quantity looks wrong.');
+  }
 
   await ctx.db.batch(counts.map((c) => ctx.db.prepare(
-    `INSERT INTO mx_counts (day, item_id, counted_qty, note) VALUES (?1, ?2, ?3, ?4)
-     ON CONFLICT(day, item_id) DO UPDATE SET counted_qty = excluded.counted_qty, note = excluded.note`,
-  ).bind(day, Number(c.itemId), Number(c.qty) || 0, c.note ?? null)));
+    `INSERT INTO mx_counts (day, item_id, counted_qty, note, status, counted_by)
+     VALUES (?1, ?2, ?3, ?4, 'pending', ?5)
+     ON CONFLICT(day, item_id) DO UPDATE SET
+       counted_qty = excluded.counted_qty,
+       note        = excluded.note,
+       counted_by  = excluded.counted_by,
+       -- Re-counting the same item on the same day starts the decision again;
+       -- an already-accepted figure must not be edited underneath it.
+       status      = 'pending',
+       reviewed_by = NULL,
+       reviewed_at = NULL,
+       review_note = NULL`,
+  ).bind(day, Number(c.itemId), Number(c.qty) || 0, c.note ?? null, ctx.session.user.name)));
 
   await audit(ctx, 'mx.count', null, { day, items: counts.length });
-  return json({ ok: true, recorded: counts.length });
+
+  // Somebody has to decide on this, and nothing happens to the shelf until
+  // they do — so the people who can decide are told, without the counter
+  // having to chase anybody.
+  const settings = await readSettings(ctx.db);
+  if (settings.notify_count_pending !== '0') {
+    const task = announce(ctx.db, ctx.env, {
+      kind: 'count_pending',
+      audience: 'users',
+      title: `${counts.length} counted part${counts.length === 1 ? '' : 's'} waiting for approval`,
+      body: `${ctx.session.user.name} counted ${counts.length} item`
+        + `${counts.length === 1 ? '' : 's'} on ${day}. `
+        + 'Stock stays as it is until the count is accepted.',
+      link: '#/mx-stock',
+      linkLabel: 'Review the count',
+    });
+    if (ctx.executionContext?.waitUntil) ctx.executionContext.waitUntil(task);
+    else await task.catch(() => {});
+  }
+
+  // Counting is often the answer to a scheduled task, so close any that this
+  // count satisfies rather than making somebody tick it off by hand.
+  await closeDueTasks(ctx.db, day, ctx.session.user.name, counts.length).catch(() => {});
+
+  return json({ ok: true, recorded: counts.length, awaitingApproval: true });
+}
+
+/**
+ * Counts waiting on a decision, with what accepting each one would do.
+ *
+ * The difference is worked out against the book as it stands now rather than
+ * stored when the count was taken, so a delivery keyed in late shows up here
+ * before anybody accepts anything.
+ */
+export async function pendingCounts(ctx) {
+  const ds = await loadDataset(ctx.db);
+  const rows = await ctx.db.prepare(
+    `SELECT c.*, i.name AS item_name, i.unit, i.attributes
+       FROM mx_counts c JOIN mx_items i ON i.id = c.item_id
+      WHERE c.status = 'pending'
+      ORDER BY c.day DESC, i.name`,
+  ).all();
+
+  const counts = (rows.results ?? []).map((row) => {
+    const book = ds.ledger.stockOn(row.item_id, row.day);
+    const unitCost = ds.ledger.unitCostOn(row.item_id, row.day);
+    const difference = Math.round((Number(row.counted_qty) - book) * 1000) / 1000;
+    return {
+      id: row.id,
+      day: row.day,
+      itemId: row.item_id,
+      name: row.item_name,
+      unit: row.unit,
+      attributes: row.attributes ?? null,
+      countedQty: Number(row.counted_qty),
+      bookQty: Math.round(book * 1000) / 1000,
+      difference,
+      differenceValue: Math.round(difference * unitCost * 100) / 100,
+      countedBy: row.counted_by,
+      note: row.note,
+    };
+  });
+
+  const byDay = new Map();
+  for (const c of counts) {
+    if (!byDay.has(c.day)) byDay.set(c.day, { day: c.day, items: 0, shortfall: 0, surplus: 0, net: 0 });
+    const g = byDay.get(c.day);
+    g.items += 1;
+    g.net = Math.round((g.net + c.differenceValue) * 100) / 100;
+    if (c.differenceValue < 0) g.shortfall = Math.round((g.shortfall + c.differenceValue) * 100) / 100;
+    else g.surplus = Math.round((g.surplus + c.differenceValue) * 100) / 100;
+  }
+
+  return json({
+    currency: ds.currency,
+    counts,
+    days: [...byDay.values()].sort((a, b) => b.day.localeCompare(a.day)),
+  });
+}
+
+/**
+ * Accept or reject counts.
+ *
+ * Accepting is what actually moves the book — until this runs, a count is a
+ * note about the shelf and nothing more.
+ */
+export async function reviewCounts(ctx) {
+  const body = await readJson(ctx.request);
+  const approve = body.approve === true;
+  const note = str(body.note, 'Note', { max: 300, fallback: '' }) || null;
+
+  // Either a list of specific counts, or a whole day's stocktake at once.
+  let ids;
+  if (Array.isArray(body.ids)) {
+    ids = readIds(body.ids);
+  } else if (body.day && isDay(body.day)) {
+    const rows = await ctx.db.prepare(
+      "SELECT id FROM mx_counts WHERE day = ? AND status = 'pending'",
+    ).bind(body.day).all();
+    ids = (rows.results ?? []).map((r) => r.id);
+    if (!ids.length) throw badRequest('There is nothing waiting on that date.');
+  } else {
+    throw badRequest('Nothing was selected.');
+  }
+
+  const holes = ids.map(() => '?').join(',');
+  const result = await ctx.db.prepare(
+    `UPDATE mx_counts
+        SET status = ?, reviewed_by = ?, reviewed_at = datetime('now'), review_note = ?
+      WHERE id IN (${holes}) AND status = 'pending'`,
+  ).bind(approve ? 'approved' : 'rejected', ctx.session.user.name, note, ...ids).run();
+
+  const changed = result.meta?.changes ?? 0;
+  await audit(ctx, approve ? 'mx.count.approve' : 'mx.count.reject', null, { counts: changed, note });
+
+  return json({ ok: true, [approve ? 'approved' : 'rejected']: changed });
+}
+
+/** What was decided, and by whom — the record the approval step exists for. */
+export async function countHistory(ctx) {
+  const rows = await ctx.db.prepare(
+    `SELECT c.*, i.name AS item_name, i.unit
+       FROM mx_counts c JOIN mx_items i ON i.id = c.item_id
+      WHERE c.status <> 'pending'
+      ORDER BY c.reviewed_at DESC, c.id DESC
+      LIMIT 100`,
+  ).all();
+
+  return json({
+    counts: (rows.results ?? []).map((row) => ({
+      id: row.id,
+      day: row.day,
+      name: row.item_name,
+      unit: row.unit,
+      countedQty: Number(row.counted_qty),
+      status: row.status,
+      countedBy: row.counted_by,
+      reviewedBy: row.reviewed_by,
+      reviewedAt: row.reviewed_at,
+      reviewNote: row.review_note,
+    })),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -829,4 +997,86 @@ export async function importParts(ctx) {
   });
 
   return json({ applied: true, created: toCreate.length, updated: toUpdate.length, summary });
+}
+
+// ---------------------------------------------------------------------------
+// Removing several at once
+// ---------------------------------------------------------------------------
+
+/** A list of row ids from the browser, cleaned up and bounded. */
+export function readIds(value) {
+  if (!Array.isArray(value)) throw badRequest('Nothing was selected.');
+  const ids = [...new Set(value.map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+  if (!ids.length) throw badRequest('Nothing was selected.');
+  if (ids.length > 500) throw badRequest('That is more than 500 at once.');
+  return ids;
+}
+
+/**
+ * Which of these ids have history behind them.
+ *
+ * Anything that has been issued, bought or worked in is retired rather than
+ * deleted — deleting would take its history with it and quietly rewrite what
+ * past months cost.
+ */
+async function withHistory(db, ids, queries) {
+  const holes = ids.map(() => '?').join(',');
+  const found = new Set();
+  for (const sql of queries) {
+    const rows = await db.prepare(sql.replace('__IN__', holes)).bind(...ids).all();
+    for (const row of rows.results ?? []) found.add(row.id);
+  }
+  return found;
+}
+
+/** Split a removal into "safe to delete" and "must be retired", then do both. */
+async function removeMany(ctx, { ids, table, historyQueries, action }) {
+  const keep = await withHistory(ctx.db, ids, historyQueries);
+  const retire = ids.filter((id) => keep.has(id));
+  const drop = ids.filter((id) => !keep.has(id));
+
+  // Counted from what the database actually changed rather than from what was
+  // asked for: an id that no longer exists must not be reported as removed.
+  let retired = 0;
+  let deleted = 0;
+
+  if (retire.length) {
+    const result = await ctx.db.prepare(
+      `UPDATE ${table} SET active = 0 WHERE id IN (${retire.map(() => '?').join(',')}) AND active = 1`,
+    ).bind(...retire).run();
+    retired = result.meta?.changes ?? retire.length;
+  }
+  if (drop.length) {
+    const result = await ctx.db.prepare(
+      `DELETE FROM ${table} WHERE id IN (${drop.map(() => '?').join(',')})`,
+    ).bind(...drop).run();
+    deleted = result.meta?.changes ?? drop.length;
+  }
+
+  await audit(ctx, action, null, { deleted, retired });
+  return json({ ok: true, deleted, retired });
+}
+
+export async function removeItems(ctx) {
+  const ids = readIds((await readJson(ctx.request)).ids);
+  return removeMany(ctx, {
+    ids,
+    table: 'mx_items',
+    action: 'mx.items.remove',
+    historyQueries: [
+      'SELECT DISTINCT item_id AS id FROM mx_issues WHERE item_id IN (__IN__)',
+      'SELECT DISTINCT item_id AS id FROM mx_purchases WHERE item_id IN (__IN__)',
+      'SELECT DISTINCT item_id AS id FROM mx_counts WHERE item_id IN (__IN__)',
+    ],
+  });
+}
+
+export async function removeAreas(ctx) {
+  const ids = readIds((await readJson(ctx.request)).ids);
+  return removeMany(ctx, {
+    ids,
+    table: 'mx_areas',
+    action: 'mx.areas.remove',
+    historyQueries: ['SELECT DISTINCT area_id AS id FROM mx_issues WHERE area_id IN (__IN__)'],
+  });
 }

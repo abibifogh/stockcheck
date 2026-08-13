@@ -58,6 +58,7 @@ export async function renderSetup() {
       { key: 'default_unit_cost', label: 'Fallback cost', align: 'right', format: (v) => fmtMoney(v, { withSymbol: false }) },
       { key: 'opening_stock', label: 'Opening stock', align: 'right', format: (v, r) => `${fmtNum(v, 2)} ${r.unit}` },
       { key: 'is_core', label: 'Everyday', format: (v) => (v ? h('span.pill.good', 'yes') : h('span.pill', 'no')) },
+      { key: 'is_produced', label: 'Source', format: (v) => (v ? h('span.pill.info', 'bakery') : h('span.muted', 'bought')) },
       { key: 'active', label: 'Status', format: (v) => (v ? h('span.pill.good', 'active') : h('span.pill.warn', 'retired')) },
       {
         key: 'id',
@@ -328,7 +329,8 @@ function ingredientForm(existing, categories, units, onSaved) {
   };
   const value = existing || {
     category_id: categories[0]?.id, name: '', unit: 'kg', step: 1,
-    par_level: 0, default_unit_cost: 0, opening_stock: 0, is_core: 1, active: 1, sort_order: 100,
+    par_level: 0, default_unit_cost: 0, opening_stock: 0, is_core: 1, is_produced: 0,
+    active: 1, sort_order: 100,
   };
 
   const name = h('input', { type: 'text', value: value.name, placeholder: 'e.g. Sliced bread' });
@@ -343,6 +345,11 @@ function ingredientForm(existing, categories, units, onSaved) {
   const isCore = h('select',
     h('option', { value: '1', selected: !!value.is_core }, 'Everyday item'),
     h('option', { value: '0', selected: !value.is_core }, 'Occasional'));
+  // Bread and anything else made on the premises. Ticking this is what puts an
+  // item on the bakery's form, and nothing else changes.
+  const isProduced = h('select',
+    h('option', { value: '0', selected: !value.is_produced }, 'Bought in'),
+    h('option', { value: '1', selected: !!value.is_produced }, 'Made in our bakery'));
   const active = h('select',
     h('option', { value: '1', selected: !!value.active }, 'Active'),
     h('option', { value: '0', selected: !value.active }, 'Retired'));
@@ -364,6 +371,7 @@ function ingredientForm(existing, categories, units, onSaved) {
       default_unit_cost: Number(cost.value) || 0,
       opening_stock: Number(opening.value) || 0,
       is_core: isCore.value === '1',
+      is_produced: isProduced.value === '1',
       active: active.value === '1',
       sort_order: Number(order.value) || 100,
     };
@@ -388,11 +396,17 @@ function ingredientForm(existing, categories, units, onSaved) {
       h('label.field', h('span', 'Fallback unit cost'), cost),
       h('label.field', h('span', 'Opening stock'), opening),
       h('label.field', h('span', 'Entry screen'), isCore),
+      h('label.field', h('span', 'Where it comes from'), isProduced),
       h('label.field', h('span', 'Status'), active),
       h('label.field', h('span', 'Sort order'), order),
     ),
     h('p.muted', { style: { fontSize: '.8rem' } },
       'Tap step is how much one press of + or − moves the quantity — set it to how the kitchen actually measures (6 for eggs, 0.5 for a half kilo). Fallback unit cost is only used until the first delivery of that item is recorded.'),
+    h('p.muted', { style: { fontSize: '.8rem' } },
+      '“Made in our bakery” puts the item on the bakery’s reporting form, so what comes out of '
+      + 'the oven goes onto the shelf and the morning sheet draws against it. For those items '
+      + 'the fallback unit cost is what a unit costs you to make, and it is what each bake is '
+      + 'valued at.'),
     problem,
     h('button.btn-primary', { onclick: submit }, existing ? 'Save changes' : 'Add ingredient'),
   );

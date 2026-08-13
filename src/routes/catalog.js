@@ -4,6 +4,8 @@ import {
 } from '../lib/http.js';
 import { assertDayWritable } from '../lib/locks.js';
 import { isDay } from '../util/dates.js';
+import { loadDataset } from '../lib/analytics.js';
+import { announce, readSettings } from '../lib/notify.js';
 
 const UNITS = ['kg', 'g', 'L', 'ml', 'pcs', 'pack', 'loaf', 'tray', 'crate', 'box', 'bottle'];
 
@@ -180,6 +182,9 @@ function ingredientFields(body, { partial = false } = {}) {
     default_unit_cost: num(body.default_unit_cost, 'Unit cost', { min: 0, max: 1e6, fallback: 0 }),
     opening_stock: num(body.opening_stock, 'Opening stock', { min: -1e6, max: 1e6, fallback: 0 }),
     is_core: bool(body.is_core, true) ? 1 : 0,
+    // Made on the premises rather than delivered. Puts it on the bakery form,
+    // and nowhere else.
+    is_produced: bool(body.is_produced, false) ? 1 : 0,
     active: bool(body.active, true) ? 1 : 0,
     sort_order: int(body.sort_order, 'Sort order', { min: 0, max: 10000, fallback: 100 }),
   };
@@ -191,11 +196,12 @@ export async function createIngredient(ctx) {
   try {
     const row = await ctx.db.prepare(
       `INSERT INTO ingredients
-        (category_id, name, unit, step, par_level, default_unit_cost, opening_stock, is_core, active, sort_order)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+        (category_id, name, unit, step, par_level, default_unit_cost, opening_stock,
+         is_core, is_produced, active, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     ).bind(
       f.category_id, f.name, f.unit, f.step, f.par_level,
-      f.default_unit_cost, f.opening_stock, f.is_core, f.active, f.sort_order,
+      f.default_unit_cost, f.opening_stock, f.is_core, f.is_produced, f.active, f.sort_order,
     ).first();
     return json({ ingredient: row }, { status: 201 });
   } catch (err) {
@@ -218,11 +224,12 @@ export async function updateIngredient(ctx, id) {
     row = await ctx.db.prepare(
       `UPDATE ingredients SET
          category_id = ?, name = ?, unit = ?, step = ?, par_level = ?,
-         default_unit_cost = ?, opening_stock = ?, is_core = ?, active = ?, sort_order = ?
+         default_unit_cost = ?, opening_stock = ?, is_core = ?, is_produced = ?,
+         active = ?, sort_order = ?
        WHERE id = ? RETURNING *`,
     ).bind(
       f.category_id, f.name, f.unit, f.step, f.par_level,
-      f.default_unit_cost, f.opening_stock, f.is_core, f.active, f.sort_order, id,
+      f.default_unit_cost, f.opening_stock, f.is_core, f.is_produced, f.active, f.sort_order, id,
     ).first();
   } catch (err) {
     const category = await ctx.db.prepare('SELECT name FROM categories WHERE id = ?')
@@ -466,14 +473,140 @@ export async function createStockCount(ctx) {
     const ingredientId = int(c.ingredient_id, 'Ingredient', { min: 1, required: true });
     const qty = num(c.counted_qty, 'Counted quantity', { min: 0, max: 1e6, required: true });
     return ctx.db.prepare(
-      `INSERT INTO stock_counts (day, ingredient_id, counted_qty, note)
-       VALUES (?1, ?2, ?3, ?4)
-       ON CONFLICT(day, ingredient_id) DO UPDATE SET counted_qty = ?3, note = ?4`,
-    ).bind(day, ingredientId, qty, str(c.note, 'Note', { max: 300 }));
+      `INSERT INTO stock_counts (day, ingredient_id, counted_qty, note, status, counted_by)
+       VALUES (?1, ?2, ?3, ?4, 'pending', ?5)
+       ON CONFLICT(day, ingredient_id) DO UPDATE SET
+         counted_qty = ?3,
+         note        = ?4,
+         counted_by  = ?5,
+         -- Re-counting the same item on the same day starts the decision
+         -- again; an already-accepted figure must not be edited underneath it.
+         status      = 'pending',
+         reviewed_by = NULL,
+         reviewed_at = NULL,
+         review_note = NULL`,
+    ).bind(day, ingredientId, qty, str(c.note, 'Note', { max: 300 }), ctx.session.user.name);
   });
 
   await ctx.db.batch(statements);
-  return json({ ok: true, saved: statements.length });
+
+  // Nothing happens to the shelf until somebody decides, so the people who can
+  // decide are told rather than the counter having to chase anybody.
+  const settings = await readSettings(ctx.db);
+  if (settings.notify_count_pending !== '0') {
+    const task = announce(ctx.db, ctx.env, {
+      kind: 'count_pending',
+      audience: 'users',
+      title: `${statements.length} counted ingredient${statements.length === 1 ? '' : 's'} waiting for approval`,
+      body: `${ctx.session.user.name} counted ${statements.length} item`
+        + `${statements.length === 1 ? '' : 's'} in the kitchen store on ${day}. `
+        + 'Stock stays as it is until the count is accepted.',
+      link: '#/stock',
+      linkLabel: 'Review the count',
+    });
+    if (ctx.executionContext?.waitUntil) ctx.executionContext.waitUntil(task);
+    else await task.catch(() => {});
+  }
+
+  return json({ ok: true, saved: statements.length, awaitingApproval: true });
+}
+
+/**
+ * Counts waiting on a decision, with what accepting each one would do.
+ *
+ * The difference is worked out against the book as it stands now rather than
+ * stored when the count was taken, so a delivery keyed in late shows up here
+ * before anybody accepts anything.
+ */
+export async function pendingStockCounts(ctx) {
+  const ds = await loadDataset(ctx.db);
+  const rows = await ctx.db.prepare(
+    `SELECT c.*, i.name AS item_name, i.unit, cat.name AS category_name
+       FROM stock_counts c
+       JOIN ingredients i ON i.id = c.ingredient_id
+       LEFT JOIN categories cat ON cat.id = i.category_id
+      WHERE c.status = 'pending'
+      ORDER BY c.day DESC, i.name`,
+  ).all();
+
+  const counts = (rows.results ?? []).map((row) => {
+    const book = ds.ledger.stockOn(row.ingredient_id, row.day);
+    const unitCost = ds.ledger.unitCostOn(row.ingredient_id, row.day);
+    const difference = Math.round((Number(row.counted_qty) - book) * 1000) / 1000;
+    return {
+      id: row.id,
+      day: row.day,
+      ingredientId: row.ingredient_id,
+      name: row.item_name,
+      unit: row.unit,
+      // Carried so the stock screen's category filter can narrow this list
+      // alongside every other one on the page.
+      categoryName: row.category_name ?? 'Uncategorised',
+      countedQty: Number(row.counted_qty),
+      bookQty: Math.round(book * 1000) / 1000,
+      difference,
+      differenceValue: Math.round(difference * unitCost * 100) / 100,
+      countedBy: row.counted_by,
+      note: row.note,
+    };
+  });
+
+  const byDay = new Map();
+  for (const count of counts) {
+    if (!byDay.has(count.day)) byDay.set(count.day, { day: count.day, items: 0, value: 0 });
+    const group = byDay.get(count.day);
+    group.items += 1;
+    group.value = Math.round((group.value + count.differenceValue) * 100) / 100;
+  }
+
+  return json({ counts, days: [...byDay.values()] });
+}
+
+/**
+ * Accept or reject counted figures.
+ *
+ * Accepting corrects the book to what was counted, from that date onwards.
+ * Rejecting leaves every figure exactly as it was. Either way the decision and
+ * who made it are kept.
+ */
+export async function reviewStockCounts(ctx) {
+  const body = await readJson(ctx.request);
+  const approve = body.approve === true;
+  const note = str(body.note, 'Note', { max: 300, fallback: '' }) || null;
+
+  let ids;
+  if (Array.isArray(body.ids)) {
+    ids = body.ids.map(Number).filter((n) => Number.isFinite(n) && n > 0);
+    if (!ids.length) throw badRequest('Nothing was selected.');
+    if (ids.length > 1000) throw badRequest('That is too many at once.');
+  } else if (body.day && isDay(body.day)) {
+    const rows = await ctx.db.prepare(
+      "SELECT id FROM stock_counts WHERE day = ? AND status = 'pending'",
+    ).bind(body.day).all();
+    ids = (rows.results ?? []).map((r) => r.id);
+    if (!ids.length) throw badRequest('There is nothing waiting on that date.');
+  } else {
+    throw badRequest('Nothing was selected.');
+  }
+
+  const holes = ids.map(() => '?').join(',');
+  const result = await ctx.db.prepare(
+    `UPDATE stock_counts
+        SET status = ?, reviewed_by = ?, reviewed_at = datetime('now'), review_note = ?
+      WHERE id IN (${holes}) AND status = 'pending'`,
+  ).bind(approve ? 'approved' : 'rejected', ctx.session.user.name, note, ...ids).run();
+
+  const changed = result.meta?.changes ?? 0;
+  await ctx.db.prepare(
+    'INSERT INTO audit_log (actor, action, entity, detail) VALUES (?, ?, ?, ?)',
+  ).bind(
+    `${ctx.session.user.name} (${ctx.session.user.role})`,
+    approve ? 'stock.count.approve' : 'stock.count.reject',
+    null,
+    JSON.stringify({ counts: changed, note }),
+  ).run().catch(() => {});
+
+  return json({ ok: true, [approve ? 'approved' : 'rejected']: changed });
 }
 
 const ALLOWED_SETTINGS = new Set([

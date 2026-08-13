@@ -16,7 +16,12 @@ import * as insights from './routes/insights.js';
 import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
 import * as mx from './routes/maintenance.js';
+import * as bakery from './routes/bakery.js';
+import * as shop from './routes/shop.js';
+import * as stocktakes from './routes/stocktakes.js';
 import * as hk from './routes/housekeeping.js';
+import { openDueTasks } from './lib/stocktakes.js';
+import { todayIn } from './util/dates.js';
 import { PIN_TAKEN } from './routes/admin.js';
 
 /**
@@ -55,8 +60,28 @@ const ROUTES = [
   ['GET', '/api/insights/compare', 'reports', insights.compare],
   ['GET', '/api/export', 'reports', insights.exportCsv],
 
+  // --------------------------------------------------------------- bakery --
+  // The two public routes are the whole point: the bakery reports what came
+  // out of the oven without needing an account. The token in the body is the
+  // gate, and all it can do is add stock.
+  ['POST', '/api/bakery/open', 'public', bakery.open],
+  ['POST', '/api/bakery/submit', 'public', bakery.submit],
+
+  ['GET', '/api/bakery/form', 'bakery', bakery.form],
+  ['POST', '/api/production', 'bakery', bakery.create],
+  ['GET', '/api/production', 'stock', bakery.log],
+  ['DELETE', '/api/production/:id', 'stock', bakery.remove],
+
+  ['GET', '/api/bakery/links', 'users', bakery.listLinks],
+  ['POST', '/api/bakery/links', 'users', bakery.createLink],
+  ['DELETE', '/api/bakery/links/:id', 'users', bakery.revokeLink],
+
   ['GET', '/api/insights/stock', 'stock', insights.stock],
   ['POST', '/api/stock-counts', 'stock', catalog.createStockCount],
+  ['GET', '/api/stock-counts/pending', 'stock', catalog.pendingStockCounts],
+  // Accepting a count rewrites the shelf, so it is an administrator's call —
+  // never the same person who did the counting.
+  ['POST', '/api/stock-counts/review', 'users', catalog.reviewStockCounts],
 
   ['GET', '/api/purchases', 'purchases', catalog.listPurchases],
   ['GET', '/api/purchases/last-costs', 'purchases', catalog.getLastCosts],
@@ -104,8 +129,10 @@ const ROUTES = [
 
   ['GET', '/api/audit', 'users', admin.auditTrail],
 
-  // The bell. Open to anyone signed in: a housekeeper seeing that reception
-  // submitted the morning check is what stops two people walking one round.
+  // The bell. Open to anyone signed in, and what each person sees is decided
+  // inside the query by the permissions they already hold — a housekeeper sees
+  // that reception submitted the morning check, and does not see that eight
+  // parts are waiting on an administrator.
   ['GET', '/api/notices', null, admin.listNoticesRoute],
   ['POST', '/api/notices/seen', null, admin.markNoticesSeen],
 
@@ -125,6 +152,11 @@ const ROUTES = [
 
   ['GET', '/api/mx/stock', 'mx_stock', mx.stock],
   ['POST', '/api/mx/counts', 'mx_stock', mx.saveCounts],
+  ['GET', '/api/mx/counts/pending', 'mx_stock', mx.pendingCounts],
+  ['GET', '/api/mx/counts/history', 'mx_stock', mx.countHistory],
+  // Accepting a count rewrites the shelf, so it is an administrator's call —
+  // never the same person who did the counting.
+  ['POST', '/api/mx/counts/review', 'users', mx.reviewCounts],
 
   ['GET', '/api/mx/overview', 'mx_reports', mx.overview],
   ['GET', '/api/mx/report', 'mx_reports', mx.report],
@@ -143,6 +175,51 @@ const ROUTES = [
   ['POST', '/api/mx/categories', 'mx_setup', mx.createCategory],
   ['GET', '/api/mx/items/template', 'mx_setup', mx.partsTemplate],
   ['POST', '/api/mx/items/import', 'mx_setup', mx.importParts],
+  ['POST', '/api/mx/items/remove', 'mx_setup', mx.removeItems],
+  ['POST', '/api/mx/areas/remove', 'mx_setup', mx.removeAreas],
+
+  // Scheduled counts. Anybody who can count sees what they have been asked to
+  // do; only setup can decide who is asked, and how often.
+  ['GET', '/api/mx/stocktakes/mine', 'mx_stock', stocktakes.myTasks],
+  ['GET', '/api/mx/stocktakes', 'mx_setup', stocktakes.list],
+  ['POST', '/api/mx/stocktakes', 'mx_setup', stocktakes.create],
+  ['PUT', '/api/mx/stocktakes/:id', 'mx_setup', stocktakes.update],
+  ['DELETE', '/api/mx/stocktakes/:id', 'mx_setup', stocktakes.remove],
+  ['POST', '/api/mx/stocktakes/:id/run', 'mx_setup', stocktakes.runNow],
+  ['POST', '/api/mx/stocktake-tasks/:id/cancel', 'mx_setup', stocktakes.cancelTask],
+
+  // ------------------------------------------------------------- craft shop --
+  // The third store, and the only one that takes money. Its own permissions
+  // again, so somebody hired for the till gets the till and nothing else.
+  ['GET', '/api/shop/bootstrap', 'shop_sell', shop.bootstrap],
+
+  ['POST', '/api/shop/sales', 'shop_sell', shop.createSale],
+  ['GET', '/api/shop/sales', 'shop_sell', shop.listSales],
+  ['GET', '/api/shop/sales/:id', 'shop_sell', shop.getSale],
+  // Voiding is not deleting, and it is not the assistant's call.
+  ['POST', '/api/shop/sales/:id/void', 'shop_reports', shop.voidSale],
+  ['GET', '/api/shop/till', 'shop_sell', shop.tillReport],
+
+  ['GET', '/api/shop/purchases', 'shop_purchases', shop.listPurchases],
+  ['GET', '/api/shop/purchases/last-costs', 'shop_purchases', shop.lastCosts],
+  ['POST', '/api/shop/deliveries', 'shop_purchases', shop.createDelivery],
+  ['DELETE', '/api/shop/purchases/:id', 'shop_purchases', shop.deletePurchase],
+
+  ['GET', '/api/shop/stock', 'shop_stock', shop.stock],
+  ['POST', '/api/shop/counts', 'shop_stock', shop.saveCounts],
+  ['GET', '/api/shop/counts/pending', 'shop_stock', shop.pendingCounts],
+  ['POST', '/api/shop/counts/review', 'users', shop.reviewCounts],
+
+  ['GET', '/api/shop/overview', 'shop_reports', shop.overview],
+  ['GET', '/api/shop/report', 'shop_reports', shop.report],
+  ['GET', '/api/shop/compare', 'shop_reports', shop.compare],
+  ['GET', '/api/shop/export', 'shop_reports', shop.exportCsv],
+
+  ['POST', '/api/shop/categories', 'shop_setup', shop.createCategory],
+  ['POST', '/api/shop/items', 'shop_setup', shop.createItem],
+  ['PUT', '/api/shop/items/:id', 'shop_setup', shop.updateItem],
+  ['POST', '/api/shop/items/remove', 'shop_setup', shop.removeItems],
+  ['PUT', '/api/shop/settings', 'shop_setup', shop.updateSettings],
 
   // ----------------------------------------------------------- housekeeping --
   // The dorm bed check. `hk_check` reaches the round and nothing else, so a
@@ -225,6 +302,28 @@ export default {
       console.error('Unhandled error', err);
       return json({ error: 'Something went wrong on the server' }, { status: 500 });
     }
+  },
+
+  /**
+   * The daily tick, from a Cron Trigger.
+   *
+   * Its only job is to notice that a scheduled stock count has come round and
+   * tell the people asked to do it. Opening a task is idempotent, so a cron
+   * that fires twice — or a person opening the screen first — cannot produce
+   * two tasks or two rounds of email for the same count.
+   */
+  async scheduled(event, env, executionContext) {
+    if (!env.DB) return;
+    const run = (async () => {
+      const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'timezone'")
+        .first()
+        .catch(() => null);
+      const result = await openDueTasks(env.DB, env, todayIn(row?.value || 'UTC'));
+      if (result.opened) console.log(`Opened ${result.opened} stock count task(s)`);
+    })().catch((err) => console.error('Scheduled run failed', err));
+
+    if (executionContext?.waitUntil) executionContext.waitUntil(run);
+    else await run;
   },
 };
 

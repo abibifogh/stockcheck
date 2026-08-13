@@ -21,6 +21,13 @@ import { renderMxPurchases } from './views/mx-purchases.js';
 import { renderMxSetup } from './views/mx-setup.js';
 import { renderMxArea } from './views/mx-area.js';
 import { renderMxCompare } from './views/mx-compare.js';
+import { renderBakeryLink, renderProduction } from './views/bakery.js';
+import { renderShopSell } from './views/shop-sell.js';
+import { renderShopOverview, renderShopReport, renderShopCompare } from './views/shop-reports.js';
+import { renderShopSales } from './views/shop-sales.js';
+import { renderShopStock } from './views/shop-stock.js';
+import { renderShopPurchases } from './views/shop-purchases.js';
+import { renderShopSetup } from './views/shop-setup.js';
 import { renderHkCheck } from './views/hk-check.js';
 import { renderHkOverview, renderHkReport } from './views/hk-reports.js';
 import { renderHkRoom } from './views/hk-room.js';
@@ -41,6 +48,7 @@ export const state = {
 
 const ROUTES = [
   { path: 'entry', label: 'Daily entry', permission: 'entry', render: renderEntry, group: 'Breakfast', site: 'full' },
+  { path: 'production', label: 'Bakery', permission: 'bakery', render: renderProduction, group: 'Breakfast', site: 'full' },
   { path: 'overview', label: 'Overview', permission: 'reports', render: renderOverview, group: 'Breakfast', site: 'full' },
   { path: 'daily', label: 'Day', permission: 'reports', render: renderDaily, group: 'Breakfast', site: 'full' },
   { path: 'weekly', label: 'Week', permission: 'reports', render: renderWeekly, group: 'Breakfast', site: 'full' },
@@ -76,6 +84,18 @@ const ROUTES = [
   { path: 'hk-setup', label: 'Setup', permission: 'hk_setup', render: renderHkSetup, group: 'Housekeeping' },
   { path: 'hk-room', label: 'Dorm room', permission: 'hk_reports', render: renderHkRoom, hidden: true },
 
+  // ------------------------------------------------------------- craft shop --
+  // The till comes first: it is the screen somebody stands at all day, and the
+  // only one an assistant can open at all.
+  { path: 'shop-sell', label: 'Till', permission: 'shop_sell', render: renderShopSell, group: 'Craft shop' },
+  { path: 'shop-sales', label: 'Sales', permission: 'shop_sell', render: renderShopSales, group: 'Craft shop' },
+  { path: 'shop-overview', label: 'Takings', permission: 'shop_reports', render: renderShopOverview, group: 'Craft shop' },
+  { path: 'shop-report', label: 'Report', permission: 'shop_reports', render: renderShopReport, group: 'Craft shop' },
+  { path: 'shop-compare', label: 'Compare', permission: 'shop_reports', render: renderShopCompare, group: 'Craft shop' },
+  { path: 'shop-stock', label: 'Stock', permission: 'shop_stock', render: renderShopStock, group: 'Craft shop' },
+  { path: 'shop-purchases', label: 'Bought', permission: 'shop_purchases', render: renderShopPurchases, group: 'Craft shop' },
+  { path: 'shop-setup', label: 'Setup', permission: 'shop_setup', render: renderShopSetup, group: 'Craft shop' },
+
   // Open to everyone: the person most likely to need it is the one with the
   // fewest permissions.
   { path: 'guide', label: 'Help', permission: null, render: renderGuide },
@@ -108,7 +128,16 @@ function currentRoute() {
   return ROUTES.find((r) => r.path === hash && allowed(r));
 }
 
-/** Land people on the most useful screen they are actually allowed to open. */
+/**
+ * Land people on the most useful screen they are actually allowed to open.
+ *
+ * The fallback matters as much as the list. Naming a specific route here once
+ * sent anybody whose permissions were not on the list — a baker, say — to a
+ * screen they could not open, which loops straight back to this function and
+ * leaves them staring at the sign-in page they just cleared. So the last
+ * resort is the first route they can actually open, and Help is open to
+ * everyone, so there is always one.
+ */
 function defaultRoute() {
   // Reports before the entry screens, so somebody who runs a section lands on
   // its dashboard and somebody who only fills it in lands on the form. On the
@@ -118,9 +147,19 @@ function defaultRoute() {
   const preferred = BRAND.app === 'housekeeping'
     ? ['hk-overview', 'hk-check', 'hk-roster', 'hk-setup', 'overview', 'entry',
       'mx-overview', 'mx-issue', 'stock', 'purchases', 'setup', 'admin', 'guide']
+    // The till before the shop's reports: an assistant who can do both is
+    // still standing at a counter.
     : ['overview', 'entry', 'hk-overview', 'hk-check', 'hk-roster', 'mx-overview',
-      'mx-issue', 'stock', 'purchases', 'setup', 'admin', 'guide'];
-  return preferred.find((path) => allowed(ROUTES.find((r) => r.path === path))) ?? 'entry';
+      'mx-issue', 'shop-sell', 'shop-overview', 'production',
+      'stock', 'purchases', 'setup', 'admin', 'guide'];
+
+  // The fallback matters as much as the list. Naming a specific route here
+  // once sent anybody whose permissions were not on it — a baker, say — to a
+  // screen they could not open, which loops straight back here and leaves them
+  // staring at the sign-in page they just cleared. So the last resort is the
+  // first route they can actually open, and Help is open to everyone.
+  const wanted = preferred.find((path) => allowed(ROUTES.find((r) => r.path === path)));
+  return wanted ?? ROUTES.find((r) => allowed(r) && !r.hidden)?.path ?? 'guide';
 }
 
 /** Query params live after the route: #/daily?day=2026-08-08 */
@@ -306,8 +345,34 @@ function toggleTheme() {
   localStorage.setItem('bf.theme', next);
 }
 
+/**
+ * The bakery link: a page that exists outside the rest of the app.
+ *
+ * It has to be answered before the sign-in gate, because the entire point is
+ * that the bakery has no account. Its token comes from the URL and goes no
+ * further than the two endpoints that accept it.
+ */
+function bakeryToken() {
+  if (location.pathname.replace(/\/+$/, '') === '/bake') {
+    return new URLSearchParams(location.search).get('t') ?? '';
+  }
+  // The hash form works too, so a link still opens on a host that cannot serve
+  // a clean path.
+  if (location.hash.startsWith('#/bake')) {
+    return new URLSearchParams(location.hash.split('?')[1] || '').get('t') ?? '';
+  }
+  return null;
+}
+
 export async function render() {
   root.classList.remove('app-loading');
+
+  const token = bakeryToken();
+  if (token !== null) {
+    mount(root, h('div.card', h('div.skeleton', { style: { height: '120px' } })));
+    mount(root, await renderBakeryLink(token));
+    return;
+  }
 
   if (!state.role) {
     mount(root, renderLogin(async ({ role, name, email, permissions, isRecovery }) => {
@@ -369,12 +434,15 @@ function resetSession() {
 const ROLE_LABELS = {
   cook: 'Kitchen',
   manager: 'Manager',
-  admin: 'Administrator',
+  baker: 'Bakery',
   technician: 'Technician',
   maintenance_manager: 'Maintenance',
+  shop_assistant: 'Craft shop',
+  shop_manager: 'Shop manager',
   receptionist: 'Reception',
   housekeeper: 'Housekeeping',
   housekeeping_manager: 'Housekeeping manager',
+  admin: 'Administrator',
 };
 function roleLabel(role) {
   return ROLE_LABELS[role] || 'Signed in';
@@ -391,6 +459,13 @@ window.addEventListener('online', syncPending);
 (async function boot() {
   const savedTheme = localStorage.getItem('bf.theme');
   if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
+
+  // The bakery link answers itself. Asking the server who is signed in first
+  // would be a wasted round trip on a page that deliberately has nobody.
+  if (bakeryToken() !== null) {
+    await render();
+    return;
+  }
 
   try {
     const me = await api.me();

@@ -2,6 +2,7 @@ import { HttpError, badRequest, bool, int, isMissingTable, json, num, readJson, 
 import { entryHints, loadDataset } from '../lib/analytics.js';
 import { notifyDaySubmitted } from '../lib/email.js';
 import { pingDaySubmitted } from '../lib/push.js';
+import { notify } from '../lib/notify.js';
 import { assertDayWritable, lockCovering, locksFor } from '../lib/locks.js';
 import { isDay, todayIn } from '../util/dates.js';
 
@@ -282,6 +283,14 @@ export async function saveDay(ctx, day) {
     const task = Promise.all([
       notifyDaySubmitted(db, ctx.env, details),
       pingDaySubmitted(db, details),
+      notify(db, {
+        kind: 'day_submitted',
+        audience: 'reports',
+        title: `${alreadySubmitted ? 'Updated' : 'New'} breakfast report for ${day}`,
+        body: `${session.user.name} recorded ${inhouse + outside} guests `
+          + `(${inhouse} in-house, ${outside} outside) across ${proposed.size} items.`,
+        link: `#/daily?day=${day}`,
+      }),
     ]);
     if (ctx.executionContext?.waitUntil) ctx.executionContext.waitUntil(task);
     else await task.catch(() => {});

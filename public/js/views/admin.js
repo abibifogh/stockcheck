@@ -36,9 +36,14 @@ export async function renderAdmin() {
     full ? locksCard(locks.locks || [], reload) : null,
     full ? importCard(reload) : null,
     full ? submissionsCard(days.days || [], reload) : null,
+    // The bakery reports through a link rather than an account, so the link
+    // belongs with the people rather than with the kitchen's settings.
+    full ? bakeryLinksCard(reload) : null,
     notificationsCard(notifications, reload),
-    // Phone alerts announce a submitted day sheet, which this site does not
-    // have. Showing the panel would be offering a switch that does nothing.
+    inAppCard(notifications, reload),
+    // Phone alerts announce a submitted day sheet, which the housekeeping site
+    // does not have. Showing the panel would be offering a switch that does
+    // nothing.
     full ? pushCard(notifications, reload) : null,
     eraseCard(summary, reload),
   );
@@ -628,6 +633,166 @@ function userDialog(existing, roles, permissions, onSaved) {
 // Notifications
 // ---------------------------------------------------------------------------
 
+/**
+ * Links for the bakery.
+ *
+ * A link rather than an account, because a report after every production cycle
+ * only happens if reporting needs nothing remembered. The link opens one form,
+ * lists only what you bake, and the only thing it can do is add stock — it
+ * reads no cost, no guest count, nothing else about the hotel.
+ *
+ * Loaded after the page rather than with it: this is the least urgent card on
+ * the screen and should not hold the rest of it up.
+ */
+function bakeryLinksCard(reload) {
+  const host = h('div');
+
+  (async () => {
+    let data;
+    try {
+      data = await api.bakeryLinks();
+    } catch {
+      return; // migration not run yet — the card simply stays away
+    }
+
+    const label = h('input', {
+      type: 'text', placeholder: 'e.g. Main bakery, or Kofi’s phone', maxlength: 60,
+    });
+
+    const issue = async (event) => {
+      if (!label.value.trim()) { toast('Give the link a name so you know whose it is', 'bad'); return; }
+      event.target.disabled = true;
+      try {
+        const link = await api.createBakeryLink(label.value.trim());
+        showLink(link);
+        reload();
+      } catch (err) {
+        toast(err.message, 'bad');
+        event.target.disabled = false;
+      }
+    };
+
+    const revoke = async (event, row) => {
+      if (!confirm(`Revoke “${row.label}”? Anyone holding that link stops being able to report. `
+        + 'What it has already sent stays exactly where it is.')) return;
+      event.target.disabled = true;
+      try {
+        await api.revokeBakeryLink(row.id);
+        toast('Revoked', 'good');
+        reload();
+      } catch (err) {
+        toast(err.message, 'bad');
+        event.target.disabled = false;
+      }
+    };
+
+    mount(host, card('Bakery links', {
+      wide: true,
+      note: 'A link the bakery opens to report what it baked — no account needed',
+    },
+      h('p.muted', { style: { fontSize: '.87rem', marginTop: 0 } },
+        'Send one to the bakery and they bookmark it. It opens a single form listing what you '
+        + 'have marked as made in-house; what they send goes onto the breakfast shelf, and the '
+        + 'morning sheet draws against it. The link shows no costs and reaches nothing else.'),
+
+      h('div.field-row',
+        h('label.field', h('span', 'Who is this link for'), label),
+      ),
+      h('button.btn-primary', { style: { marginTop: '.6rem' }, onclick: issue }, 'Create a link'),
+
+      data.links.length
+        ? h('div', { style: { marginTop: '1.1rem' } },
+          table([
+            { key: 'label', label: 'Link' },
+            {
+              key: 'hint',
+              label: 'Ends in',
+              format: (v) => h('code.mono', { style: { fontSize: '.8rem' } }, `…${v ?? '????'}`),
+            },
+            {
+              key: 'useCount',
+              label: 'Reports sent',
+              align: 'right',
+              format: (v) => fmtNum(v, 0),
+            },
+            {
+              key: 'lastUsedAt',
+              label: 'Last used',
+              format: (v) => (v ? String(v).slice(0, 16).replace('T', ' ') : h('span.muted', 'never')),
+            },
+            {
+              key: 'active',
+              label: '',
+              format: (v, r) => (v
+                ? h('button.btn-sm.btn-ghost', { onclick: (e) => revoke(e, r) }, 'Revoke')
+                : h('span.pill', 'revoked')),
+            },
+          ], data.links, { rowClass: (r) => (r.active ? '' : 'row-muted') }))
+        : null,
+
+      h('p.muted', { style: { fontSize: '.82rem', marginTop: '.9rem', marginBottom: 0 } },
+        'The link is shown once, when you create it, and never stored anywhere it could be read '
+        + 'back. If one is lost or goes to the wrong person, revoke it and make another — that '
+        + 'takes ten seconds and is the right habit anyway.'),
+    ));
+  })();
+
+  return host;
+}
+
+/** The one moment the token exists in readable form. Make it easy to send. */
+function showLink(link) {
+  const box = h('input', {
+    type: 'text', value: link.url, readonly: true,
+    style: { fontFamily: 'var(--mono)', fontSize: '.82rem' },
+    onclick: (e) => e.target.select(),
+  });
+
+  const dialog = h('dialog', {
+    style: {
+      border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+      background: 'var(--surface)', color: 'var(--text)',
+      maxWidth: '560px', width: '92vw', padding: '1.2rem',
+    },
+  },
+    h('div.card-head',
+      h('h2', `Link for ${link.label}`),
+      h('button.btn-sm.btn-ghost', { onclick: () => dialog.close() }, '✕'),
+    ),
+    h('div.alert.warn',
+      h('span.alert-icon', '⚠️'),
+      h('div',
+        h('div.alert-title', 'Copy it now'),
+        h('div.alert-detail',
+          'This is the only time it is shown. It is stored only as a fingerprint, so it '
+          + 'cannot be looked up again — if you lose it, revoke this one and make another.'),
+      )),
+    h('label.field', { style: { marginTop: '.8rem' } }, h('span', 'Send this to the bakery'), box),
+    h('div.btn-row', { style: { marginTop: '1rem' } },
+      h('button.btn-primary', {
+        onclick: (event) => {
+          box.select();
+          navigator.clipboard?.writeText(link.url)
+            .then(() => { event.target.textContent = '✓ Copied'; })
+            .catch(() => toast('Could not copy on this device — select it and copy by hand', 'bad'));
+        },
+      }, '📋 Copy the link'),
+      h('a.btn.btn-sm', {
+        href: `https://wa.me/?text=${encodeURIComponent(
+          `Bakery reporting link — open this after every production cycle and enter what came out of the oven:\n${link.url}`,
+        )}`,
+        target: '_blank',
+        rel: 'noopener',
+      }, 'Send on WhatsApp'),
+      h('button', { onclick: () => dialog.close() }, 'Done'),
+    ),
+  );
+
+  document.body.append(dialog);
+  dialog.addEventListener('close', () => dialog.remove());
+  dialog.showModal();
+}
+
 function notificationsCard(data, reload) {
   const enabled = h('select',
     h('option', { value: '1', selected: data.enabled }, 'Send an email on every submission'),
@@ -795,6 +960,71 @@ function notificationsCard(data, reload) {
  * ability to see who is being alerted, retire a phone that has been lost or
  * replaced, and switch the whole thing off.
  */
+/**
+ * The bell, and the two things besides the breakfast sheet that ring it.
+ *
+ * Kept apart from the email card because these reach people who are already
+ * looking at the system, and need no domain, key or verified sender to work.
+ */
+function inAppCard(data, reload) {
+  const inApp = h('select',
+    h('option', { value: '1', selected: data.inAppEnabled }, 'Show notifications in the bell'),
+    h('option', { value: '0', selected: !data.inAppEnabled }, 'Turn the bell off'),
+  );
+  const countPending = h('select',
+    h('option', { value: '1', selected: data.countPendingEnabled }, 'Tell administrators'),
+    h('option', { value: '0', selected: !data.countPendingEnabled }, 'Say nothing'),
+  );
+  const stocktakeDue = h('select',
+    h('option', { value: '1', selected: data.stocktakeDueEnabled }, 'Tell the people asked'),
+    h('option', { value: '0', selected: !data.stocktakeDueEnabled }, 'Say nothing'),
+  );
+
+  const save = async (event) => {
+    event.target.disabled = true;
+    try {
+      await api.updateNotifications({
+        // Only the switches on this card are sent; the rest keep what they had.
+        inAppEnabled: inApp.value === '1',
+        countPendingEnabled: countPending.value === '1',
+        stocktakeDueEnabled: stocktakeDue.value === '1',
+        recipients: data.recipients,
+        from: data.from,
+        siteUrl: data.siteUrl,
+        enabled: data.enabled,
+        pushEnabled: data.pushEnabled,
+      });
+      toast('Saved', 'good');
+      reload();
+    } catch (err) {
+      toast(err.message, 'bad');
+      event.target.disabled = false;
+    }
+  };
+
+  return card('In-app notifications', {
+    note: 'The bell at the top of every screen',
+    wide: true,
+  },
+    h('p.muted', { style: { fontSize: '.87rem', marginTop: 0 } },
+      'These need no email account and no setup. Everybody sees what their own access allows: '
+      + 'a submitted breakfast sheet reaches whoever can read reports, a count waiting for '
+      + 'approval — in the parts store or the craft shop — reaches administrators, and a '
+      + 'scheduled stock count that has come round reaches whoever was asked to do it.'),
+    h('div.field-row',
+      h('label.field', h('span', 'The bell'), inApp),
+      h('label.field', h('span', 'A stock count needs approving'), countPending),
+      h('label.field', h('span', 'A scheduled stock count is due'), stocktakeDue),
+    ),
+    h('div.btn-row', { style: { marginTop: '1rem' } },
+      h('button.btn-primary', { onclick: save }, 'Save'),
+    ),
+    h('p.muted', { style: { fontSize: '.82rem', marginTop: '.8rem', marginBottom: 0 } },
+      'The last two are also emailed, to whoever holds the matching access and has an '
+      + 'email address on their account, plus everybody on the daily-email list above.'),
+  );
+}
+
 function pushCard(data, reload) {
   const enabled = h('select',
     h('option', { value: '1', selected: data.pushEnabled }, 'Alert every subscribed device'),

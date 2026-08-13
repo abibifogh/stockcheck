@@ -167,6 +167,12 @@ function onThisSite(id) {
 function greeting() {
   if (can('users')) return 'Everything, including setting the system up and looking after it';
   if (can('reports')) return 'Recording the morning, and reading what it tells you';
+  // Somebody who only works the till should not be greeted with a page about
+  // breakfast — the whole point of the guide adapting is that it says what
+  // your job is.
+  if (can('shop_sell') && !can('entry')) return 'Working the craft shop till';
+  if (can('mx_issue') && !can('entry')) return 'Issuing parts, and what the store holds';
+  if (can('bakery') && !can('entry')) return 'Reporting what came out of the oven';
   // Somebody who only walks the dorms should not be greeted with a page about
   // the kitchen.
   if (can('hk_check') && !can('entry')) {
@@ -241,6 +247,41 @@ const SECTIONS = [
         + 'in the reports until you submit.'),
       warn('If the internet drops', 'keep working. Your entries are kept on the tablet and sent as soon '
         + 'as you are back online. You will see “Saved on this device”.'),
+    ),
+  },
+
+  {
+    id: 'bakery',
+    title: 'Reporting what the bakery baked',
+    permission: 'bakery',
+    lead: 'After every production cycle. It takes about fifteen seconds.',
+    render: () => h('div',
+      h('p', 'Bread you bake goes onto the breakfast shelf the moment you report it, and the '
+        + 'kitchen draws against it in the morning. Report it after every cycle and the figures '
+        + 'stay true; report it at the end of the week and they never do.'),
+      steps(
+        h('span', h('strong', 'Open the link'), ' — bookmark it, it is the same one every time. '
+          + 'There is no PIN and nothing to remember.'),
+        h('span', h('strong', 'Check the cycle.'), ' It guesses from the time of day, so most of '
+          + 'the time it is already right. Tap another if it is not.'),
+        h('span', h('strong', 'Type how many came out'), ' beside each thing you baked. Leave '
+          + 'anything you did not bake blank.'),
+        h('span', h('strong', 'Press Send this cycle.'), ' A green box appears saying what went '
+          + 'in. That box is your confirmation — if it is not there, it did not send.'),
+      ),
+      note('You can send more than once a day.',
+        'That is the point. Morning, afternoon and night are three separate reports, and each '
+        + 'one adds to the shelf.'),
+      note('“Already sent” is there so you never have to guess.',
+        'It lists what has gone in today. If the last cycle is on it, do not send it again — '
+        + 'sending twice puts bread on the shelf that never existed, and the kitchen will '
+        + 'find the shortfall a week later with no way to explain it.'),
+      note('The link shows nothing about the hotel.',
+        'No costs, no guest numbers, no other screen. It is a form that adds bread and does '
+        + 'nothing else, which is why it is safe to keep on a phone in a bakery.'),
+      warn('If the link stops working, ask for a new one.',
+        'It can be revoked — when a phone is lost, or somebody leaves. Everything already sent '
+        + 'stays exactly where it is.'),
     ),
   },
 
@@ -630,6 +671,44 @@ const SECTIONS = [
   },
 
   {
+    id: 'bakery-setup',
+    title: 'Setting up the bakery link',
+    permission: 'stock',
+    lead: 'Bread you bake is stock arriving. The only difference from a delivery is that no money changed hands.',
+    render: () => h('div',
+      h('p', 'Book stock is opening plus what came in less what was used. Until now the only way '
+        + 'in was a delivery somebody paid for, so bread baked on the premises quietly went '
+        + 'missing — the morning sheet deducted loaves the system never saw arrive, and the '
+        + 'figure went negative every week.'),
+      steps(
+        h('span', h('strong', 'Mark what you bake.'), ' Under Setup, each bread item has a '
+          + '“Where it comes from” box. Set it to ', h('strong', '“Made in our bakery”'), '. Only '
+          + 'those items appear on the bakery form.'),
+        h('span', h('strong', 'Set what a unit costs you to make.'), ' That is the “Fallback unit '
+          + 'cost” on the same screen. Every bake is valued at it, so it is what the bread on the '
+          + 'shelf is worth and what the kitchen’s cost per guest is built from.'),
+        h('span', h('strong', 'Create a link'), ' under Users & data → Bakery links, name it after '
+          + 'whoever will use it, and send it to them. WhatsApp works well.'),
+      ),
+      warn('The link is shown once and never again.',
+        'Only a fingerprint of it is stored, so it cannot be looked up later. If one is lost or '
+        + 'goes to the wrong person, revoke it and issue another — that takes ten seconds, and '
+        + 'the production it already sent is untouched.'),
+      note('Where it turns up.',
+        'On the Stock screen, under “Baked in our own bakery”: every cycle, who reported it, and '
+        + 'what it added to the shelf. A wrong figure can be removed there and stock goes back to '
+        + 'what it was.'),
+      note('It is not a purchase.',
+        'Production is deliberately kept out of Purchases, which is money that actually went to '
+        + 'suppliers. Bread appears in stock and in cost per guest, and nowhere in your spend.'),
+      note('Somebody can have an account instead, or as well.',
+        'The “Baker” role opens the same form and nothing else. Managers have it too, for '
+        + 'covering a shift. The link exists because a bakery reporting four times a day should '
+        + 'not have to remember a PIN.'),
+    ),
+  },
+
+  {
     id: 'stock',
     title: 'Stock and the monthly count',
     permission: 'stock',
@@ -647,9 +726,41 @@ const SECTIONS = [
           + '“Group by category” instead keeps everything and bands the tables, with each band’s value '
           + 'on its heading. The copied order list matches whatever is on screen.'),
       ),
+      note('Narrowing the list, and grouping it.',
+        'Above the full stock table is a row of categories. Tap one and the list shows only that — '
+        + 'useful when you are standing in front of one shelf. “Group by category” instead breaks '
+        + 'the whole list into sections with what each is worth beside its name, which is the only '
+        + 'way to see that the dairy is half the store. The system remembers whether you like it '
+        + 'grouped; it deliberately does not remember a category, because coming back tomorrow to a '
+        + 'screen showing four items out of forty is how somebody concludes the data has gone.'),
       warn('Count the store once a month.', 'Everything else in this system is built on what people '
         + 'said they used. A physical count is the only thing that reveals waste, over-portioning and '
         + 'loss. The difference between the count and the book figure is the honest number.'),
+      h('h3', { style: { marginTop: '1.1rem' } }, 'A count is a claim. Accepting it is what makes it true.'),
+      steps(
+        h('span', h('strong', 'Count the shelf'), ' and enter the figures. You do not have to do the '
+          + 'whole store; enter what you counted.'),
+        h('span', h('strong', 'Nothing moves yet.'), ' The count goes into a queue with what the book '
+          + 'says beside it, and what the difference is worth.'),
+        h('span', h('strong', 'An administrator accepts or rejects it.'), ' Accepting corrects the '
+          + 'book to the counted figure. Rejecting leaves everything alone.'),
+      ),
+      warn('Whoever counts is never whoever decides.',
+        'Recounting a store is exactly the moment a shortfall could be quietly written off, so the '
+        + 'two jobs are kept apart. Anybody with the stock screen can record a count and see the '
+        + 'queue; only an administrator can accept one. The parts store and the craft shop work the '
+        + 'same way.'),
+      note('An accepted count wins from its date onwards.',
+        'Usage and deliveries after that date carry on from the counted figure. A delivery keyed in '
+        + 'late, dated before the count, does not unsettle it — you counted what was actually there, '
+        + 'and that stands.'),
+      note('Re-counting starts the decision again.',
+        'Changing a count for the same item on the same day puts it back in the queue, even if it '
+        + 'had already been accepted. An agreed figure cannot be edited underneath somebody.'),
+      note('Counts taken before this existed are waiting, not applied.',
+        'Every count recorded under the old rule — where a count never moved stock — is in the '
+        + 'queue as pending. That keeps today\u2019s figures exactly as they were and puts the '
+        + 'decision in front of a person, rather than silently rewriting months of history.'),
     ),
   },
 
@@ -772,6 +883,12 @@ const SECTIONS = [
           'What you bought in the period against what you actually issued.',
           'Buying much more than you use is cash going onto a shelf. Month after month, it is worth '
           + 'asking whether the order quantities are right.'],
+        ['Counts waiting for approval',
+          'Physical counts somebody has recorded, with what the book says, what was counted, and what '
+          + 'accepting each one would be worth. Only an administrator sees the buttons.',
+          'Read the money column before accepting. Accepting corrects the book to match the shelf from '
+          + 'that date on; rejecting leaves everything as it was. Either way the decision is kept with '
+          + 'the count, alongside who did the counting.'],
         ['Order list',
           'Everything below its restock level, with how much to order and roughly what it will cost.',
           'Negative stock never means the shelf is negative — it means a delivery was never recorded. '
@@ -790,6 +907,95 @@ const SECTIONS = [
         + '“Group by category” instead keeps everything and bands the tables, with each band’s value on '
         + 'its heading. Counts you have typed are kept while you move between categories, so one Save '
         + 'records the lot.'),
+    ),
+  },
+
+  {
+    id: 'mx-counting',
+    title: 'Counting the store',
+    permission: 'mx_stock',
+    lead: 'A count is a claim about the shelf. Accepting it is what makes it true.',
+    render: () => h('div',
+      h('p', 'The book works out what should be on the shelf: what you bought, less what was issued. '
+        + 'Reality drifts from that — things get taken without being recorded, a delivery is keyed in '
+        + 'twice, something breaks in the store. Counting is how you put it right.'),
+      note('Count one shelf at a time.',
+        'The parts list has a row of categories above it. Tap Plumbing and you get the plumbing, '
+        + 'which is usually one shelf — or press “Group by category” to keep everything on screen '
+        + 'in sections, each with how many parts it holds and what they are worth. Figures you have '
+        + 'already typed are kept when you switch between categories, so you can work round the '
+        + 'store and submit once at the end.'),
+      steps(
+        h('span', h('strong', 'Count the shelf'), ' and type the figures into the “Counted” column on '
+          + 'the Parts screen. You do not have to do the whole store; count what you counted.'),
+        h('span', h('strong', 'Save the count.'), ' Nothing moves yet. It goes into a queue with what '
+          + 'the book says beside it, and what the difference is worth.'),
+        h('span', h('strong', 'An administrator accepts or rejects it.'), ' Accepting corrects the book '
+          + 'to the counted figure. Rejecting leaves everything alone.'),
+      ),
+      warn('Whoever counts is never whoever decides.',
+        'Recounting a store is exactly the moment a shortfall could be quietly written off, so the two '
+        + 'jobs are deliberately kept apart. Anybody with the stock screen can record a count and see '
+        + 'the queue; only an administrator can accept one.'),
+      note('An accepted count wins from its date onwards.',
+        'Issues and deliveries after that date carry on from the counted figure. A delivery keyed in '
+        + 'late, dated before the count, does not unsettle it — you counted what was actually there, '
+        + 'and that stands.'),
+      note('Re-counting starts the decision again.',
+        'Changing a count for the same item on the same day puts it back in the queue, even if it had '
+        + 'already been accepted. An agreed figure cannot be edited underneath somebody.'),
+      can('users')
+        ? note('What you are agreeing to.', 'The confirmation says what the change is worth across '
+          + 'everything selected. A large shortfall is worth asking about before you accept it — '
+          + 'accepting is how it stops being a question and becomes the new truth.')
+        : null,
+    ),
+  },
+
+  {
+    id: 'mx-schedule',
+    title: 'Counting on a schedule',
+    permission: 'mx_stock',
+    lead: 'A count that happens when somebody remembers is a count that stops happening.',
+    render: () => h('div',
+      h('p', 'A schedule is a standing arrangement — count the store every month, and ask these '
+        + 'people. When the day comes round the system opens the count and tells them, by email and '
+        + 'in the bell at the top of the screen. Nobody has to keep a date in their head.'),
+      points(
+        h('span', h('strong', 'The parts screen tells you when one is yours.'), ' A band appears at '
+          + 'the top saying which count is due and whether it is late.'),
+        h('span', h('strong', 'Recording the count closes it.'), ' There is no separate box to tick — '
+          + 'counting was the whole point, so doing it is what finishes it.'),
+        h('span', h('strong', 'The next date is worked out from the date that was due,'), ' not from '
+          + 'the day you got round to it. A count done three days late does not push every future '
+          + 'count three days later.'),
+      ),
+      note('It still goes to an administrator afterwards.',
+        'A scheduled count is an ordinary count: the figures wait for approval exactly as they would '
+        + 'if somebody had counted off their own bat. The schedule decides when, not whether.'),
+      can('mx_setup')
+        ? h('div',
+          h('h3', { style: { marginTop: '1.1rem' } }, 'Setting one up'),
+          steps(
+            h('span', 'Open ', h('strong', 'Maintenance → Setup'), ' and find ',
+              h('strong', '“Scheduled stock counts”'), '.'),
+            h('span', h('strong', 'Name it and choose how often'), ' — weekly through to yearly. '
+              + 'The first date decides the rhythm from then on.'),
+            h('span', h('strong', 'Tick who is asked.'), ' Those people get it personally. Leave '
+              + 'everybody unticked and it goes to whoever runs the store.'),
+            h('span', h('strong', '“Ask now”'), ' asks for a count today without waiting for the '
+              + 'date, for when something has gone missing and you want to know where you stand.'),
+          ),
+          note('“Counts asked for” is the record.',
+            'Every occurrence, when it was due, who did it and how many items they counted. A count '
+            + 'that is not going to happen can be cancelled — it will be asked for again on the next '
+            + 'due date, and the cancellation stays visible.'),
+          warn('The due date fires once a day, early.',
+            'If nothing has been announced by the time you look, opening the parts screen or the '
+            + 'setup screen also notices an overdue count and announces it there and then. You '
+            + 'cannot miss one by being early.'),
+        )
+        : null,
     ),
   },
 
@@ -837,8 +1043,204 @@ const SECTIONS = [
       warn('Mistakes stop the whole file.', 'A price that is not a number or a name that appears '
         + 'twice is listed with its row number, and nothing imports until it is fixed. That is '
         + 'deliberate — a half-imported list is harder to sort out than one that never went in.'),
+      note('Removing several at once.', 'Tick the boxes down the left of either list and a bar '
+        + 'appears with “Remove selected”. The box in the heading takes the lot. Useful after a '
+        + 'bulk upload with a mistake in it, or when a floor closes.'),
       note('Removing something keeps its history.', 'A part or a room that has been used is retired '
-        + 'rather than deleted, so past months still add up to what they actually cost.'),
+        + 'rather than deleted, so past months still add up to what they actually cost. Remove a '
+        + 'mixed batch and it tells you how many of each: “4 removed, 1 retired”.'),
+    ),
+  },
+
+  {
+    id: 'shop-till',
+    title: 'Working the craft shop till',
+    permission: 'shop_sell',
+    lead: 'A customer is standing there. Everything on this screen is arranged around that.',
+    render: () => h('div',
+      steps(
+        h('span', h('strong', 'Tap what they are buying.'), ' It goes into the basket on the right — '
+          + 'at the bottom of the screen on a phone. Tap the same thing twice for two of them, or use '
+          + 'the − and + buttons.'),
+        h('span', h('strong', 'Choose cash or card.'), ' Those are the only two ways to pay.'),
+        h('span', h('strong', 'For cash, type what they hand over.'), ' The change appears '
+          + 'underneath in large green figures. The buttons beside the box are the notes people '
+          + 'usually hand over, so most sales need one tap rather than typing.'),
+        h('span', h('strong', 'Press Complete sale.'), ' A receipt appears with the change on it. '
+          + 'Print it if you want one; press Next customer and the till is clear.'),
+      ),
+      note('You do not have to type a cash amount.',
+        'Plenty of customers hand over the exact money. Leave the box empty and the sale still '
+        + 'goes through — the change line is there for when you need it, not as a hurdle.'),
+      note('A product with no price cannot be sold.',
+        'It appears greyed out saying “no price yet” rather than letting you tap it and fail with '
+        + 'a customer waiting. A manager sets the price under Craft shop → Setup.'),
+      note('The strip along the top is your drawer.',
+        'Cash today, card today, and the two added together. At the end of the day the cash figure '
+        + 'is what should be in the drawer — if it is not, the difference happened at this counter, '
+        + 'today, which is a far smaller thing to look into than a month gone missing.'),
+      warn('Nothing on this screen shows what anything cost the hotel.',
+        'You see what to charge, which is all the till needs. Cost prices and margins live behind '
+        + 'the reports, and a till screen gets read over shoulders.'),
+    ),
+  },
+
+  {
+    id: 'shop-sales',
+    title: 'The day’s sales, and putting one right',
+    permission: 'shop_sell',
+    lead: 'Every sale rung up, and what should be in the drawer against it.',
+    render: () => h('div',
+      h('p', 'The Sales screen lists every sale for a day: the time, what was in it, how it was '
+        + 'paid, the change given and who rang it up. Pick a different date at the top right to '
+        + 'look back.'),
+      points(
+        h('span', h('strong', 'Cash and card are separated'), ' because only one of the two can be '
+          + 'short. If the drawer does not match the cash figure, the difference happened here, on '
+          + 'this day.'),
+        h('span', h('strong', 'Receipt'), ' reprints any sale, in case somebody comes back with a '
+          + 'question about one.'),
+      ),
+      can('shop_reports')
+        ? h('div',
+          h('h3', { style: { marginTop: '1.1rem' } }, 'Voiding a sale'),
+          h('p', 'A sale rung up twice, or a customer who changed their mind: press Void, say why, '
+            + 'and it stops counting. The stock goes back on the shelf.'),
+          warn('Voiding is not deleting, and it never will be.',
+            'The sale stays on the list marked as voided, with your name and your reason against '
+            + 'it. A till a sale can quietly vanish from is a till that gets robbed — and the whole '
+            + 'value of stock control that starts at the counter is that the counter cannot be '
+            + 'edited afterwards.'),
+        )
+        : note('Putting a sale right needs a manager.',
+          'If you ring something up wrongly, tell whoever runs the shop. They can void it, which '
+          + 'takes it out of the takings and puts the stock back — and leaves a record of why.'),
+    ),
+  },
+
+  {
+    id: 'shop-money',
+    title: 'What the craft shop is making',
+    permission: 'shop_reports',
+    lead: 'Takings are half the story. The other half is what the stock cost you.',
+    render: () => h('div',
+      h('p', 'Every figure in the shop reports comes in a pair: what came in, and what the things '
+        + 'sold had cost. A takings number on its own is the one that lets a shop sell hard all '
+        + 'season and still lose money.'),
+      readings(
+        ['Takings', 'Everything customers paid, voided sales excluded.',
+          'Compare it with the period before — the report does that for you.'],
+        ['Margin', 'Takings less what the stock cost, in cash and as a percentage.',
+          'The percentage is the one to watch. A strong month at 15% is a lot of work for very '
+          + 'little; below 20% the report says so.'],
+        ['Average sale', 'Takings divided by the number of sales.',
+          'Rising takings with a flat average means more customers. Rising average means they are '
+          + 'buying the dearer pieces, which is usually the better news.'],
+        ['Cash and card', 'The same takings, split by how they were paid.',
+          'Reconcile the cash against the drawer daily. Card should match the machine.'],
+        ['Sitting still', 'Stock that has not sold at all in three months, valued at cost.',
+          'This is the usual problem in a craft shop, not running out. If it is more than about '
+          + 'two-fifths of the shelf, the report raises it.'],
+      ),
+      note('A price change never rewrites the past.',
+        'Every sale keeps the price it was actually rung up at. Putting the stole up from 400 to '
+        + '550 today leaves last month’s takings exactly as they were.'),
+      note('What something cost is worked out the same way as in the kitchen.',
+        'A weighted average across your deliveries. A piece sold on the 1st cost what it cost on '
+        + 'the 1st, whatever you paid for the next batch on the 5th.'),
+    ),
+  },
+
+  {
+    id: 'shop-setup',
+    title: 'Setting up the craft shop',
+    permission: 'shop_setup',
+    lead: 'Two numbers on every product: what it cost you, and what you charge.',
+    render: () => h('div',
+      points(
+        h('span', h('strong', 'Cost and price sit side by side,'), ' with the margin worked out '
+          + 'between them as you type. It turns red if the price is below the cost, which is the '
+          + 'mistake worth catching before anything sells.'),
+        h('span', h('strong', 'Restock level'), ' is where you want to be told to order more. Leave '
+          + 'it at zero for a one-off piece you will never see again.'),
+        h('span', h('strong', 'On the shelf now'), ' is what is there the day you start. Get it '
+          + 'roughly right and the stock figures are useful from the first week.'),
+        h('span', h('strong', 'Show on the till without searching'), ' puts it on the till’s front '
+          + 'page. Keep that to what actually sells regularly, or the screen stops being fast.'),
+        h('span', h('strong', 'Details'), ' are whatever tells two similar pieces apart — colour, '
+          + 'size, artist, material. They show under the name on the till and searching matches '
+          + 'them, so somebody can type “indigo” instead of scrolling.'),
+      ),
+      warn('A product with no price cannot be sold at all.',
+        'The till greys it out and the server refuses it. That is deliberate: a price of zero is '
+        + 'almost always a piece somebody never got round to pricing, and letting it through means '
+        + 'giving stock away at the counter.'),
+      note('Removing a product keeps its history.',
+        'Anything that has ever been sold is retired rather than deleted, so past months still add '
+        + 'up to what they actually took. Tick several and remove them together; it tells you how '
+        + 'many of each: “4 removed, 1 retired”.'),
+    ),
+  },
+
+  {
+    id: 'shop-people',
+    title: 'Staff for the craft shop only',
+    permission: 'users',
+    lead: 'Somebody hired to stand behind the till gets the till, and nothing else.',
+    render: () => h('div',
+      h('p', 'The craft shop has its own access keys, separate from the kitchen and the parts '
+        + 'store. Add the person under ', h('strong', 'Users & data'), ' and give them a role:'),
+      readings(
+        ['Shop assistant', 'The till and the day’s sales. Nothing else in the whole system.',
+          'This is the one for somebody who works the counter. They see selling prices, never what '
+          + 'anything cost you, and they cannot void a sale.'],
+        ['Shop manager', 'The till, the takings, the stock, the buying and the product list.',
+          'For whoever actually runs the shop. They can void a sale and set prices.'],
+      ),
+      note('Access is checked on the server, not just hidden from the menu.',
+        'An assistant who typed the address of the takings screen would still be refused. The menu '
+        + 'hiding it is a courtesy; the refusal is the rule.'),
+      note('You can mix and match.',
+        'The roles are a starting point. Tick individual sections on somebody’s account and they '
+        + 'get exactly those — a night porter who covers the shop but also records breakfast, for '
+        + 'instance.'),
+      warn('Counting the shop is still an administrator’s decision.',
+        'Anybody with the shop stock screen can count the shelf, but only somebody with Users & '
+        + 'data can accept the figures. Whoever counts is never whoever decides, in all three '
+        + 'stores, for the same reason.'),
+    ),
+  },
+
+  {
+    id: 'bell',
+    title: 'The bell, and what rings it',
+    lead: 'Everything the system wants to tell you, in one place at the top of every screen.',
+    render: () => h('div',
+      h('p', 'The 🔔 at the top right carries a red number when something is waiting. Open it, read '
+        + 'the list, and click any line to go straight to what it is about. What you see is decided '
+        + 'by what you are allowed to open — there is nothing in there you could not have found by '
+        + 'looking.'),
+      points(
+        h('span', h('strong', 'A breakfast sheet was submitted —'), ' who recorded it, how many '
+          + 'guests, and how many items. Goes to everybody who can read reports.'),
+        h('span', h('strong', 'A stock count is waiting for approval —'), ' from the kitchen, the '
+          + 'parts store or the shop. Goes to administrators, because they are the only people who '
+          + 'can accept one.'),
+        h('span', h('strong', 'A scheduled stock count has come round —'), ' goes to whoever was '
+          + 'asked to do it, and to whoever runs the parts store.'),
+        h('span', h('strong', 'The bakery reported a production cycle —'), ' goes to whoever can '
+          + 'see stock, since that is what it changes.'),
+      ),
+      note('Read is per person.', 'Clearing your bell clears yours. The manager next to you still '
+        + 'has theirs, so nothing gets marked as dealt with on somebody else’s behalf.'),
+      note('The last two are emailed as well.', 'Anybody with the matching access and an email '
+        + 'address on their account gets a copy, along with everybody on the daily-email list. The '
+        + 'bell needs no setup at all; email needs a sending key first.'),
+      can('users')
+        ? note('Turning it down.', 'Users & data → In-app notifications has a switch for the bell '
+          + 'itself and one for each of the two events. Switching the bell off stops them being '
+          + 'recorded at all, for everybody.')
+        : null,
     ),
   },
 
@@ -1045,7 +1447,7 @@ const SECTIONS = [
     id: 'alerts-setup',
     title: 'Being told when a day is submitted',
     permission: 'reports',
-    lead: 'Two ways to hear about it, and they do different jobs.',
+    lead: 'Three ways to hear about it, and they do different jobs.',
     render: () => h('div',
       points(
         h('span', h('strong', 'An alert on your phone or computer —'), ' arrives within seconds of a '
@@ -1053,6 +1455,8 @@ const SECTIONS = [
           + 'Tap it to open that day.'),
         h('span', h('strong', 'An email —'), ' the full morning summary with the analysis and '
           + 'anything flagged, which is the one worth keeping.'),
+        h('span', h('strong', 'The bell —'), ' waiting for you next time you open the system, whether '
+          + 'or not email or alerts have been set up. Nothing to turn on.'),
       ),
       h('h3', { style: { marginTop: '1.1rem' } }, 'Turning on the alert'),
       steps(

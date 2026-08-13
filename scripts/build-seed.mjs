@@ -55,7 +55,34 @@ CREATE INDEX IF NOT EXISTS idx_hk_checks_day ON hk_checks (day);
 CREATE INDEX IF NOT EXISTS idx_hk_checks_bed ON hk_checks (bed_id, day);
 CREATE INDEX IF NOT EXISTS idx_hk_checks_round ON hk_checks (round_id);
 CREATE INDEX IF NOT EXISTS idx_hk_checks_slot ON hk_checks (day, slot);`,
+
+  // 0009 creates it and 0013 adds `audience`. A fresh database wants the
+  // finished shape in one statement, because an ALTER cannot be pasted twice
+  // and these files are written to be.
+  app_notices: `CREATE TABLE IF NOT EXISTS app_notices (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  at       TEXT NOT NULL DEFAULT (datetime('now')),
+  kind     TEXT NOT NULL,
+  level    TEXT NOT NULL DEFAULT 'info',
+  title    TEXT NOT NULL,
+  body     TEXT,
+  link     TEXT,
+  day      TEXT,
+  slot     TEXT,
+  actor    TEXT,
+  audience TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_app_notices_at ON app_notices (id DESC);`,
 };
+
+/**
+ * The columns FINAL_TABLES already includes.
+ *
+ * Their ALTERs have to come out, or pasting the file a second time stops on
+ * "duplicate column name" — which is exactly the failure these files exist to
+ * avoid.
+ */
+const FOLDED_IN = [/^ALTER TABLE app_notices ADD COLUMN audience\b.*$/gm];
 
 /** Comments are stripped: the D1 console rejects a paste it reads as only those. */
 function statementsOf(file) {
@@ -87,6 +114,7 @@ function withFinalTables(sql) {
 function build(files, out) {
   let sql = files.map(statementsOf).join('\n');
   sql = withFinalTables(sql);
+  for (const pattern of FOLDED_IN) sql = sql.replace(pattern, '');
   // Re-attach the index lines that belong to the rebuilt tables.
   const indexes = Object.values(FINAL_TABLES)
     .flatMap((block) => block.split('\n').filter((l) => l.startsWith('CREATE INDEX')))
@@ -95,16 +123,35 @@ function build(files, out) {
 }
 
 const all = readdirSync('migrations').sort();
-const upgrades = (f) => !f.startsWith('0008');
+// 0007 creates the bed-check tables one way and 0008 rebuilds them another; a
+// fresh database only ever wants the second, which FINAL_TABLES supplies.
+const upgrades = (f) => f !== '0008_check_rounds.sql' && f !== '0008_notifications_and_stocktakes.sql';
 
-// The whole database a housekeeping-only site needs. 0005 and 0006 build the
-// maintenance parts store, which that site does not serve at all.
-build(all.filter((f) => upgrades(f) && !f.startsWith('0005') && !f.startsWith('0006')),
-  'seed/housekeeping-database.sql');
+/**
+ * Migrations that build a store the housekeeping site does not serve.
+ *
+ * Named rather than numbered on purpose. Two branches once numbered from 0007
+ * at the same time, so "everything except 0007" stopped meaning one thing —
+ * and a filter that silently included an ALTER against a table this seed never
+ * creates failed with "no such table" only after the file had been written.
+ */
+const OTHER_STORES = new Set([
+  '0005_maintenance.sql',
+  '0006_part_attributes.sql',
+  '0007_count_approval.sql',
+  '0010_craft_shop.sql',
+  '0011_bakery.sql',
+  // Alters the kitchen's stock_counts, which this site never reads.
+  '0012_breakfast_count_approval.sql',
+]);
+
+// The whole database a housekeeping-only site needs.
+build(all.filter((f) => upgrades(f) && !OTHER_STORES.has(f)), 'seed/housekeeping-database.sql');
 
 // Just the bed check's own tables, for adding them to a database that already
-// has the rest.
-build(all.filter((f) => upgrades(f) && f.startsWith('0007')), 'seed/housekeeping-tables.sql');
+// has the rest. Named, not numbered — the other 0007 belongs to the parts
+// store, and a prefix match once put an ALTER against mx_counts in here.
+build(['0007_housekeeping.sql'], 'seed/housekeeping-tables.sql');
 
 // The step from the one-check-a-day shape to three. The files above build the
 // destination and skip anything already there, which is exactly wrong for a
@@ -117,5 +164,12 @@ writeFileSync('seed/housekeeping-upgrade-rounds.sql', `${statementsOf('0008_chec
 // CREATE TABLE IF NOT EXISTS, so unlike the rounds upgrade it can be run as
 // often as you like.
 writeFileSync('seed/housekeeping-upgrade-notices.sql', `${statementsOf('0009_notices.sql')}\n`);
+
+// The audience column on a notice, for a database that already has the bell.
+// Its own file rather than an addition to the notices upgrade above: that one
+// is pure CREATE TABLE IF NOT EXISTS and can be run repeatedly, and folding an
+// ALTER into it would take that away.
+writeFileSync('seed/housekeeping-upgrade-notice-audience.sql',
+  `${statementsOf('0013_notice_audience.sql')}\n`);
 
 console.log('wrote the seed/ schema files');

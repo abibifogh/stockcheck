@@ -15,12 +15,14 @@ import { isMissingTable } from './http.js';
 
 const LEVELS = new Set(['info', 'warn', 'high']);
 
-export async function createNotice(db, { kind, level = 'info', title, body, link, day, slot, actor }) {
+export async function createNotice(db, {
+  kind, level = 'info', title, body, link, day, slot, actor, audience = null,
+}) {
   if (!kind || !title) return null;
   try {
     const row = await db.prepare(
-      `INSERT INTO app_notices (kind, level, title, body, link, day, slot, actor)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) RETURNING id`,
+      `INSERT INTO app_notices (kind, level, title, body, link, day, slot, actor, audience)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) RETURNING id`,
     ).bind(
       String(kind).slice(0, 40),
       LEVELS.has(level) ? level : 'info',
@@ -30,6 +32,11 @@ export async function createNotice(db, { kind, level = 'info', title, body, link
       day ?? null,
       slot ?? null,
       actor == null ? null : String(actor).slice(0, 120),
+      // A permission, or null for everybody. Held rather than resolved to a
+      // list of people, so a notice addressed to administrators still reaches
+      // somebody promoted tomorrow and stops reaching somebody demoted
+      // yesterday.
+      audience == null ? null : String(audience).slice(0, 40),
     ).first();
     return row?.id ?? null;
   } catch (err) {
@@ -47,7 +54,7 @@ export async function createNotice(db, { kind, level = 'info', title, body, link
  * per person rather than a row per person per notice — the only question ever
  * asked is "anything since I last looked".
  */
-export async function listNotices(db, userId, limit = 20) {
+export async function listNotices(db, userId, limit = 20, permissions = null) {
   try {
     const [rows, seen] = await Promise.all([
       db.prepare('SELECT * FROM app_notices ORDER BY id DESC LIMIT ?').bind(Math.min(limit, 100)).all(),
@@ -55,7 +62,14 @@ export async function listNotices(db, userId, limit = 20) {
     ]);
 
     const lastSeen = Number(seen?.last_id ?? 0);
-    const notices = rows.results ?? [];
+    // Filtered here rather than in SQL: `audience` may not exist yet on a
+    // database that has not run the upgrade, and a query naming a missing
+    // column fails outright where a missing property simply reads undefined.
+    // An unaddressed notice is for everybody, which is what every row written
+    // before this existed is.
+    const notices = (rows.results ?? []).filter(
+      (n) => !n.audience || !permissions || permissions.includes(n.audience),
+    );
 
     return {
       notices: notices.map((n) => ({ ...n, unread: n.id > lastSeen })),

@@ -30,15 +30,19 @@ const MIN_SAMPLE = 4;
  * read is faster and far less error-prone than incremental bookkeeping.
  */
 export async function loadDataset(db) {
-  const [categories, ingredients, serviceDays, usage, purchases, settings, counts] = await Promise.all([
-    db.prepare('SELECT * FROM categories ORDER BY sort_order, name').all(),
-    db.prepare('SELECT * FROM ingredients ORDER BY sort_order, name').all(),
-    db.prepare('SELECT * FROM service_days ORDER BY day').all(),
-    db.prepare('SELECT day, ingredient_id, qty FROM usage ORDER BY day').all(),
-    db.prepare('SELECT * FROM purchases ORDER BY day').all(),
-    db.prepare('SELECT key, value FROM settings').all(),
-    db.prepare('SELECT * FROM stock_counts ORDER BY day').all(),
-  ]);
+  const [categories, ingredients, serviceDays, usage, purchases, settings, counts, production]
+    = await Promise.all([
+      db.prepare('SELECT * FROM categories ORDER BY sort_order, name').all(),
+      db.prepare('SELECT * FROM ingredients ORDER BY sort_order, name').all(),
+      db.prepare('SELECT * FROM service_days ORDER BY day').all(),
+      db.prepare('SELECT day, ingredient_id, qty FROM usage ORDER BY day').all(),
+      db.prepare('SELECT * FROM purchases ORDER BY day').all(),
+      db.prepare('SELECT key, value FROM settings').all(),
+      db.prepare('SELECT * FROM stock_counts ORDER BY day').all(),
+      // Tolerated missing so every report still loads on an installation that
+      // has not run the bakery migration yet.
+      db.prepare('SELECT * FROM production ORDER BY day, id').all().catch(() => ({ results: [] })),
+    ]);
 
   return makeDataset({
     categories: categories.results ?? [],
@@ -48,6 +52,7 @@ export async function loadDataset(db) {
     purchases: purchases.results ?? [],
     settings: settings.results ?? [],
     stockCounts: counts.results ?? [],
+    production: production.results ?? [],
   });
 }
 
@@ -63,11 +68,43 @@ export function makeDataset(raw) {
     usageByDay.get(u.day).set(u.ingredient_id, Number(u.qty) || 0);
   }
 
+  // Bread baked on the premises arrives on the shelf exactly as a delivery
+  // does, so the ledger is given both. They are kept apart everywhere else:
+  // "what we spent with suppliers" must not quietly include loaves we made
+  // ourselves, and a production run has no invoice behind it.
+  const production = raw.production ?? [];
   const ledger = buildLedger({
     ingredients: raw.ingredients,
-    purchases: raw.purchases,
+    purchases: [
+      ...(raw.purchases ?? []),
+      ...production.map((p) => ({
+        day: p.day,
+        ingredient_id: p.ingredient_id,
+        qty: Number(p.qty) || 0,
+        unit_cost: Number(p.unit_cost) || 0,
+      })),
+    ],
     usage: raw.usage,
+    // Only a count an administrator has accepted moves the book. A pending one
+    // is reported as a difference and changes nothing, which is what makes the
+    // approval step mean anything.
+    //
+    // Applied as a true-up rather than a stored delta: the count sets the
+    // balance, so a delivery keyed in late and dated before the count cannot
+    // unsettle it. You counted what was actually there, and that stands.
+    counts: (raw.stockCounts ?? [])
+      .filter((c) => c.status === 'approved')
+      .map((c) => ({ day: c.day, ingredient_id: c.ingredient_id, qty: c.counted_qty })),
   });
+
+  // day -> ingredient -> qty produced. Wanted by the stock screen and the day
+  // report, and walking the list again each time would show on a free plan.
+  const producedByDay = new Map();
+  for (const p of production) {
+    if (!producedByDay.has(p.day)) producedByDay.set(p.day, new Map());
+    const perItem = producedByDay.get(p.day);
+    perItem.set(p.ingredient_id, (perItem.get(p.ingredient_id) ?? 0) + (Number(p.qty) || 0));
+  }
 
   const dataset = {
     ...raw,
@@ -78,6 +115,8 @@ export function makeDataset(raw) {
     categoryById,
     serviceByDay,
     usageByDay,
+    production,
+    producedByDay,
     ledger,
     _dayCache: new Map(),
   };
@@ -828,10 +867,23 @@ export function stockReport(ds, asOf) {
       const daysCover = dailyRate > 1e-9 ? round(stock / dailyRate, 1) : null;
       const par = Number(ing.par_level) || 0;
 
-      const count = ds.stockCounts
-        .filter((c) => c.ingredient_id === ing.id && c.day <= asOf)
+      // A pending count is the interesting one: a claim about the shelf the
+      // book has not accepted yet. Anything not decided counts as pending,
+      // including a row written before the approval step existed — a count
+      // that fell through a gap must show as waiting, never disappear.
+      const pending = ds.stockCounts
+        .filter((c) => c.ingredient_id === ing.id && c.day <= asOf
+          && c.status !== 'approved' && c.status !== 'rejected')
         .at(-1);
-      const variance = count ? round(Number(count.counted_qty) - ds.ledger.stockOn(ing.id, count.day), 3) : null;
+      const count = ds.stockCounts
+        .filter((c) => c.ingredient_id === ing.id && c.day <= asOf && c.status === 'approved')
+        .at(-1);
+
+      // For an accepted count the book has already been moved to match, so the
+      // difference worth showing is the one still outstanding.
+      const variance = pending
+        ? round(Number(pending.counted_qty) - ds.ledger.stockOn(ing.id, pending.day), 3)
+        : null;
 
       let status = 'ok';
       if (stock < 0) status = 'negative';
@@ -853,6 +905,8 @@ export function stockReport(ds, asOf) {
         suggestedOrder: par > 0 && stock < par ? round(par - stock, 2) : 0,
         lastCountDay: count?.day ?? null,
         lastCountQty: count ? round(Number(count.counted_qty), 3) : null,
+        pendingCountDay: pending?.day ?? null,
+        pendingCountQty: pending ? round(Number(pending.counted_qty), 3) : null,
         countVariance: variance,
         countVarianceValue: variance != null ? round(variance * unitCost, 2) : null,
         status,

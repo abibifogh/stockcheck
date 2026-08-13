@@ -355,6 +355,86 @@ test('a physical count is reported as a variance against the book balance', () =
   assert.equal(report.rows[0].countVariance, -10);
   assert.equal(report.rows[0].countVarianceValue, -20);
   assert.equal(report.shrinkage.length, 1);
+
+  // A count taken before the approval step existed carries no status at all,
+  // and must show as waiting rather than silently moving the book.
+  assert.equal(report.rows[0].stock, 80, 'the book has not moved');
+  assert.equal(report.rows[0].pendingCountQty, 70);
+});
+
+/** One counted ingredient, so the approval rule can be exercised. */
+function counted(status) {
+  return makeDataset({
+    categories: CATEGORIES,
+    ingredients: [{ ...INGREDIENTS[0], opening_stock: 100, par_level: 0, default_unit_cost: 2 }],
+    settings: [],
+    stockCounts: [{ id: 1, day: '2026-03-02', ingredient_id: 1, counted_qty: 70, status }],
+    serviceDays: [
+      { day: '2026-03-02', inhouse_guests: 50, outside_guests: 0, outsider_fee: 0 },
+      { day: '2026-03-03', inhouse_guests: 50, outside_guests: 0, outsider_fee: 0 },
+    ],
+    usage: [
+      { day: '2026-03-02', ingredient_id: 1, qty: 20 },
+      { day: '2026-03-03', ingredient_id: 1, qty: 5 },
+    ],
+    purchases: [],
+  });
+}
+
+test('a pending count changes nothing, and says what it would change', () => {
+  const row = stockReport(counted('pending'), '2026-03-03').rows[0];
+
+  assert.equal(row.stock, 75, '100 opening less 25 used — the count has not been applied');
+  assert.equal(row.pendingCountQty, 70);
+  assert.equal(row.countVariance, -10, 'measured against the book on the day it was counted');
+});
+
+test('an accepted count sets the shelf from its date onwards', () => {
+  const row = stockReport(counted('approved'), '2026-03-03').rows[0];
+
+  assert.equal(row.stock, 65, 'counted 70 on the 2nd, then 5 used on the 3rd');
+  assert.equal(row.lastCountDay, '2026-03-02');
+  assert.equal(row.countVariance, null, 'nothing outstanding once it is accepted');
+  assert.equal(row.pendingCountQty, null);
+});
+
+test('a rejected count leaves every figure exactly as it was', () => {
+  const rejected = stockReport(counted('rejected'), '2026-03-03').rows[0];
+  const never = stockReport(makeDataset({
+    categories: CATEGORIES,
+    ingredients: [{ ...INGREDIENTS[0], opening_stock: 100, par_level: 0, default_unit_cost: 2 }],
+    settings: [],
+    stockCounts: [],
+    serviceDays: [
+      { day: '2026-03-02', inhouse_guests: 50, outside_guests: 0, outsider_fee: 0 },
+      { day: '2026-03-03', inhouse_guests: 50, outside_guests: 0, outsider_fee: 0 },
+    ],
+    usage: [
+      { day: '2026-03-02', ingredient_id: 1, qty: 20 },
+      { day: '2026-03-03', ingredient_id: 1, qty: 5 },
+    ],
+    purchases: [],
+  }), '2026-03-03').rows[0];
+
+  assert.equal(rejected.stock, never.stock);
+  assert.equal(rejected.countVariance, null, 'rejected is decided, so nothing is outstanding');
+  assert.equal(rejected.pendingCountQty, null);
+});
+
+test('a delivery keyed in late cannot unsettle an accepted count', () => {
+  // Counted 70 on the 2nd. A delivery of 30 is then recorded, dated the 1st —
+  // before the count. The shelf was counted at 70 whatever the paperwork says.
+  const ds = makeDataset({
+    categories: CATEGORIES,
+    ingredients: [{ ...INGREDIENTS[0], opening_stock: 100, par_level: 0, default_unit_cost: 2 }],
+    settings: [],
+    stockCounts: [{ id: 1, day: '2026-03-02', ingredient_id: 1, counted_qty: 70, status: 'approved' }],
+    serviceDays: [{ day: '2026-03-02', inhouse_guests: 50, outside_guests: 0, outsider_fee: 0 }],
+    usage: [{ day: '2026-03-02', ingredient_id: 1, qty: 20 }],
+    purchases: [{ day: '2026-03-01', ingredient_id: 1, qty: 30, unit_cost: 2 }],
+  });
+
+  assert.equal(stockReport(ds, '2026-03-02').rows[0].stock, 70);
 });
 
 // --------------------------------------------------------------- hints ---
@@ -618,4 +698,112 @@ test('clearing the form never touches what was stored', () => {
   const insight = dailyInsights(ds, day);
   assert.equal(insight.today.guests, 50);
   assert.equal(insight.lines.length, 2);
+});
+
+// -------------------------------------------------- counts that move stock --
+
+test('an accepted count becomes the balance, whatever the book had worked out', () => {
+  const ledger = buildLedger({
+    ingredients: [{ ...INGREDIENTS[0], opening_stock: 100, default_unit_cost: 2 }],
+    purchases: [],
+    usage: [{ day: '2026-03-02', ingredient_id: 1, qty: 10 }],
+    counts: [{ day: '2026-03-05', ingredient_id: 1, qty: 80 }],
+  });
+
+  // Book said 90; the shelf held 80.
+  assert.equal(ledger.stockOn(1, '2026-03-04'), 90);
+  const entry = ledger.entry(1, '2026-03-05');
+  assert.equal(entry.closingStock, 80);
+  assert.equal(entry.adjustment, -10);
+  assert.equal(entry.adjustmentValue, -20);
+  // And it carries forward.
+  assert.equal(ledger.stockOn(1, '2026-03-20'), 80);
+});
+
+test('a count finding more than the book is applied just the same', () => {
+  const ledger = buildLedger({
+    ingredients: [{ ...INGREDIENTS[0], opening_stock: 50, default_unit_cost: 2 }],
+    purchases: [],
+    usage: [],
+    counts: [{ day: '2026-03-05', ingredient_id: 1, qty: 62 }],
+  });
+  const entry = ledger.entry(1, '2026-03-05');
+  assert.equal(entry.closingStock, 62);
+  assert.equal(entry.adjustment, 12);
+  assert.equal(entry.adjustmentValue, 24);
+});
+
+test('the count lands after that day’s deliveries and issues, not before', () => {
+  const ledger = buildLedger({
+    ingredients: [{ ...INGREDIENTS[0], opening_stock: 10, default_unit_cost: 1 }],
+    purchases: [{ day: '2026-03-05', ingredient_id: 1, qty: 100, unit_cost: 1 }],
+    usage: [{ day: '2026-03-05', ingredient_id: 1, qty: 20 }],
+    counts: [{ day: '2026-03-05', ingredient_id: 1, qty: 85 }],
+  });
+  const entry = ledger.entry(1, '2026-03-05');
+  // 10 + 100 − 20 = 90 on the book; counted 85.
+  assert.equal(entry.purchasedQty, 100);
+  assert.equal(entry.usedQty, 20);
+  assert.equal(entry.adjustment, -5);
+  assert.equal(entry.closingStock, 85);
+});
+
+test('a delivery back-dated before a count does not unsettle the counted figure', () => {
+  // The reason the count sets the balance instead of storing a difference:
+  // this delivery is keyed in late, dated before the count.
+  const ledger = buildLedger({
+    ingredients: [{ ...INGREDIENTS[0], opening_stock: 100, default_unit_cost: 2 }],
+    purchases: [{ day: '2026-03-03', ingredient_id: 1, qty: 40, unit_cost: 2 }],
+    usage: [],
+    counts: [{ day: '2026-03-05', ingredient_id: 1, qty: 80 }],
+  });
+  // The shelf still holds what was counted, not 140.
+  assert.equal(ledger.stockOn(1, '2026-03-05'), 80);
+  assert.equal(ledger.entry(1, '2026-03-05').adjustment, -60);
+});
+
+test('a later count supersedes an earlier one', () => {
+  const ledger = buildLedger({
+    ingredients: [{ ...INGREDIENTS[0], opening_stock: 100, default_unit_cost: 1 }],
+    purchases: [],
+    usage: [{ day: '2026-03-10', ingredient_id: 1, qty: 5 }],
+    counts: [
+      { day: '2026-03-05', ingredient_id: 1, qty: 80 },
+      { day: '2026-03-15', ingredient_id: 1, qty: 60 },
+    ],
+  });
+  assert.equal(ledger.stockOn(1, '2026-03-05'), 80);
+  assert.equal(ledger.stockOn(1, '2026-03-10'), 75); // 80 − 5
+  assert.equal(ledger.stockOn(1, '2026-03-15'), 60);
+  assert.equal(ledger.entry(1, '2026-03-15').adjustment, -15);
+});
+
+test('counting does not disturb the unit cost, only the quantity', () => {
+  const ledger = buildLedger({
+    ingredients: [{ ...INGREDIENTS[0], opening_stock: 100, default_unit_cost: 2 }],
+    purchases: [{ day: '2026-03-02', ingredient_id: 1, qty: 100, unit_cost: 4 }],
+    usage: [],
+    counts: [{ day: '2026-03-05', ingredient_id: 1, qty: 50 }],
+  });
+  // Blended to 3.00 by the delivery; a count is not a price.
+  assert.equal(ledger.unitCostOn(1, '2026-03-02'), 3);
+  assert.equal(ledger.unitCostOn(1, '2026-03-05'), 3);
+  assert.equal(ledger.entry(1, '2026-03-05').unitCost, 3);
+  assert.equal(ledger.closing(1).value, 150); // 50 × 3
+});
+
+test('with no counts passed, every figure is exactly as before', () => {
+  const inputs = {
+    ingredients: [{ ...INGREDIENTS[0], opening_stock: 100, default_unit_cost: 2 }],
+    purchases: [{ day: '2026-03-02', ingredient_id: 1, qty: 100, unit_cost: 4 }],
+    usage: [{ day: '2026-03-03', ingredient_id: 1, qty: 30 }],
+  };
+  const before = buildLedger(inputs);
+  const after = buildLedger({ ...inputs, counts: [] });
+
+  for (const day of ['2026-03-02', '2026-03-03']) {
+    assert.deepEqual(before.entry(1, day), after.entry(1, day));
+    assert.equal(before.entry(1, day).adjustment, 0);
+  }
+  assert.equal(before.stockOn(1, '2026-03-03'), 170);
 });

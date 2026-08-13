@@ -18,7 +18,7 @@ import { round } from '../util/stats.js';
  * the negative number instead of clamping it — it is a signal worth surfacing,
  * and the stock report flags it.
  */
-export function buildLedger({ ingredients, purchases = [], usage = [] }) {
+export function buildLedger({ ingredients, purchases = [], usage = [], counts = [] }) {
   const byIngredient = new Map();
 
   for (const ing of ingredients) {
@@ -35,7 +35,7 @@ export function buildLedger({ ingredients, purchases = [], usage = [] }) {
     if (!rec) return null;
     let ev = rec.events.get(day);
     if (!ev) {
-      ev = { purchases: [], used: 0, hasUsage: false };
+      ev = { purchases: [], used: 0, hasUsage: false, countedQty: null };
       rec.events.set(day, ev);
     }
     return ev;
@@ -52,6 +52,19 @@ export function buildLedger({ ingredients, purchases = [], usage = [] }) {
       ev.used += Number(u.qty) || 0;
       ev.hasUsage = true;
     }
+  }
+
+  // An accepted physical count is the last word on its day: whatever the book
+  // had worked out, the shelf is what somebody actually counted.
+  //
+  // Applied as a true-up rather than as a stored difference. A difference
+  // calculated once goes stale the moment anybody back-dates a delivery before
+  // the count, and stock quietly stops matching the figure that was counted.
+  // Setting the balance means the count keeps winning no matter what arrives
+  // later with an earlier date.
+  for (const c of counts) {
+    const ev = eventFor(c.ingredient_id, c.day);
+    if (ev) ev.countedQty = Number(c.qty) || 0;
   }
 
   for (const rec of byIngredient.values()) {
@@ -89,6 +102,15 @@ export function buildLedger({ ingredients, purchases = [], usage = [] }) {
       const usedQty = ev.used;
       const usedCost = usedQty * avgCost;
       stock -= usedQty;
+
+      // The count lands after the day's movements, because that is when
+      // somebody walks to the shelf and looks.
+      let adjustment = 0;
+      if (ev.countedQty != null) {
+        adjustment = ev.countedQty - stock;
+        stock = ev.countedQty;
+      }
+
       // The average is the only thing carried forward, so value is always
       // derived from it rather than accumulated separately and drifting.
       value = stock * avgCost;
@@ -101,6 +123,11 @@ export function buildLedger({ ingredients, purchases = [], usage = [] }) {
         usedCost: round(usedCost, 4),
         unitCost: round(avgCost, 4),
         closingStock: round(stock, 4),
+        // What the count moved the balance by, and what that was worth. Zero
+        // when nothing was counted, so the shape of an entry never changes.
+        adjustment: round(adjustment, 4),
+        adjustmentValue: round(adjustment * avgCost, 2),
+        countedQty: ev.countedQty,
         hasUsage: ev.hasUsage,
       });
     }

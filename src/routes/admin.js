@@ -279,6 +279,10 @@ export async function getNotifications(ctx) {
   return json({
     enabled: settings.notify_on_submit === '1',
     pushEnabled: settings.push_on_submit !== '0',
+    // The bell, and the two events that are not the breakfast sheet.
+    inAppEnabled: settings.notify_in_app !== '0',
+    countPendingEnabled: settings.notify_count_pending !== '0',
+    stocktakeDueEnabled: settings.notify_stocktake_due !== '0',
     devices: devices.results ?? [],
     pushLog: pushLog.results ?? [],
     recipients: parseRecipients(settings.notify_recipients),
@@ -324,9 +328,20 @@ export async function updateNotifications(ctx) {
     throw badRequest('The site address should start with https://');
   }
 
-  const enabled = bool(body.enabled, true) ? '1' : '0';
-  const pushEnabled = bool(body.pushEnabled, true) ? '1' : '0';
-  const hkEnabled = bool(body.hkEnabled, true) ? '1' : '0';
+  // This screen is several cards writing to one endpoint. A switch the sender
+  // did not mention keeps whatever it already had — otherwise saving the email
+  // card would quietly turn phone alerts back on for somebody who had switched
+  // them off, and now the bed-check switch alongside them.
+  const current = await ctx.db.prepare('SELECT key, value FROM settings').all();
+  const stored = Object.fromEntries((current.results ?? []).map((r) => [r.key, r.value]));
+  const keep = (key, offValue = '0') => stored[key] !== offValue;
+
+  const enabled = bool(body.enabled, stored.notify_on_submit === '1') ? '1' : '0';
+  const pushEnabled = bool(body.pushEnabled, keep('push_on_submit')) ? '1' : '0';
+  const hkEnabled = bool(body.hkEnabled, keep('hk_notify_on_submit')) ? '1' : '0';
+  const inApp = bool(body.inAppEnabled, keep('notify_in_app')) ? '1' : '0';
+  const countPending = bool(body.countPendingEnabled, keep('notify_count_pending')) ? '1' : '0';
+  const stocktakeDue = bool(body.stocktakeDueEnabled, keep('notify_stocktake_due')) ? '1' : '0';
 
   await ctx.db.batch([
     setting(ctx.db, 'notify_on_submit', enabled),
@@ -334,6 +349,9 @@ export async function updateNotifications(ctx) {
     setting(ctx.db, 'email_from', from),
     setting(ctx.db, 'site_url', siteUrl.replace(/\/+$/, '')),
     setting(ctx.db, 'push_on_submit', pushEnabled),
+    setting(ctx.db, 'notify_in_app', inApp),
+    setting(ctx.db, 'notify_count_pending', countPending),
+    setting(ctx.db, 'notify_stocktake_due', stocktakeDue),
     setting(ctx.db, 'hk_notify_on_submit', hkEnabled),
     setting(ctx.db, 'hk_notify_recipients', JSON.stringify(hkRecipients)),
   ]);
@@ -675,7 +693,7 @@ export async function deleteLock(ctx, id) {
  */
 export async function listNoticesRoute(ctx) {
   const limit = Math.min(Number(ctx.url.searchParams.get('limit')) || 20, 100);
-  return json(await listNotices(ctx.db, ctx.session.user.id, limit));
+  return json(await listNotices(ctx.db, ctx.session.user.id, limit, ctx.session.permissions));
 }
 
 export async function markNoticesSeen(ctx) {

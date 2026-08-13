@@ -24,6 +24,11 @@ on:
         options:
           # Adds the in-app notices tables. Safe to run repeatedly.
           - housekeeping-upgrade-notices.sql
+          # Lets a notice name who it is for, so a bed check reaches everybody
+          # and a stock count waiting for approval reaches administrators. Run
+          # once — it adds a column, and adding it twice is an error that means
+          # the work is already done.
+          - housekeeping-upgrade-notice-audience.sql
           # One check a day to three. Run once — it adds a column, and adding
           # it twice is an error that means the work is already done.
           - housekeeping-upgrade-rounds.sql

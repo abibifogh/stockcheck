@@ -58,6 +58,12 @@ export function makeDataset(raw) {
       day: p.day, ingredient_id: p.item_id, qty: p.qty, unit_cost: p.unit_cost,
     })),
     usage: issues.map((i) => ({ day: i.day, ingredient_id: i.item_id, qty: i.qty })),
+    // Only counts an administrator has accepted move the book. A pending one
+    // is reported as a difference and changes nothing, which is what makes the
+    // approval step mean something.
+    counts: (raw.counts ?? [])
+      .filter((c) => c.status === 'approved')
+      .map((c) => ({ day: c.day, ingredient_id: c.item_id, qty: c.counted_qty })),
   });
 
   const days = [...new Set(issues.map((i) => i.day))].sort();
@@ -265,8 +271,24 @@ export function stockReport(ds, asOf) {
     const daysCover = dailyRate > 1e-9 ? round(stock / dailyRate, 0) : null;
     const par = Number(item.par_level) || 0;
 
-    const count = ds.counts.filter((c) => c.item_id === item.id && c.day <= asOf).at(-1);
-    const variance = count ? round(Number(count.counted_qty) - ds.ledger.stockOn(item.id, count.day), 3) : null;
+    // A pending count is the interesting one: it is a claim about the shelf
+    // that the book has not accepted yet.
+    // Anything not yet decided counts as pending, including a row written
+    // before the approval step existed. A count that fell through a gap must
+    // show up as waiting, never disappear.
+    const pending = ds.counts
+      .filter((c) => c.item_id === item.id && c.day <= asOf
+        && c.status !== 'approved' && c.status !== 'rejected')
+      .at(-1);
+    const count = ds.counts
+      .filter((c) => c.item_id === item.id && c.day <= asOf && c.status === 'approved')
+      .at(-1);
+
+    // For an approved count the book has already been moved to match, so the
+    // difference worth showing is the one still outstanding.
+    const variance = pending
+      ? round(Number(pending.counted_qty) - stock, 3)
+      : null;
 
     let status = 'ok';
     if (stock < 0) status = 'negative';
@@ -290,6 +312,8 @@ export function stockReport(ds, asOf) {
       suggestedOrder: par > 0 && stock < par ? round(par - stock, 2) : 0,
       suggestedOrderValue: par > 0 && stock < par ? round((par - stock) * unitCost, 2) : 0,
       lastCountDay: count?.day ?? null,
+      pendingCountDay: pending?.day ?? null,
+      pendingCountQty: pending ? round(Number(pending.counted_qty), 3) : null,
       countVariance: variance,
       countVarianceValue: variance != null ? round(variance * unitCost, 2) : null,
       status,
