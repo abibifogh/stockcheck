@@ -21,7 +21,10 @@ window.addEventListener('pagehide', () => activeFlush?.());
 window.addEventListener('visibilitychange', () => { if (document.hidden) activeFlush?.(); });
 
 export async function renderHkCheck(params = {}) {
-  const data = await api.hkBootstrap(params.day);
+  const data = await api.hkBootstrap({
+    ...(params.day ? { day: params.day } : {}),
+    ...(params.slot ? { slot: params.slot } : {}),
+  });
   const host = h('div.hk-page');
 
   // bedId -> { state, nameTag, note }. Seeded from what is already recorded, so
@@ -88,6 +91,7 @@ export async function renderHkCheck(params = {}) {
     try {
       await api.hkSaveChecks({
         day: data.day,
+        slot: data.slot,
         checks: batch.map((bedId) => {
           const answer = answers.get(bedId);
           return {
@@ -354,7 +358,9 @@ export async function renderHkCheck(params = {}) {
     }
 
     submitBtn.disabled = !answered;
-    submitBtn.textContent = data.submitted ? 'Submit again' : 'Submit the round';
+    submitBtn.textContent = data.submitted
+      ? 'Submit again'
+      : `Submit the ${(here?.short ?? 'round').toLowerCase()} check`;
   }
 
   // ------------------------------------------------------------- submitting --
@@ -377,7 +383,8 @@ export async function renderHkCheck(params = {}) {
     if (missing > 0) {
       const ok = window.confirm(
         `${missing} ${missing === 1 ? 'bed has' : 'beds have'} no answer yet. `
-        + 'They will be reported as not checked. Submit anyway?',
+        + `They will be reported as not checked in the ${(here?.short ?? 'this').toLowerCase()} `
+        + 'check. Submit anyway?',
       );
       if (!ok) return;
     }
@@ -385,14 +392,14 @@ export async function renderHkCheck(params = {}) {
     event.target.disabled = true;
     event.target.textContent = 'Submitting…';
     try {
-      const result = await api.hkSubmitRound(data.day);
+      const result = await api.hkSubmitRound(data.day, data.slot);
       toast(
         result.findings
           ? `Round submitted — ${result.findings} ${result.findings === 1 ? 'bed needs' : 'beds need'} attention`
           : 'Round submitted — every bed checked was as it should be',
         result.findings ? '' : 'good',
       );
-      mount(host, await renderHkCheck({ day: data.day }));
+      mount(host, await renderHkCheck({ day: data.day, slot: data.slot }));
     } catch (err) {
       toast(err.message, 'bad');
       event.target.disabled = false;
@@ -407,24 +414,49 @@ export async function renderHkCheck(params = {}) {
   // redraw and leave stale rounds listening.
   activeFlush = () => { if (pending.size) flush(); };
 
+  // Which of the three this is. Read by the footer and the submit button, so it
+  // has to exist before the first draw.
+  const here = (data.rounds ?? []).find((r) => r.slot === data.slot);
+
   drawRooms();
   drawFooter();
 
   mount(host,
     h('div.page-head',
       h('div',
-        h('h1', 'Bed check'),
+        h('h1', here?.label ?? 'Bed check'),
         h('div.sub', `${fmtDay(data.day, { withYear: true })}`
+          + `${here?.by ? ` · ${here.by}` : ''}`
           + `${data.submitted ? ` · submitted by ${data.round?.submittedBy ?? 'someone'}` : ''}`),
       ),
       h('div.btn-row',
         data.day !== data.today
           ? h('button.btn-sm', {
-            onclick: async () => mount(host, await renderHkCheck({ day: data.today })),
+            onclick: async () => mount(host, await renderHkCheck({ day: data.today, slot: data.slot })),
           }, 'Back to today')
           : null,
       ),
     ),
+
+    // Three checks a day, each its own report. The one the clock is in opens
+    // by default, so the ordinary case needs no thought at all.
+    h('div.hk-slots', (data.rounds ?? []).map((r) => h('button.hk-slot', {
+      class: `hk-slot${r.slot === data.slot ? ' on' : ''}${r.submitted ? ' done' : ''}`,
+      onclick: async () => {
+        if (r.slot === data.slot) return;
+        clearTimeout(saveTimer);
+        await flush();
+        mount(host, await renderHkCheck({ day: data.day, slot: r.slot }));
+      },
+    },
+      h('span.hk-slot-name', r.short),
+      h('span.hk-slot-by', r.by),
+      h('span.hk-slot-state', r.submitted
+        ? `✓ ${r.submittedBy ?? 'submitted'}`
+        : r.started
+          ? `${r.checked} of ${r.expected} beds`
+          : 'not started'),
+    ))),
 
     data.submitted
       ? h('div.alert.info',
@@ -439,9 +471,9 @@ export async function renderHkCheck(params = {}) {
 
     card('Earlier rounds', { note: 'Open one to correct something' },
       h('div.hk-recent', (data.recent ?? []).map((r) => h('button.btn-sm', {
-        class: r.day === data.day ? 'btn-sm btn-primary' : 'btn-sm',
-        onclick: async () => mount(host, await renderHkCheck({ day: r.day })),
-      }, fmtDay(r.day), r.submittedAt ? ' ✓' : ' …')))),
+        class: r.day === data.day && r.slot === data.slot ? 'btn-sm btn-primary' : 'btn-sm',
+        onclick: async () => mount(host, await renderHkCheck({ day: r.day, slot: r.slot })),
+      }, `${fmtDay(r.day)} · ${r.slotLabel}`, r.submittedAt ? ' ✓' : ' …')))),
 
     h('div.hk-footer',
       h('div.hk-footer-inner',

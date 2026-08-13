@@ -161,11 +161,14 @@ export const api = {
   mxImportParts: (body) => request('/api/mx/items/import', { method: 'POST', body }),
 
   // ----------------------------------------------------------- housekeeping --
-  hkBootstrap: (day) => request(`/api/hk/bootstrap${day ? `?day=${day}` : ''}`),
+  hkBootstrap: (params = {}) => request(`/api/hk/bootstrap?${new URLSearchParams(params)}`),
   hkSaveChecks: (body) => request('/api/hk/checks', { method: 'POST', body }),
-  hkSubmitRound: (day, body = {}) => request(`/api/hk/rounds/${day}/submit`, { method: 'POST', body }),
+  hkSubmitRound: (day, slot, body = {}) =>
+    request(`/api/hk/rounds/${day}/${slot}/submit`, { method: 'POST', body }),
   hkRounds: (limit = 30) => request(`/api/hk/rounds?limit=${limit}`),
-  hkDay: (day) => request(`/api/hk/day${day ? `?day=${day}` : ''}`),
+  hkDay: (day, slot) => request(`/api/hk/day?${new URLSearchParams({
+    ...(day ? { day } : {}), ...(slot ? { slot } : {}),
+  })}`),
 
   hkOverview: () => request('/api/hk/overview'),
   hkReport: (from, to) => request(`/api/hk/report?${new URLSearchParams({

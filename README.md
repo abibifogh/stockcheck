@@ -65,7 +65,11 @@ A separate round, with its own screens, its own permissions and its own email.
 It answers one question the breakfast side cannot: **is every occupied bed in
 the dorms labelled, and is anything occupied that should not be?**
 
-- **Two questions per bed.** The housekeeper opens a room, taps **Free** or
+- **Three checks a day, each its own report.** Reception check when they open
+  up, housekeeping check again while the rooms are being done, and reception
+  check once more before closing. Each is submitted and emailed on its own, by
+  the people who did it. The screen opens on whichever check the clock is in.
+- **Two questions per bed.** The person checking opens a room, taps **Free** or
   **Occupied** for each bed, and — only for an occupied bed — answers **does it
   have a name tag?** Any bed can carry a note. Nothing else is asked, and
   nothing is typed unless there is something to say.
@@ -75,8 +79,8 @@ the dorms labelled, and is anything occupied that should not be?**
   signal drops in a stairwell, and are pushed if the phone is locked mid-round.
   The round is finished with one **Submit** at the end, which is what sends the
   email.
-- **One round per day, shared.** Two housekeepers can walk different floors at
-  the same time; every bed records who answered for it.
+- **Shared while it runs.** Two people can fill in different parts of the same
+  check at once; every bed records who answered for it.
 - **An occupied bed is not saved until the tag question is answered.** It stays
   highlighted and is counted in the bar at the foot of the screen, because "we
   did not finish this bed" and "this bed was fine" must never look alike.
@@ -85,7 +89,8 @@ The manager's side is built around the findings rather than the activity:
 
 | View | Answers |
 |---|---|
-| **Dorms** | Where the property stands today: rooms as coloured chips, today's findings in full, and the last 30 days of untagged beds. |
+| **Dorms** | Where the property stands today: which of the three checks are in, rooms as coloured chips, what is still outstanding, and the last 30 days. |
+| **Found and fixed** | Whether a finding survived its day. Checking three times only pays if somebody acts in between, and this is the panel that says whether they did. |
 | **Report** | A period, against the period before it — untagged beds, tag compliance, unexpected occupancy, coverage, and who walked what. Exports to CSV. |
 | **Every room, every day** | A room-by-day grid, one square per room per day, coloured by the worst thing found. Grey means nobody checked, which is treated as loudly as red. |
 | **A room's own page** | Every check ever made in one dorm, bed by bed, with its notes and its history. |
@@ -99,11 +104,20 @@ round — somebody who knows the expected answer before they look is not checkin
 — and every check keeps its own copy of what was expected at the time, so
 editing tonight's roster cannot rewrite what last Tuesday found.
 
-**The email** goes out the moment a round is submitted, to its own list of
-recipients (falling back to the daily list if you have not set one). It leads
-with every untagged bed by room and bed name, because a count is not something
+**The email** goes out the moment a check is submitted — three times a day,
+named for the check it reports — to its own list of recipients. It leads with
+every untagged bed by room and bed name, because a count is not something
 anybody can act on, then the unexpected occupancy, the rooms with gaps, and
-whatever housekeeping wrote down.
+whatever was written down. Underneath it shows the day's other two checks and
+what is still outstanding after the last one to look.
+
+**Why three, and what the system does with them.** A bed found untagged at
+eight and tagged by ten was dealt with; the same bed untagged at eight, at
+noon and at ten at night was not. Only the second kind is worth anybody's
+morning, so every report separates them — and a finding made by the day's
+*last* check is never counted against anyone, because nobody had the chance.
+Silence is not a fix either: a bed no later check looked at again stays
+unresolved rather than quietly clearing itself.
 
 ### For the administrator
 

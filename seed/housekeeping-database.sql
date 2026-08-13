@@ -209,18 +209,20 @@ CREATE TABLE IF NOT EXISTS hk_beds (
 CREATE INDEX IF NOT EXISTS idx_hk_beds_room ON hk_beds (room_id, sort_order);
 CREATE TABLE IF NOT EXISTS hk_rounds (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  day          TEXT NOT NULL UNIQUE,
+  day          TEXT NOT NULL,
+  slot         TEXT NOT NULL DEFAULT 'morning',
   started_at   TEXT NOT NULL DEFAULT (datetime('now')),
   submitted_at TEXT,
   submitted_by TEXT,
   note         TEXT,
-  updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+  updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (day, slot)
 );
-CREATE INDEX IF NOT EXISTS idx_hk_rounds_day ON hk_rounds (day);
 CREATE TABLE IF NOT EXISTS hk_checks (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   round_id       INTEGER NOT NULL REFERENCES hk_rounds (id) ON DELETE CASCADE,
   day            TEXT NOT NULL,
+  slot           TEXT NOT NULL DEFAULT 'morning',
   bed_id         INTEGER NOT NULL REFERENCES hk_beds (id) ON DELETE CASCADE,
   state          TEXT NOT NULL,
   name_tag       INTEGER,
@@ -230,9 +232,6 @@ CREATE TABLE IF NOT EXISTS hk_checks (
   at             TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE (round_id, bed_id)
 );
-CREATE INDEX IF NOT EXISTS idx_hk_checks_day ON hk_checks (day);
-CREATE INDEX IF NOT EXISTS idx_hk_checks_bed ON hk_checks (bed_id, day);
-CREATE INDEX IF NOT EXISTS idx_hk_checks_round ON hk_checks (round_id);
 INSERT OR IGNORE INTO settings (key, value) VALUES
   ('hk_enabled', '1'),
   ('hk_notify_on_submit', '1'),
@@ -254,3 +253,8 @@ INSERT OR IGNORE INTO hk_beds (room_id, label, sort_order)
   SELECT id, 'Bed 5', 50 FROM hk_rooms WHERE name IN ('Dorm A', 'Dorm B', 'Dorm C', 'Dorm D');
 INSERT OR IGNORE INTO hk_beds (room_id, label, sort_order)
   SELECT id, 'Bed 6', 60 FROM hk_rooms WHERE name IN ('Dorm A', 'Dorm B', 'Dorm C', 'Dorm D');
+CREATE INDEX IF NOT EXISTS idx_hk_rounds_day ON hk_rounds (day, slot);
+CREATE INDEX IF NOT EXISTS idx_hk_checks_day ON hk_checks (day);
+CREATE INDEX IF NOT EXISTS idx_hk_checks_bed ON hk_checks (bed_id, day);
+CREATE INDEX IF NOT EXISTS idx_hk_checks_round ON hk_checks (round_id);
+CREATE INDEX IF NOT EXISTS idx_hk_checks_slot ON hk_checks (day, slot);

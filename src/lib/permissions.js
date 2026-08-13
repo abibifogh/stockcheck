@@ -57,6 +57,12 @@ export const ROLES = [
     defaults: ['mx_issue', 'mx_reports', 'mx_stock', 'mx_purchases', 'mx_setup'],
   },
   {
+    key: 'receptionist',
+    label: 'Receptionist',
+    detail: 'Records the morning and evening bed checks from the desk. Sees nothing else.',
+    defaults: ['hk_check'],
+  },
+  {
     key: 'housekeeper',
     label: 'Housekeeper',
     detail: 'Walks the dorms and records the beds. Sees nothing else.',

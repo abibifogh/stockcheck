@@ -2,7 +2,8 @@ import {
   badRequest, csvResponse, json, notFound, num, readJson, rethrowConstraint, str,
 } from '../lib/http.js';
 import {
-  dayReport, exportRows, loadDataset, overview as overviewReport, periodReport, roomDetail,
+  SLOTS, dayOverview, dayReport, exportRows, isSlot, loadDataset,
+  overview as overviewReport, periodReport, roomDetail, slotForTime, slotOf,
 } from '../lib/housekeeping.js';
 import { notifyRoundSubmitted } from '../lib/email.js';
 import { addDays, diffDays, isDay, todayIn } from '../util/dates.js';
@@ -34,6 +35,21 @@ function seesRoster(ctx) {
     || ctx.session.permissions.includes('hk_setup');
 }
 
+/**
+ * Which of the three checks a request means.
+ *
+ * Defaulted from the clock in the property's own timezone rather than the
+ * browser's, so a manager looking from another country opens the round the
+ * hostel is actually in the middle of.
+ */
+function readSlot(value, timezone) {
+  if (isSlot(value)) return value;
+  const hour = Number(new Intl.DateTimeFormat('en-GB', {
+    timeZone: timezone, hour: '2-digit', hour12: false,
+  }).format(new Date()));
+  return slotForTime(Number.isFinite(hour) ? hour : 12);
+}
+
 function readDay(value, fallback) {
   if (value == null || value === '') return fallback;
   const day = String(value);
@@ -57,13 +73,32 @@ export async function bootstrap(ctx) {
   const ds = await loadDataset(ctx.db);
   const today = todayIn(ds.timezone);
   const day = readDay(ctx.url.searchParams.get('day'), today);
+  const slot = readSlot(ctx.url.searchParams.get('slot'), ds.timezone);
 
-  const report = dayReport(ds, day);
+  const report = dayReport(ds, day, slot);
+  const overview = dayOverview(ds, day);
   const roster = seesRoster(ctx);
 
   return json({
     day,
     today,
+    slot,
+    slots: SLOTS,
+    // The other two rounds, so the screen can show what has and has not been
+    // done today without a second request.
+    rounds: overview.rounds.map((r) => ({
+      slot: r.slot,
+      label: r.label,
+      short: r.short,
+      by: r.by,
+      detail: r.detail,
+      started: r.started,
+      submitted: r.submitted,
+      submittedBy: r.submittedBy,
+      checked: r.totals.checked,
+      expected: r.totals.expected,
+      untagged: r.totals.untagged,
+    })),
     propertyName: ds.propertyName,
     submitted: report.submitted,
     round: report.round,
@@ -90,8 +125,10 @@ export async function bootstrap(ctx) {
     })),
     // Recent rounds give the person doing the round a way back into yesterday
     // if they realise they answered something wrongly.
-    recent: [...ds.rounds].slice(-7).reverse().map((r) => ({
+    recent: [...ds.rounds].slice(-9).reverse().map((r) => ({
       day: r.day,
+      slot: r.slot || 'morning',
+      slotLabel: slotOf(r.slot || 'morning').short,
       submittedAt: r.submitted_at,
       submittedBy: r.submitted_by,
     })),
@@ -125,8 +162,10 @@ export async function saveChecks(ctx) {
   ]);
   const bedById = new Map((bedRows.results ?? []).map((b) => [b.id, b]));
 
-  const today = todayIn(settingRows.results?.[0]?.value || 'Africa/Accra');
+  const timezone = settingRows.results?.[0]?.value || 'Africa/Accra';
+  const today = todayIn(timezone);
   const day = readDay(body.day, today);
+  const slot = readSlot(body.slot, timezone);
 
   if (day > today) throw badRequest('That date is in the future.');
   if (diffDays(day, today) > 60) {
@@ -170,32 +209,34 @@ export async function saveChecks(ctx) {
   // The round is created on first save rather than by a "start round" button:
   // one less thing for somebody standing in a doorway to remember.
   await ctx.db.prepare(
-    `INSERT INTO hk_rounds (day) VALUES (?1)
-     ON CONFLICT(day) DO UPDATE SET updated_at = datetime('now')`,
-  ).bind(day).run();
+    `INSERT INTO hk_rounds (day, slot) VALUES (?1, ?2)
+     ON CONFLICT(day, slot) DO UPDATE SET updated_at = datetime('now')`,
+  ).bind(day, slot).run();
 
-  const round = await ctx.db.prepare('SELECT * FROM hk_rounds WHERE day = ?').bind(day).first();
+  const round = await ctx.db.prepare('SELECT * FROM hk_rounds WHERE day = ? AND slot = ?')
+    .bind(day, slot).first();
 
   try {
     await ctx.db.batch(clean.map((c) => ctx.db.prepare(
-      `INSERT INTO hk_checks (round_id, day, bed_id, state, name_tag, expected_state, note, checked_by, at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, datetime('now'))
+      `INSERT INTO hk_checks (round_id, day, slot, bed_id, state, name_tag, expected_state, note, checked_by, at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, datetime('now'))
        ON CONFLICT(round_id, bed_id) DO UPDATE SET
-         state          = ?4,
-         name_tag       = ?5,
-         expected_state = ?6,
-         note           = ?7,
-         checked_by     = ?8,
+         state          = ?5,
+         name_tag       = ?6,
+         expected_state = ?7,
+         note           = ?8,
+         checked_by     = ?9,
          at             = datetime('now')`,
     ).bind(
-      round.id, day, c.bedId, c.state, c.nameTag, c.expected, c.note, ctx.session.user.name,
+      round.id, day, slot, c.bedId, c.state, c.nameTag, c.expected, c.note, ctx.session.user.name,
     )));
   } catch (err) {
     rethrowConstraint(err, { foreignKey: 'One of those beds is no longer on the list.' });
     throw err;
   }
 
-  await audit(ctx, 'hk.check', day, {
+  await audit(ctx, 'hk.check', `${day} ${slot}`, {
+    slot,
     beds: clean.length,
     untagged: clean.filter((c) => c.nameTag === 0).length,
   });
@@ -207,12 +248,13 @@ export async function saveChecks(ctx) {
     `SELECT COUNT(*) AS checked,
             SUM(CASE WHEN state = 'occupied' THEN 1 ELSE 0 END) AS occupied,
             SUM(CASE WHEN state = 'occupied' AND name_tag = 0 THEN 1 ELSE 0 END) AS untagged
-       FROM hk_checks WHERE day = ?`,
-  ).bind(day).first();
+       FROM hk_checks WHERE day = ? AND slot = ?`,
+  ).bind(day, slot).first();
 
   return json({
     ok: true,
     day,
+    slot,
     recorded: clean.length,
     totals: {
       checked: totals?.checked ?? 0,
@@ -231,14 +273,15 @@ export async function saveChecks(ctx) {
  * saving: a housekeeper part-way through the first floor has not finished
  * anything, and the manager should not be told they have.
  */
-export async function submitRound(ctx, day) {
+export async function submitRound(ctx, day, slot) {
   if (!isDay(day)) throw badRequest('That date is not valid.');
+  if (!isSlot(slot)) throw badRequest('That is not one of the day\'s checks.');
 
   const ds = await loadDataset(ctx.db);
-  const report = dayReport(ds, day);
+  const report = dayReport(ds, day, slot);
 
-  const round = ds.roundByDay.get(day);
-  if (!round) throw badRequest('Nothing has been recorded for that day yet.');
+  const round = ds.roundByKey.get(`${day}|${slot}`);
+  if (!round) throw badRequest('Nothing has been recorded for that check yet.');
   if (!report.totals.checked) throw badRequest('No beds have been answered for yet.');
 
   const body = await readJson(ctx.request).catch(() => ({}));
@@ -253,13 +296,14 @@ export async function submitRound(ctx, day) {
     ctx.db.prepare(
       `UPDATE hk_rounds SET submitted_at = datetime('now'), submitted_by = ?2, note = ?3,
               updated_at = datetime('now')
-        WHERE day = ?1`,
-    ).bind(day, ctx.session.user.name, note),
+        WHERE day = ?1 AND slot = ?4`,
+    ).bind(day, ctx.session.user.name, note, slot),
     ctx.db.prepare('INSERT INTO audit_log (actor, action, entity, detail) VALUES (?, ?, ?, ?)').bind(
       `${ctx.session.user.name} (${ctx.session.user.role})`,
       resubmission ? 'hk.round.resubmit' : 'hk.round.submit',
-      day,
+      `${day} ${slot}`,
       JSON.stringify({
+        slot,
         checked: report.totals.checked,
         expected: report.totals.expected,
         untagged: report.totals.untagged,
@@ -273,6 +317,7 @@ export async function submitRound(ctx, day) {
   // housekeeper's problem.
   const task = notifyRoundSubmitted(ctx.db, ctx.env, {
     day,
+    slot,
     submittedBy: ctx.session.user.name,
     resubmission,
   });
@@ -282,6 +327,8 @@ export async function submitRound(ctx, day) {
   return json({
     ok: true,
     day,
+    slot,
+    slotLabel: slotOf(slot).label,
     submitted: true,
     resubmission,
     totals: report.totals,
@@ -289,10 +336,12 @@ export async function submitRound(ctx, day) {
   });
 }
 
+/** A whole day: its three rounds, and what was left outstanding by the last. */
 export async function getDay(ctx) {
   const ds = await loadDataset(ctx.db);
   const day = readDay(ctx.url.searchParams.get('day'), todayIn(ds.timezone));
-  return json(dayReport(ds, day));
+  const slot = ctx.url.searchParams.get('slot');
+  return json(isSlot(slot) ? dayReport(ds, day, slot) : dayOverview(ds, day));
 }
 
 export async function listRounds(ctx) {
@@ -303,7 +352,7 @@ export async function listRounds(ctx) {
             (SELECT COUNT(*) FROM hk_checks c WHERE c.round_id = r.id
                AND c.state = 'occupied' AND c.name_tag = 0) AS untagged
        FROM hk_rounds r
-      ORDER BY r.day DESC
+      ORDER BY r.day DESC, r.id DESC
       LIMIT ?`,
   ).bind(limit).all();
   return json({ rounds: rows.results ?? [] });

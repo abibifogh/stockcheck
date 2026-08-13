@@ -1,5 +1,7 @@
 import { dailyInsights, loadDataset } from './analytics.js';
-import { dayReport, loadDataset as loadHousekeeping, periodReport } from './housekeeping.js';
+import {
+  dayOverview, dayReport, loadDataset as loadHousekeeping, periodReport, slotOf,
+} from './housekeeping.js';
 import { addDays } from '../util/dates.js';
 
 /**
@@ -244,8 +246,9 @@ export async function notifyDaySubmitted(db, env, { day, submittedBy, resubmissi
  * bed name — not a count, because a count cannot be acted on — and everything
  * else is arranged underneath it.
  */
-export function renderRoundEmail({ report, trend, propertyName, siteUrl, submittedBy }) {
+export function renderRoundEmail({ report, day: dayView, trend, propertyName, siteUrl, submittedBy }) {
   const t = report.totals;
+  const slot = slotOf(report.slot ?? 'morning');
 
   const dateLabel = new Date(`${report.day}T12:00:00Z`).toLocaleDateString('en-GB', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC',
@@ -305,7 +308,7 @@ export function renderRoundEmail({ report, trend, propertyName, siteUrl, submitt
 <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:14px;overflow:hidden">
   <tr><td style="padding:20px 24px;background:#14181f">
     <div style="font:700 17px/1.3 Arial,sans-serif;color:#ffffff">🛏 ${escapeHtml(propertyName)}</div>
-    <div style="font:400 13px/1.4 Arial,sans-serif;color:#9aa5b5">Dorm bed check — ${dateLabel}</div>
+    <div style="font:400 13px/1.4 Arial,sans-serif;color:#9aa5b5">${escapeHtml(slot.label)} — ${dateLabel}</div>
   </td></tr>
 
   <tr><td style="padding:18px 24px 4px">
@@ -345,6 +348,31 @@ export function renderRoundEmail({ report, trend, propertyName, siteUrl, submitt
     </div>
   </td></tr>` : ''}
 
+  ${dayView ? `
+  <tr><td style="padding:18px 24px 0">
+    <div style="font:700 14px Arial,sans-serif;color:#14181f;margin-bottom:6px">The day so far</div>
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+      ${dayView.rounds.map((r) => `
+        <tr>
+          <td style="padding:6px 8px;border-bottom:1px solid #e6e9ee;font:${r.slot === report.slot ? 700 : 400} 13px Arial,sans-serif;color:#14181f">
+            ${escapeHtml(r.label)}<span style="color:#8b95a5"> · ${escapeHtml(r.by)}</span>
+          </td>
+          <td style="padding:6px 8px;border-bottom:1px solid #e6e9ee;font:400 13px Arial,sans-serif;color:#5b6472;text-align:right">
+            ${r.submitted ? `${r.totals.checked} beds` : r.started ? `${r.totals.checked} beds, not submitted` : 'not done yet'}
+          </td>
+          <td style="padding:6px 8px;border-bottom:1px solid #e6e9ee;font:600 13px Arial,sans-serif;text-align:right;color:${r.totals.untagged ? '#c62f42' : '#12855b'}">
+            ${r.started ? (r.totals.untagged ? `${r.totals.untagged} untagged` : 'clear') : '—'}
+          </td>
+        </tr>`).join('')}
+    </table>
+    <div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:${dayView.outstanding.length ? '#fdeaec' : '#e2f5ec'};font:400 13px Arial,sans-serif;color:${dayView.outstanding.length ? '#c62f42' : '#12855b'}">
+      ${dayView.outstanding.length
+        ? `<strong>${dayView.outstanding.length} ${dayView.outstanding.length === 1 ? 'bed is' : 'beds are'} still wrong</strong> after the last check to look at ${dayView.outstanding.length === 1 ? 'it' : 'them'}: `
+          + dayView.outstanding.slice(0, 8).map((o) => `${escapeHtml(o.room)} ${escapeHtml(o.bed)}`).join(', ')
+        : `Nothing is outstanding${dayView.resolution.fixed ? ` — ${dayView.resolution.fixed} ${dayView.resolution.fixed === 1 ? 'finding was' : 'findings were'} put right during the day` : ''}.`}
+    </div>
+  </td></tr>` : ''}
+
   <tr><td style="padding:16px 24px 0">
     <div style="font:400 13px/1.6 Arial,sans-serif;color:#5b6472">
       <strong style="color:#14181f">Against the last 30 days:</strong>
@@ -366,7 +394,7 @@ export function renderRoundEmail({ report, trend, propertyName, siteUrl, submitt
   </td></tr>` : '<tr><td style="height:20px"></td></tr>'}
 
   <tr><td style="padding:14px 24px;background:#f6f7f9;font:400 11px/1.5 Arial,sans-serif;color:#8b95a5">
-    Sent automatically when the day's bed check was submitted.
+    Sent automatically when the ${escapeHtml(slot.label.toLowerCase())} was submitted, by ${escapeHtml(slot.by.toLowerCase())}.
     An administrator can change who receives these under Users &amp; data → Notifications.
   </td></tr>
 </table>
@@ -378,7 +406,7 @@ export function renderRoundEmail({ report, trend, propertyName, siteUrl, submitt
  * way. Never throws — the caller is a background task, and a mail provider
  * having a bad morning must not surface as a failed round.
  */
-export async function notifyRoundSubmitted(db, env, { day, submittedBy, resubmission }) {
+export async function notifyRoundSubmitted(db, env, { day, slot = 'morning', submittedBy, resubmission }) {
   const log = (status, detail, recipients = []) => db.prepare(
     'INSERT INTO email_log (kind, day, recipients, status, detail) VALUES (?, ?, ?, ?, ?)',
   ).bind('hk_round', day, recipients.join(', '), status, detail ? String(detail).slice(0, 500) : null)
@@ -415,12 +443,13 @@ export async function notifyRoundSubmitted(db, env, { day, submittedBy, resubmis
     }
 
     const ds = await loadHousekeeping(db);
-    const report = dayReport(ds, day);
+    const report = dayReport(ds, day, slot);
+    const dayView = dayOverview(ds, day);
     const trend = periodReport(ds, addDays(day, -29), day).current;
 
     const propertyName = settings.property_name || 'Hostel';
     const t = report.totals;
-    const subject = `${propertyName} — bed check ${day}: `
+    const subject = `${propertyName} — ${slotOf(slot).label.toLowerCase()} ${day}: `
       + (t.untagged ? `${t.untagged} without a name tag` : 'all occupied beds labelled')
       + (t.unexpected ? `, ${t.unexpected} unexpected` : '')
       + (t.unchecked ? ` · ${t.unchecked} beds not checked` : '')
@@ -428,6 +457,7 @@ export async function notifyRoundSubmitted(db, env, { day, submittedBy, resubmis
 
     const html = renderRoundEmail({
       report,
+      day: dayView,
       trend,
       propertyName,
       siteUrl: settings.site_url?.trim() || '',

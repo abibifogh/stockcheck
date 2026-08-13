@@ -959,3 +959,51 @@ body:has(.entry-footer) .toasts[popover] { bottom: calc(4.75rem + env(safe-area-
   background: var(--hk-sev, var(--good));
 }
 .hk-key.sev-clear { background: color-mix(in srgb, var(--good) 62%, transparent); }
+
+/* ---- the three checks of a day ---------------------------------------- */
+/* Reception open up, housekeeping walk the rooms, reception close. Each is its
+   own report; the picker has to make plain which one you are filling in, and
+   which are already done, without a legend. */
+
+.hk-slots {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem;
+  margin-bottom: 1rem;
+}
+.hk-slot {
+  display: flex; flex-direction: column; align-items: flex-start; gap: .1rem;
+  padding: .6rem .7rem; text-align: left;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text-dim);
+  border-top: 3px solid var(--border);
+}
+.hk-slot:hover { border-color: var(--border-strong); }
+.hk-slot.on {
+  border-color: var(--accent); border-top-color: var(--accent);
+  background: var(--accent-soft); color: var(--text);
+}
+.hk-slot.done { border-top-color: var(--good); }
+.hk-slot-name { font-weight: 680; font-size: .92rem; }
+.hk-slot-by { font-size: .72rem; color: var(--text-faint); }
+.hk-slot-state { font-size: .74rem; color: var(--text-faint); margin-top: .15rem; }
+.hk-slot.done .hk-slot-state { color: var(--good); }
+
+@media (max-width: 560px) {
+  .hk-slots { grid-template-columns: 1fr; gap: .35rem; }
+  .hk-slot { flex-direction: row; align-items: baseline; gap: .5rem; border-top-width: 1px; border-left: 3px solid var(--border); }
+  .hk-slot.done { border-left-color: var(--good); border-top-color: var(--border); }
+  .hk-slot.on { border-left-color: var(--accent); }
+  .hk-slot-state { margin-left: auto; margin-top: 0; }
+}
+
+/* The day's three rounds on a manager's screen, as a strip of cards. */
+.hk-rounds-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .6rem; }
+.hk-round-card {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: .7rem .8rem; background: var(--surface-2);
+  border-left: 3px solid var(--border);
+}
+.hk-round-card.done { border-left-color: var(--good); }
+.hk-round-card.pending { border-left-color: var(--warn); }
+.hk-round-card h4 { font-size: .9rem; font-weight: 680; margin: 0; }
+.hk-round-card .who { font-size: .74rem; color: var(--text-faint); }
+.hk-round-card .figures { font-size: .82rem; color: var(--text-dim); margin-top: .3rem; }

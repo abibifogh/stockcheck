@@ -836,7 +836,14 @@ const SECTIONS = [
     permission: 'hk_check',
     lead: 'Two questions per bed. It should take about as long as it takes to look at the bed.',
     render: () => h('div',
+      h('p', 'The dorms are walked three times a day, and each walk is its own report. '
+        + 'Reception check when they open up, housekeeping check again while the rooms are being '
+        + 'done, and reception check once more before closing. The point of three is that '
+        + 'something found in the morning can be put right before the evening.'),
       steps(
+        h('span', h('strong', 'Check you are on the right one.'), ' The three checks are along the '
+          + 'top — Morning, Housekeeping, Evening. The one the clock is in is already selected, so '
+          + 'usually there is nothing to do here. Each shows whether it has been done and by whom.'),
         h('span', h('strong', 'Open the room you are standing in.'), ' Rooms are listed down the '
           + 'screen. The first one with beds still to answer for is already open; tap any other '
           + 'room’s name to open it.'),
@@ -845,8 +852,9 @@ const SECTIONS = [
         h('span', h('strong', 'If you tapped Occupied, answer the name tag question.'), ' Yes or No. '
           + 'That is the whole reason for the round: an occupied bed with nothing on it to say whose '
           + 'it is, is the thing your manager needs to know about.'),
-        h('span', h('strong', 'When you have finished the property, tap Submit the round.'), ' That '
-          + 'sends the summary to whoever needs it.'),
+        h('span', h('strong', 'When you have finished the property, tap Submit.'), ' That sends '
+          + 'your check to whoever needs it. The other two checks of the day are separate — '
+          + 'submitting yours does not finish theirs.'),
       ),
       note('An empty room is one tap.', 'Use “All free” on the room’s title bar to mark every '
         + 'bed in it free at once, then correct any that are not.'),
@@ -864,8 +872,16 @@ const SECTIONS = [
             + 'has already been submitted you can still change it — use the earlier rounds at the '
             + 'foot of the screen — and submitting again sends a corrected summary.')],
         ['Somebody else is doing the first floor.',
-          h('p', 'That is fine. There is one round per day and you can both fill in different parts '
-            + 'of it at the same time. Each bed records who answered for it.')],
+          h('p', 'That is fine. Two people can fill in different parts of the same check at the '
+            + 'same time, and each bed records who answered for it.')],
+        ['The morning check already found this bed untagged.',
+          h('p', 'Answer what you see now, not what somebody else saw earlier. If it has a tag now, '
+            + 'say yes — that is how the system knows it was dealt with. Each check is a fresh look, '
+            + 'and the reports compare them.')],
+        ['I am doing yesterday evening\u2019s check this morning.',
+          h('p', 'Use the earlier checks at the foot of the screen to pick the right day and the '
+            + 'right one of the three. Better recorded late than not at all — but it is filed '
+            + 'against the round it belongs to, not the one you are standing in.')],
         ['The signal dropped while I was in the basement.',
           h('p', 'Keep going. The screen says “not saved” and keeps trying on its own; as soon as '
             + 'there is signal again everything you tapped goes through.')],
@@ -884,6 +900,16 @@ const SECTIONS = [
     lead: 'Everything on these screens is arranged around one number: occupied beds with no name tag.',
     render: () => h('div',
       readings(
+        ['The three checks',
+          'Morning, housekeeping and evening, each its own report with its own submitter. The panel '
+          + 'shows how many of each were done, and who walked them.',
+          'A round that keeps being missed is a rota problem, and the hours it covers are '
+          + 'unwatched however good the other two look.'],
+        ['Found and fixed',
+          'Whether a finding survived the day. A bed untagged in the morning and tagged by the '
+          + 'evening was dealt with; the same bed untagged all day was not.',
+          'This is the number that says whether checking three times is worth anything. '
+          + '"Still wrong at close" is the list to act on.'],
         ['Occupied, no name tag',
           'Beds somebody is sleeping in that carry nothing to say who. Counted only against beds that '
           + 'were actually checked and found occupied.',

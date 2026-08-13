@@ -366,6 +366,7 @@ const ROLE_LABELS = {
   admin: 'Administrator',
   technician: 'Technician',
   maintenance_manager: 'Maintenance',
+  receptionist: 'Reception',
   housekeeper: 'Housekeeping',
   housekeeping_manager: 'Housekeeping manager',
 };

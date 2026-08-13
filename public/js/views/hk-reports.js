@@ -50,7 +50,8 @@ export async function renderHkOverview() {
     h('div.page-head',
       h('div',
         h('h1', 'Housekeeping'),
-        h('div.sub', `Where the dorms stand · ${fmtDay(data.today, { withYear: true })}`),
+        h('div.sub', `Where the dorms stand · ${fmtDay(data.today, { withYear: true })}`
+          + ` · ${data.roundsSubmittedToday ?? 0}/${data.roundsPerDay ?? 3} checks in`),
       ),
       h('div.btn-row',
         printButton({ title: 'Dorm bed check — where things stand', subtitle: fmtDay(data.today, { withYear: true }) }),
@@ -63,7 +64,7 @@ export async function renderHkOverview() {
       statTile({
         label: 'No name tag',
         value: fmtNum(head.untagged30, 0),
-        sub: 'occupied beds, last 30 days',
+        sub: 'found in the last 30 days',
         delta: head.monthDelta,
         accent: head.untagged30 ? 'var(--bad)' : 'var(--good)',
       }),
@@ -121,11 +122,33 @@ export async function renderHkOverview() {
   return host;
 }
 
+/** The day's three checks, and who has and has not done theirs. */
+function roundsStrip(rounds) {
+  return h('div.hk-rounds-strip', (rounds ?? []).map((r) => h('div.hk-round-card', {
+    class: `hk-round-card ${r.submitted ? 'done' : r.started ? 'pending' : ''}`,
+  },
+    h('h4', r.label),
+    h('div.who', r.by),
+    h('div.figures',
+      r.submitted
+        ? h('span', `✓ submitted by ${r.submittedBy ?? 'someone'}`)
+        : r.started
+          ? h('span', `${r.checked} of ${r.expected ?? '—'} beds, not submitted yet`)
+          : h('span.muted', 'not started'),
+    ),
+    r.untagged
+      ? h('div.figures', h('strong', { style: { color: 'var(--bad)' } }, `${r.untagged} without a name tag`))
+      : null,
+  )));
+}
+
 /**
- * Today, room by room, as coloured chips.
+ * Today: the three checks, then the rooms, then what is still outstanding.
  *
  * A manager arriving at nine wants one answer — is there anything I have to
- * deal with before the guests come down — and a table of percentages is not it.
+ * deal with before the guests come down — and with three rounds in a day the
+ * honest answer is what the last one to look at each bed left behind, not the
+ * sum of everything anybody ever found.
  */
 function todayCard(data) {
   const t = data.todayTotals;
@@ -138,26 +161,36 @@ function todayCard(data) {
     onclick: () => navigate('hk-room', { id: room.roomId }),
   }, room.name, h('small', `${room.checked}/${room.beds}`)));
 
+  const res = data.todayResolution;
+
   return card(
-    data.todaySubmitted ? "Today's round" : 'Today so far',
+    data.todaySubmitted ? "Today's three checks" : 'Today so far',
     {
       wide: true,
       note: data.lastCheckedDay && data.daysSinceCheck > 0
-        ? `Nothing recorded today — the last round was ${fmtDay(data.lastCheckedDay)}`
-        : `${t.checked} of ${t.expected ?? 0} beds answered for`,
+        ? `Nothing recorded today — the last check was ${fmtDay(data.lastCheckedDay)}`
+        : `${data.roundsSubmittedToday ?? 0} of ${data.roundsPerDay ?? 3} checks submitted`,
     },
-    h('div.hk-chips', chips.length ? chips : h('p.muted', 'No dorm rooms have been set up yet.')),
+    roundsStrip(data.todayRounds),
+    res?.fixed
+      ? h('p.muted', { style: { fontSize: '.85rem', margin: '.8rem 0 0' } },
+        `${res.fixed} ${res.fixed === 1 ? 'finding was' : 'findings were'} put right between checks today`
+        + `${res.unresolved ? `, and ${res.unresolved} ${res.unresolved === 1 ? 'is' : 'are'} still outstanding.` : '.'}`)
+      : null,
+    h('div', { style: { marginTop: '.9rem' } },
+      h('div.hk-chips', chips.length ? chips : h('p.muted', 'No dorm rooms have been set up yet.'))),
     data.todayFindings.length
       ? h('div.hk-findings', data.todayFindings.map((f) => h('div.hk-finding',
         severityPill(f.severity),
         h('strong', `${f.room} · ${f.bed}`),
+        f.slotLabel ? h('span.muted', `as at the ${f.slotLabel.toLowerCase()} check`) : null,
         f.note ? h('span.muted', `“${f.note}”`) : null,
         f.checkedBy ? h('span.muted', `· ${f.checkedBy}`) : null,
       )))
       : h('p.muted', { style: { marginBottom: 0 } },
         t.checked
-          ? 'Nothing found so far today.'
-          : 'The round has not been started yet.'),
+          ? 'Nothing is outstanding — every finding today was dealt with.'
+          : 'No check has been recorded yet today.'),
   );
 }
 
@@ -337,6 +370,87 @@ export async function renderHkReport(params = {}) {
     data.alerts.length
       ? card('What needs a decision', { wide: true }, alertList(data.alerts))
       : null,
+
+    card('The three checks', {
+      wide: true,
+      note: `${data.roundsSubmitted} of ${data.roundsExpected} submitted in this period`,
+    },
+      table([
+        { key: 'label', label: 'Check', format: (v, r) => h('div', h('div', v), h('small.muted', r.by)) },
+        {
+          key: 'submitted',
+          label: 'Done',
+          align: 'right',
+          format: (v, r) => h('span', `${v}`, h('span.muted', ` / ${data.days}`),
+            v < data.days ? h('span.pill.warn', { style: { marginLeft: '.4rem' } }, `${data.days - v} missed`) : null),
+        },
+        { key: 'checked', label: 'Beds checked', align: 'right', format: (v) => fmtNum(v, 0) },
+        {
+          key: 'untagged',
+          label: 'No name tag',
+          align: 'right',
+          format: (v) => (v ? h('strong', { style: { color: 'var(--bad)' } }, fmtNum(v, 0)) : h('span.muted', '0')),
+        },
+        { key: 'unexpected', label: 'Unexpected', align: 'right', format: (v) => (v ? fmtNum(v, 0) : h('span.muted', '0')) },
+        { key: 'tagRate', label: 'Tag rate', align: 'right', format: (v) => pct(v) },
+        {
+          key: 'people',
+          label: 'Walked by',
+          format: (v) => (v?.length ? h('span.muted', v.map((p) => p.name).join(', ')) : h('span.muted', '—')),
+        },
+      ], data.bySlot, { empty: 'No checks recorded in this period.' }),
+      h('p.muted', { style: { fontSize: '.82rem', marginTop: '.6rem', marginBottom: 0 } },
+        'Each check is its own report, submitted and emailed on its own. A round that keeps '
+        + 'being missed leaves the hours it covers unwatched, whatever the other two found.'),
+    ),
+
+    card('Found and fixed', {
+      wide: true,
+      note: 'Whether a finding survived to the end of its day',
+    },
+      h('div.grid.grid-4',
+        statTile({
+          label: 'Findings',
+          value: fmtNum(data.resolution.found, 0),
+          sub: 'beds found wrong at least once',
+        }),
+        statTile({
+          label: 'Put right same day',
+          value: fmtNum(data.resolution.fixed, 0),
+          sub: 'a later check found them fixed',
+          accent: 'var(--good)',
+        }),
+        statTile({
+          label: 'Still wrong at close',
+          value: fmtNum(data.resolution.unresolved, 0),
+          sub: `${fmtNum(data.resolution.neverRechecked, 0)} found by the day's last check`,
+          accent: data.resolution.unresolved ? 'var(--bad)' : undefined,
+        }),
+        statTile({
+          label: 'Fixed within the day',
+          value: pct(data.resolution.fixRate),
+          sub: 'of everything found',
+          accent: 'var(--c2)',
+        }),
+      ),
+      data.resolution.lingering.length
+        ? h('div', { style: { marginTop: '1rem' } },
+          h('div.stat-label', { style: { marginBottom: '.5rem' } }, 'Left unresolved'),
+          table([
+            { key: 'day', label: 'Day', format: (v) => fmtDay(v) },
+            { key: 'room', label: 'Room' },
+            { key: 'bed', label: 'Bed' },
+            { key: 'firstSeen', label: 'First found', format: (v) => h('span.muted', v) },
+            { key: 'lastSeen', label: 'Last seen', format: (v) => h('span.muted', v) },
+            {
+              key: 'rechecked',
+              label: '',
+              format: (v) => (v ? h('span.pill.bad', 'nobody acted') : h('span.pill', 'no later check')),
+            },
+          ], data.resolution.lingering, { empty: '' }))
+        : h('p.muted', { style: { marginTop: '.8rem', marginBottom: 0 } },
+          'Everything found in this period was put right before the day was out.'),
+    ),
 
     card('Every room, every day', {
       wide: true,

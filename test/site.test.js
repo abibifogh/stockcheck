@@ -65,8 +65,10 @@ test('it offers only the roles built from those sections, plus administrator', (
   const roles = rolesFor('housekeeping');
   const keys = roles.map((r) => r.key);
 
-  assert.deepEqual(keys, ['housekeeper', 'housekeeping_manager', 'admin']);
+  assert.deepEqual(keys, ['receptionist', 'housekeeper', 'housekeeping_manager', 'admin']);
   assert.ok(!keys.includes('cook'), 'a cook has nothing to do on this site');
+  // Reception walk two of the three checks, so they are a role here.
+  assert.deepEqual(roles.find((r) => r.key === 'receptionist').defaults, ['hk_check']);
   assert.ok(!keys.includes('technician'));
 
   // An administrator here administers this site, not a kitchen.

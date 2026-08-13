@@ -28,6 +28,72 @@ import { addDays, diffDays, rangeDays } from '../util/dates.js';
 // did it once, so the report needs a floor before it calls something a pattern.
 const REPEAT_THRESHOLD = 2;
 
+/**
+ * The three checks in a day, in the order they happen.
+ *
+ * Reception opens up and walks the dorms; housekeeping walks them again on the
+ * room round; reception walks them once more before closing. Three different
+ * people, three different reasons for looking, and — the point of it — three
+ * chances for a bed found wrong in the morning to be put right before the day
+ * ends.
+ *
+ * `from` and `to` are what the shift is expected to happen between. Nothing is
+ * enforced by them: a check recorded late is worth far more than one not
+ * recorded at all. They decide which round the screen opens on, and they let a
+ * report say a round was missed.
+ */
+export const SLOTS = [
+  {
+    key: 'morning',
+    label: 'Morning check',
+    short: 'Morning',
+    by: 'Reception',
+    from: '08:00',
+    detail: 'First thing, as reception opens up',
+  },
+  {
+    key: 'housekeeping',
+    label: 'Housekeeping round',
+    short: 'Housekeeping',
+    by: 'Housekeeping',
+    from: '10:00',
+    detail: 'While the rooms are being done',
+  },
+  {
+    key: 'evening',
+    label: 'Evening check',
+    short: 'Evening',
+    by: 'Reception',
+    from: '20:00',
+    to: '22:00',
+    detail: 'Last thing, before reception closes',
+  },
+];
+
+export const SLOT_KEYS = SLOTS.map((s) => s.key);
+
+export function isSlot(value) {
+  return SLOT_KEYS.includes(value);
+}
+
+export function slotOf(key) {
+  return SLOTS.find((s) => s.key === key) ?? SLOTS[0];
+}
+
+/**
+ * Which check somebody opening the screen right now most likely means.
+ *
+ * Rounded generously in both directions: a morning check started at half past
+ * seven is still the morning check, and one finished at midday still is too. The
+ * housekeeper can always tap another round; this only decides which one they
+ * find already open.
+ */
+export function slotForTime(hour) {
+  if (hour < 10) return 'morning';
+  if (hour < 18) return 'housekeeping';
+  return 'evening';
+}
+
 export async function loadDataset(db) {
   const [rooms, beds, rounds, checks, settings] = await Promise.all([
     db.prepare('SELECT * FROM hk_rooms ORDER BY sort_order, name').all(),
@@ -61,13 +127,29 @@ export function makeDataset(raw) {
     bedsByRoom.get(bed.room_id).push(bed);
   }
 
-  // day -> bed -> check. Every screen asks "what happened to this bed on this
-  // day" at least once per bed, and a linear scan per question would show on a
-  // property with a hundred beds and a year of history.
-  const byDay = new Map();
+  // Two indexes, because two questions get asked constantly and a linear scan
+  // for either would show on a property with a hundred beds and a year of
+  // history: what one round found, and everything a day found across its three.
+  //
+  // A check carries its own slot, so neither index has to join back through the
+  // round to know which of the three it belongs to.
+  const byRound = new Map(); // 'day|slot' -> bed -> check
+  const byDay = new Map();   // day -> bed -> [check, ...] in slot order
   for (const check of checks) {
+    const slot = check.slot || 'morning';
+    const key = `${check.day}|${slot}`;
+    if (!byRound.has(key)) byRound.set(key, new Map());
+    byRound.get(key).set(check.bed_id, check);
+
     if (!byDay.has(check.day)) byDay.set(check.day, new Map());
-    byDay.get(check.day).set(check.bed_id, check);
+    const perBed = byDay.get(check.day);
+    if (!perBed.has(check.bed_id)) perBed.set(check.bed_id, []);
+    perBed.get(check.bed_id).push(check);
+  }
+  for (const perBed of byDay.values()) {
+    for (const list of perBed.values()) {
+      list.sort((a, b) => SLOT_KEYS.indexOf(a.slot || 'morning') - SLOT_KEYS.indexOf(b.slot || 'morning'));
+    }
   }
 
   return {
@@ -82,8 +164,9 @@ export function makeDataset(raw) {
     bedsByRoom,
     activeBeds: beds.filter((b) => b.active && roomById.get(b.room_id)?.active),
     rounds: raw.rounds ?? [],
-    roundByDay: new Map((raw.rounds ?? []).map((r) => [r.day, r])),
+    roundByKey: new Map((raw.rounds ?? []).map((r) => [`${r.day}|${r.slot || 'morning'}`, r])),
     checks,
+    byRound,
     byDay,
     recordedDays: [...byDay.keys()].sort(),
   };
@@ -200,8 +283,41 @@ export function tally(checks, expected = null) {
   };
 }
 
+/** The last of the three rounds that anybody actually recorded on a day. */
+function lastRoundWith(ds, day) {
+  const done = SLOT_KEYS.filter((slot) => ds.byRound.has(`${day}|${slot}`));
+  return done.at(-1) ?? 'morning';
+}
+
+/** Every check made on a day, across all three rounds. */
 function checksOn(ds, day) {
-  return [...(ds.byDay.get(day)?.values() ?? [])];
+  return [...(ds.byDay.get(day)?.values() ?? [])].flat();
+}
+
+/** What one round found: day plus which of the three checks. */
+function checksInRound(ds, day, slot) {
+  return [...(ds.byRound.get(`${day}|${slot}`)?.values() ?? [])];
+}
+
+function roundFor(ds, day, slot) {
+  return ds.roundByKey.get(`${day}|${slot}`) ?? null;
+}
+
+/**
+ * Whether a finding was still there at the end of the day.
+ *
+ * The whole reason for checking three times is that somebody puts things right
+ * between them. A bed untagged in the morning and tagged by the evening was
+ * dealt with; the same bed untagged in all three was not. Only the second kind
+ * should keep a manager awake, so the reports separate them.
+ *
+ * Judged on the last round that actually answered for the bed, whichever that
+ * was — a day whose evening check never happened is judged on the housekeeping
+ * round rather than pretending the morning's finding was fixed.
+ */
+export function endOfDayFor(ds, day, bedId) {
+  const list = ds.byDay.get(day)?.get(bedId) ?? [];
+  return list.length ? list[list.length - 1] : null;
 }
 
 function checksIn(ds, from, to) {
@@ -220,9 +336,9 @@ function checksIn(ds, from, to) {
  * checklist, and a checklist that hides its unfinished lines is a worse
  * checklist.
  */
-export function dayReport(ds, day) {
-  const round_ = ds.roundByDay.get(day) ?? null;
-  const onDay = ds.byDay.get(day) ?? new Map();
+export function dayReport(ds, day, slot = 'morning') {
+  const round_ = roundFor(ds, day, slot);
+  const onDay = ds.byRound.get(`${day}|${slot}`) ?? new Map();
 
   const rooms = ds.activeRooms.map((room) => {
     const beds = (ds.bedsByRoom.get(room.id) ?? []).filter((b) => b.active);
@@ -267,6 +383,8 @@ export function dayReport(ds, day) {
 
   return {
     day,
+    slot,
+    slotLabel: slotOf(slot).label,
     round: round_
       ? {
           id: round_.id,
@@ -351,7 +469,7 @@ export function periodReport(ds, from, to) {
       issues: t.issues,
       coverage: t.coverage,
       tagRate: t.tagRate,
-      submitted: Boolean(ds.roundByDay.get(day)?.submitted_at),
+      rounds: SLOT_KEYS.filter((key) => roundFor(ds, day, key)?.submitted_at).length,
     };
   });
 
@@ -362,8 +480,23 @@ export function periodReport(ds, from, to) {
     from,
     to,
     days: length,
-    roundsSubmitted: days.filter((d) => ds.roundByDay.get(d)?.submitted_at).length,
+    roundsSubmitted: days.reduce(
+      (n, d) => n + SLOT_KEYS.filter((key) => roundFor(ds, d, key)?.submitted_at).length, 0,
+    ),
+    roundsExpected: days.length * SLOT_KEYS.length,
     daysChecked: days.filter((d) => (ds.byDay.get(d)?.size ?? 0) > 0).length,
+    bySlot: SLOT_KEYS.map((key) => {
+      const inSlot = checksIn(ds, from, to).filter((c) => (c.slot || 'morning') === key);
+      return {
+        slot: key,
+        ...slotOf(key),
+        ...tally(inSlot, bedCount * length || null),
+        rounds: days.filter((d) => roundFor(ds, d, key)).length,
+        submitted: days.filter((d) => roundFor(ds, d, key)?.submitted_at).length,
+        people: peopleFrom(inSlot).slice(0, 5),
+      };
+    }),
+    resolution: resolutionOver(ds, days),
     bedCount,
     roomCount: ds.activeRooms.length,
     current,
@@ -380,6 +513,7 @@ export function periodReport(ds, from, to) {
     rooms,
     beds,
     repeats: beds.filter((b) => b.untagged >= REPEAT_THRESHOLD),
+    slots: SLOTS,
     heatmap: heatmap(ds, days),
     people: peopleFrom(checksIn(ds, from, to)),
     notes: checksIn(ds, from, to)
@@ -394,7 +528,10 @@ export function periodReport(ds, from, to) {
         by: c.checked_by,
         severity: severityOf(c),
       })),
-    alerts: alertsFor(ds, { from, to, days: length, current, rooms, beds, series }),
+    alerts: alertsFor(ds, {
+      from, to, days: length, current, rooms, beds, series,
+      resolution: resolutionOver(ds, days),
+    }),
   };
 }
 
@@ -474,6 +611,73 @@ function bedBreakdown(ds, from, to) {
 }
 
 /**
+ * Was it put right before the day was out?
+ *
+ * The reason for checking three times rather than once is that somebody fixes
+ * things in between. So the number that matters is not how many findings there
+ * were — it is how many were still there when the last person walked away.
+ *
+ * A bed only counts as resolved if a later round actually looked at it again.
+ * Silence is not a fix, and a day whose evening check never happened must not
+ * read as a day where everything got sorted out.
+ */
+export function resolutionOver(ds, days) {
+  let found = 0;
+  let fixed = 0;
+  let unresolved = 0;
+  let neverRechecked = 0;
+  const lingering = [];
+
+  for (const day of days) {
+    const perBed = ds.byDay.get(day);
+    if (!perBed) continue;
+
+    for (const [bedId, list] of perBed) {
+      const first = list.findIndex(hasFinding);
+      if (first === -1) continue;
+      found += 1;
+
+      const last = list[list.length - 1];
+      if (first === list.length - 1) {
+        // Found by the last round that looked. Nobody had the chance to fix it.
+        neverRechecked += 1;
+        unresolved += 1;
+      } else if (hasFinding(last)) {
+        unresolved += 1;
+      } else {
+        fixed += 1;
+        continue;
+      }
+
+      const bed = ds.bedById.get(bedId);
+      lingering.push({
+        day,
+        bedId,
+        bed: bed?.label ?? `#${bedId}`,
+        roomId: bed?.room_id ?? null,
+        room: ds.roomById.get(bed?.room_id)?.name ?? 'Unknown room',
+        firstSeen: list[first].slot || 'morning',
+        lastSeen: last.slot || 'morning',
+        severity: severityOf(last),
+        rechecked: first !== list.length - 1,
+      });
+    }
+  }
+
+  return {
+    found,
+    fixed,
+    unresolved,
+    // Found by the day's last round, so nobody got the chance to put it right.
+    neverRechecked,
+    fixRate: found ? round((fixed / found) * 100, 1) : null,
+    lingering: lingering
+      .sort((a, b) => (a.day < b.day ? 1 : -1))
+      .slice(0, 40),
+  };
+}
+
+/**
  * Room by day, one cell each, coloured by the worst thing found in that room
  * that day.
  *
@@ -492,21 +696,37 @@ export function heatmap(ds, days) {
         block: room.block ?? null,
         cells: days.map((day) => {
           const onDay = ds.byDay.get(day);
-          const checks = beds.map((bed) => onDay?.get(bed.id)).filter(Boolean);
+          // The worst thing found in that room that day, whichever round found
+          // it — one square cannot hold three answers.
+          const checks = beds.flatMap((bed) => onDay?.get(bed.id) ?? []);
           if (!checks.length) {
-            return { day, severity: 'unchecked', untagged: 0, issues: 0, checked: 0, beds: beds.length };
+            return {
+              day, severity: 'unchecked', untagged: 0, issues: 0, unresolved: 0,
+              checked: 0, beds: beds.length, rounds: 0,
+            };
           }
-          const t = tally(checks, beds.length);
+
+          // A bed answered for in all three rounds is still one bed. Counting
+          // the checks instead would report a twelve-bed dorm as thirty-six.
+          const seen = new Set(checks.map((c) => c.bed_id));
+          const t = tally(checks, null);
+          // What was still wrong when the last round to see it walked away.
+          const closing = beds
+            .map((bed) => endOfDayFor(ds, day, bed.id))
+            .filter(Boolean);
+
           return {
             day,
             severity: worstOf([
               ...checks.map(severityOf),
-              ...(checks.length < beds.length ? ['unchecked'] : []),
+              ...(seen.size < beds.length ? ['unchecked'] : []),
             ]),
             untagged: t.untagged,
             issues: t.issues,
-            checked: t.checked,
+            unresolved: closing.filter(hasFinding).length,
+            checked: seen.size,
             beds: beds.length,
+            rounds: new Set(checks.map((c) => c.slot || 'morning')).size,
           };
         }),
       };
@@ -518,8 +738,22 @@ export function heatmap(ds, days) {
  * What needs somebody's attention, ordered by how bad it is rather than by how
  * recent — a list sorted by anything else gets skimmed.
  */
-function alertsFor(ds, { from, to, days, current, rooms, beds, series }) {
+function alertsFor(ds, { from, to, days, current, rooms, beds, series, resolution }) {
   const alerts = [];
+
+  if (resolution?.unresolved) {
+    alerts.push({
+      level: 'high',
+      kind: 'unresolved',
+      title: `${resolution.unresolved} ${resolution.unresolved === 1 ? 'bed was' : 'beds were'} still wrong at the end of the day`,
+      detail: `Out of ${resolution.found} found across the period, ${resolution.fixed} `
+        + `${resolution.fixed === 1 ? 'was' : 'were'} put right before the last check`
+        + `${resolution.neverRechecked ? `, and ${resolution.neverRechecked} `
+          + `${resolution.neverRechecked === 1 ? 'was' : 'were'} found by the last round of the day, `
+          + 'so nobody had the chance' : ''}. `
+        + 'Checking three times only helps if somebody acts between them.',
+    });
+  }
 
   if (current.untagged) {
     alerts.push({
@@ -574,9 +808,29 @@ function alertsFor(ds, { from, to, days, current, rooms, beds, series }) {
     alerts.push({
       level: 'warn',
       kind: 'missed_days',
-      title: `No round was recorded on ${missedDays} of the ${days} days`,
+      title: `No check at all was recorded on ${missedDays} of the ${days} days`,
       detail: 'The gaps drag every rate on this page around, because a day with no check '
         + 'counts as neither good nor bad.',
+    });
+  }
+
+  // A round that keeps being skipped is worth naming: it is nearly always one
+  // shift rather than a general slide, and it has somebody's name on it.
+  const perSlot = SLOT_KEYS.map((key) => ({
+    slot: key,
+    label: slotOf(key).label,
+    by: slotOf(key).by,
+    done: rangeDays(from, to).filter((d) => roundFor(ds, d, key)).length,
+  }));
+  for (const slot of perSlot) {
+    const missed = days - slot.done;
+    if (missed < Math.max(2, days * 0.34)) continue;
+    alerts.push({
+      level: 'warn',
+      kind: 'missed_round',
+      title: `The ${slot.label.toLowerCase()} was not done on ${missed} of the ${days} days`,
+      detail: `${slot.by} record this one. A round that is skipped this often is a rota `
+        + 'problem rather than a system problem, and the days it covers are unwatched.',
     });
   }
 
@@ -678,13 +932,75 @@ export function roomDetail(ds, roomId, from, to) {
   };
 }
 
+/**
+ * A whole day: its three rounds side by side, and what was still wrong at the
+ * end of it.
+ *
+ * This is the shape a manager thinks in. "Were the dorms checked today, by
+ * whom, and is anything still outstanding" is one question, and answering it
+ * with three separate reports would make them do the joining up themselves.
+ */
+export function dayOverview(ds, day) {
+  const rounds = SLOT_KEYS.map((slot) => {
+    const round_ = roundFor(ds, day, slot);
+    const checks = checksInRound(ds, day, slot);
+    return {
+      ...slotOf(slot),
+      slot,
+      started: Boolean(round_),
+      submitted: Boolean(round_?.submitted_at),
+      submittedAt: round_?.submitted_at ?? null,
+      submittedBy: round_?.submitted_by ?? null,
+      note: round_?.note ?? null,
+      totals: tally(checks, ds.activeBeds.length || null),
+      people: peopleFrom(checks),
+    };
+  });
+
+  // What the last round to see each bed left behind. This is the day's real
+  // answer: everything else is how it got there.
+  const closing = ds.activeBeds
+    .map((bed) => ({ bed, check: endOfDayFor(ds, day, bed.id) }))
+    .filter((x) => x.check);
+
+  const outstanding = closing
+    .filter((x) => hasFinding(x.check))
+    .map(({ bed, check }) => ({
+      bedId: bed.id,
+      bed: bed.label,
+      roomId: bed.room_id,
+      room: ds.roomById.get(bed.room_id)?.name ?? 'Unknown room',
+      severity: severityOf(check),
+      slot: check.slot || 'morning',
+      slotLabel: slotOf(check.slot || 'morning').short,
+      note: check.note,
+      checkedBy: check.checked_by,
+    }))
+    .sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity]);
+
+  return {
+    day,
+    rounds,
+    roundsSubmitted: rounds.filter((r) => r.submitted).length,
+    // Judged on the last look each bed got, so a bed fixed by the evening does
+    // not go on the list and one nobody came back to does.
+    closing: tally(closing.map((x) => x.check), ds.activeBeds.length || null),
+    outstanding,
+    resolution: resolutionOver(ds, [day]),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // The landing screen
 // ---------------------------------------------------------------------------
 
 /** Where the dorms stand today, and what the last month looked like. */
 export function overview(ds, today) {
-  const todayReport = dayReport(ds, today);
+  const dayView = dayOverview(ds, today);
+  // The rooms strip is drawn from the whole day rather than one round: a bed
+  // put right at ten o'clock should not still be showing red at eight in the
+  // evening.
+  const todayReport = dayReport(ds, today, lastRoundWith(ds, today));
   const last30 = periodReport(ds, addDays(today, -29), today);
   const monthFrom = `${today.slice(0, 7)}-01`;
   const month = periodReport(ds, monthFrom, today);
@@ -698,9 +1014,18 @@ export function overview(ds, today) {
     today,
     lastCheckedDay: lastDay,
     daysSinceCheck: lastDay ? diffDays(lastDay, today) : null,
-    todayTotals: todayReport.totals,
-    todaySubmitted: todayReport.submitted,
-    todayFindings: todayReport.findings.slice(0, 12),
+    todayTotals: dayView.closing,
+    todayRounds: dayView.rounds.map((r) => ({
+      slot: r.slot, label: r.label, short: r.short, by: r.by,
+      started: r.started, submitted: r.submitted, submittedBy: r.submittedBy,
+      checked: r.totals.checked, expected: r.totals.expected,
+      untagged: r.totals.untagged, unexpected: r.totals.unexpected,
+    })),
+    todaySubmitted: dayView.roundsSubmitted === SLOT_KEYS.length,
+    roundsSubmittedToday: dayView.roundsSubmitted,
+    roundsPerDay: SLOT_KEYS.length,
+    todayFindings: dayView.outstanding.slice(0, 12),
+    todayResolution: dayView.resolution,
     rooms: todayReport.rooms.map((room) => ({
       roomId: room.roomId,
       name: room.name,

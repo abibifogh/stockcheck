@@ -69,13 +69,20 @@ function savedChecks(db) {
   return db.written.filter((w) => /INSERT INTO hk_checks/.test(w.sql)).map((w) => ({
     roundId: w.binds[0],
     day: w.binds[1],
-    bedId: w.binds[2],
-    state: w.binds[3],
-    nameTag: w.binds[4],
-    expected: w.binds[5],
-    note: w.binds[6],
-    by: w.binds[7],
+    slot: w.binds[2],
+    bedId: w.binds[3],
+    state: w.binds[4],
+    nameTag: w.binds[5],
+    expected: w.binds[6],
+    note: w.binds[7],
+    by: w.binds[8],
   }));
+}
+
+/** The round the save opened or reused. */
+function openedRound(db) {
+  const row = db.written.find((w) => /INSERT INTO hk_rounds/.test(w.sql));
+  return row ? { day: row.binds[0], slot: row.binds[1] } : null;
 }
 
 test('an occupied bed must answer the name tag question, by name', async () => {
@@ -109,6 +116,7 @@ test('the roster is copied onto the check as it stands at the moment of the roun
   const db = fakeDb();
   await saveChecks(context({
     day: '2026-08-10',
+    slot: 'evening',
     checks: [
       { bedId: 1, state: 'occupied', nameTag: true },
       { bedId: 2, state: 'occupied', nameTag: false, note: 'someone is in it' },
@@ -121,6 +129,49 @@ test('the roster is copied onto the check as it stands at the moment of the roun
   assert.deepEqual(saved.map((s) => s.nameTag), [1, 0, null]);
   assert.equal(saved[1].note, 'someone is in it');
   assert.ok(saved.every((s) => s.roundId === 7 && s.day === '2026-08-10'));
+});
+
+// ------------------------------------------------------------- the rounds --
+
+test('a save opens the round it names, and stamps it onto every check', async () => {
+  const db = fakeDb();
+  await saveChecks(context({
+    day: '2026-08-10', slot: 'evening', checks: [{ bedId: 3, state: 'free' }],
+  }, db));
+
+  assert.deepEqual(openedRound(db), { day: '2026-08-10', slot: 'evening' });
+  assert.equal(savedChecks(db)[0].slot, 'evening');
+});
+
+test('each of the three checks is its own round on the same day', async () => {
+  for (const slot of ['morning', 'housekeeping', 'evening']) {
+    const db = fakeDb();
+    await saveChecks(context({ day: '2026-08-10', slot, checks: [{ bedId: 3, state: 'free' }] }, db));
+    assert.equal(openedRound(db).slot, slot);
+    assert.equal(savedChecks(db)[0].slot, slot);
+  }
+});
+
+test('a check that names no round falls to the one the clock is in', async () => {
+  const db = fakeDb();
+  await saveChecks(context({ day: '2026-08-10', checks: [{ bedId: 3, state: 'free' }] }, db));
+
+  // Whichever it picked, it must be a real one rather than blank — a check
+  // filed against nothing would vanish from every report.
+  const { slot } = openedRound(db);
+  assert.ok(['morning', 'housekeeping', 'evening'].includes(slot), `picked ${slot}`);
+  assert.equal(savedChecks(db)[0].slot, slot);
+});
+
+test('a round nobody recognises is refused rather than invented', async () => {
+  const db = fakeDb();
+  await saveChecks(context({
+    day: '2026-08-10', slot: 'midnight-snack', checks: [{ bedId: 3, state: 'free' }],
+  }, db));
+
+  // An unknown name falls back to the clock rather than writing 'midnight-snack'
+  // into a column every report groups by.
+  assert.ok(['morning', 'housekeeping', 'evening'].includes(openedRound(db).slot));
 });
 
 test('a bed in a closed room is not something to answer for', async () => {

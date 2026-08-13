@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  dayReport, exportRows, findingsFor, makeDataset, overview, periodReport, roomDetail,
-  severityOf, tally, worstOf,
+  SLOTS, dayOverview, dayReport, exportRows, findingsFor, makeDataset, overview,
+  periodReport, resolutionOver, roomDetail, severityOf, slotForTime, tally, worstOf,
 } from '../src/lib/housekeeping.js';
 
 const ROOMS = [
@@ -31,6 +31,7 @@ const check = (day, bedId, state, nameTag, extra = {}) => ({
   id: nextId++,
   round_id: Number(day.replace(/-/g, '').slice(-4)),
   day,
+  slot: 'morning',
   bed_id: bedId,
   state,
   name_tag: state === 'occupied' ? (nameTag ? 1 : 0) : null,
@@ -362,4 +363,191 @@ test('the export writes one line per bed, naming the finding in words', () => {
   assert.equal(second[4], 'free');
   assert.equal(second[5], '');
   assert.equal(second[7], '');
+});
+
+
+// ------------------------------------------------------------- three a day --
+
+const at = (slot) => (day, bedId, state, nameTag, extra = {}) =>
+  check(day, bedId, state, nameTag, { slot, ...extra });
+
+const morning = at('morning');
+const housekeeping = at('housekeeping');
+const evening = at('evening');
+
+test('the clock picks the round somebody most likely means', () => {
+  assert.equal(slotForTime(8), 'morning');
+  assert.equal(slotForTime(9), 'morning');
+  assert.equal(slotForTime(11), 'housekeeping');
+  assert.equal(slotForTime(15), 'housekeeping');
+  assert.equal(slotForTime(20), 'evening');
+  assert.equal(slotForTime(23), 'evening');
+  assert.deepEqual(SLOTS.map((s) => s.key), ['morning', 'housekeeping', 'evening']);
+});
+
+test('the three rounds of a day are separate reports, each with its own answers', () => {
+  const ds = build({
+    rounds: [
+      { id: 1, day: '2026-08-10', slot: 'morning', submitted_at: '2026-08-10 08:30', submitted_by: 'Yaw' },
+      { id: 2, day: '2026-08-10', slot: 'housekeeping', submitted_at: null, submitted_by: null },
+    ],
+    checks: [
+      morning('2026-08-10', 1, 'occupied', false),
+      housekeeping('2026-08-10', 1, 'occupied', true),
+    ],
+  });
+
+  const am = dayReport(ds, '2026-08-10', 'morning');
+  assert.equal(am.totals.untagged, 1, 'the morning found it');
+  assert.equal(am.submitted, true);
+  assert.equal(am.round.submittedBy, 'Yaw');
+
+  const hk = dayReport(ds, '2026-08-10', 'housekeeping');
+  assert.equal(hk.totals.untagged, 0, 'housekeeping found it fixed');
+  assert.equal(hk.submitted, false, 'started but not submitted');
+
+  const pm = dayReport(ds, '2026-08-10', 'evening');
+  assert.equal(pm.totals.checked, 0, 'the evening round has not happened');
+  assert.equal(pm.round, null);
+});
+
+test('a finding put right later in the day counts as fixed, not as a problem', () => {
+  const ds = build({
+    checks: [
+      morning('2026-08-10', 1, 'occupied', false),   // found untagged
+      housekeeping('2026-08-10', 1, 'occupied', true), // and tagged by the time housekeeping looked
+      evening('2026-08-10', 1, 'occupied', true),
+    ],
+  });
+
+  const r = resolutionOver(ds, ['2026-08-10']);
+  assert.equal(r.found, 1);
+  assert.equal(r.fixed, 1);
+  assert.equal(r.unresolved, 0);
+  assert.equal(r.fixRate, 100);
+  assert.equal(r.lingering.length, 0);
+});
+
+test('a finding nobody dealt with is what the day is judged on', () => {
+  const ds = build({
+    checks: [
+      morning('2026-08-10', 1, 'occupied', false),
+      housekeeping('2026-08-10', 1, 'occupied', false),
+      evening('2026-08-10', 1, 'occupied', false),
+    ],
+  });
+
+  const r = resolutionOver(ds, ['2026-08-10']);
+  assert.equal(r.found, 1);
+  assert.equal(r.fixed, 0);
+  assert.equal(r.unresolved, 1);
+  assert.equal(r.neverRechecked, 0, 'two later rounds did look at it');
+  assert.equal(r.lingering[0].bed, 'Bed 1');
+  assert.equal(r.lingering[0].firstSeen, 'morning');
+  assert.equal(r.lingering[0].lastSeen, 'evening');
+});
+
+test('a finding by the last round of the day is not counted as anybody ignoring it', () => {
+  // Found by the evening check, so there was no later round to fix it in.
+  const ds = build({
+    checks: [
+      morning('2026-08-10', 1, 'free'),
+      evening('2026-08-10', 1, 'occupied', false),
+    ],
+  });
+
+  const r = resolutionOver(ds, ['2026-08-10']);
+  assert.equal(r.found, 1);
+  assert.equal(r.unresolved, 1);
+  assert.equal(r.neverRechecked, 1, 'nobody had the chance');
+  assert.equal(r.lingering[0].rechecked, false);
+});
+
+test('silence is not a fix — a bed nobody looked at again stays unresolved', () => {
+  const ds = build({
+    checks: [
+      morning('2026-08-10', 1, 'occupied', false),
+      // The other rounds happened, but never answered for bed 1.
+      housekeeping('2026-08-10', 2, 'free'),
+      evening('2026-08-10', 2, 'free'),
+    ],
+  });
+
+  const r = resolutionOver(ds, ['2026-08-10']);
+  assert.equal(r.unresolved, 1);
+  assert.equal(r.neverRechecked, 1);
+});
+
+test('a whole day reads as three rounds and one outstanding list', () => {
+  const ds = build({
+    rounds: [
+      { id: 1, day: '2026-08-10', slot: 'morning', submitted_at: '2026-08-10 08:30', submitted_by: 'Yaw' },
+      { id: 2, day: '2026-08-10', slot: 'housekeeping', submitted_at: '2026-08-10 11:00', submitted_by: 'Akosua' },
+      { id: 3, day: '2026-08-10', slot: 'evening', submitted_at: '2026-08-10 21:00', submitted_by: 'Kofi' },
+    ],
+    checks: [
+      morning('2026-08-10', 1, 'occupied', false),
+      housekeeping('2026-08-10', 1, 'occupied', true),
+      evening('2026-08-10', 1, 'occupied', true),
+      morning('2026-08-10', 2, 'occupied', false),
+      evening('2026-08-10', 2, 'occupied', false),
+    ],
+  });
+
+  const view = dayOverview(ds, '2026-08-10');
+  assert.equal(view.rounds.length, 3);
+  assert.deepEqual(view.rounds.map((r) => r.submittedBy), ['Yaw', 'Akosua', 'Kofi']);
+  assert.equal(view.roundsSubmitted, 3);
+
+  // Bed 1 was fixed; bed 2 never was. Only bed 2 is outstanding.
+  assert.equal(view.outstanding.length, 1);
+  assert.equal(view.outstanding[0].bed, 'Bed 2');
+  assert.equal(view.outstanding[0].slot, 'evening', 'judged on the last look it got');
+  assert.equal(view.closing.untagged, 1, 'one bed untagged at close, not two');
+  assert.equal(view.resolution.fixed, 1);
+  assert.equal(view.resolution.unresolved, 1);
+});
+
+test('a period reports each round separately, and who does it', () => {
+  const ds = build({
+    rounds: [
+      { id: 1, day: '2026-08-10', slot: 'morning', submitted_at: '2026-08-10 08:30', submitted_by: 'Yaw' },
+      { id: 2, day: '2026-08-10', slot: 'evening', submitted_at: '2026-08-10 21:00', submitted_by: 'Kofi' },
+    ],
+    checks: [
+      morning('2026-08-10', 1, 'occupied', false, { checked_by: 'Yaw' }),
+      evening('2026-08-10', 1, 'occupied', false, { checked_by: 'Kofi' }),
+    ],
+  });
+
+  const report = periodReport(ds, '2026-08-10', '2026-08-10');
+  const bySlot = Object.fromEntries(report.bySlot.map((s) => [s.slot, s]));
+
+  assert.equal(bySlot.morning.untagged, 1);
+  assert.equal(bySlot.morning.submitted, 1);
+  assert.equal(bySlot.morning.people[0].name, 'Yaw');
+  assert.equal(bySlot.evening.people[0].name, 'Kofi');
+  assert.equal(bySlot.housekeeping.rounds, 0, 'housekeeping did not walk that day');
+  assert.equal(bySlot.housekeeping.checked, 0);
+
+  assert.equal(report.roundsSubmitted, 2);
+  assert.equal(report.roundsExpected, 3);
+  assert.equal(report.resolution.unresolved, 1);
+});
+
+test('a bed checked three times is still one bed on the heatmap', () => {
+  const ds = build({
+    checks: [
+      morning('2026-08-10', 1, 'free'),
+      housekeeping('2026-08-10', 1, 'free'),
+      evening('2026-08-10', 1, 'free'),
+    ],
+  });
+
+  const report = periodReport(ds, '2026-08-10', '2026-08-10');
+  const dormA = report.heatmap.rows.find((r) => r.name === 'Dorm A');
+  assert.equal(dormA.cells[0].checked, 1, 'one bed answered for, not three');
+  assert.equal(dormA.cells[0].beds, 3);
+  assert.equal(dormA.cells[0].rounds, 3);
+  assert.equal(dormA.cells[0].severity, 'unchecked', 'two of its beds were never looked at');
 });

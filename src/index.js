@@ -144,7 +144,7 @@ const ROUTES = [
   // housekeeper's PIN opens one screen: the beds, and the two questions.
   ['GET', '/api/hk/bootstrap', 'hk_check', hk.bootstrap],
   ['POST', '/api/hk/checks', 'hk_check', hk.saveChecks],
-  ['POST', '/api/hk/rounds/:day/submit', 'hk_check', hk.submitRound],
+  ['POST', '/api/hk/rounds/:day/:slot/submit', 'hk_check', hk.submitRound],
   ['GET', '/api/hk/rounds', 'hk_reports', hk.listRounds],
   ['GET', '/api/hk/day', 'hk_reports', hk.getDay],
 
