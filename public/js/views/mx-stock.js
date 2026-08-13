@@ -70,7 +70,13 @@ export async function renderMxStock() {
       statTile({
         label: 'Needs ordering',
         value: fmtNum(data.reorder.length, 0),
-        sub: `about ${fmtMoney(data.reorderValue, { compact: true })} to restock`,
+        // Two different problems wear this badge: below the level you set, and
+        // going out faster than what is left will cover. Only the first has a
+        // bill attached, and "about GHS 0 to restock" is how a figure teaches
+        // people to stop reading it.
+        sub: data.reorderValue > 0
+          ? `about ${fmtMoney(data.reorderValue, { compact: true })} to restock`
+          : 'going out faster than the shelf covers',
         accent: data.reorder.length ? 'var(--warn)' : undefined,
       }),
       statTile({
@@ -89,7 +95,7 @@ export async function renderMxStock() {
     data.reorder.length
       ? card('Order list', {
         wide: true,
-        note: 'Everything below its restock level, worst first',
+        note: 'Below its restock level, or going out faster than the shelf will cover',
       },
         table([
           { key: 'name', label: 'Part', format: (v, r) => h('div', h('div', v), h('small.muted', [r.categoryName, attributeSummary(r.attributes)].filter(Boolean).join(' · '))) },

@@ -21,6 +21,12 @@ import { renderMxPurchases } from './views/mx-purchases.js';
 import { renderMxSetup } from './views/mx-setup.js';
 import { renderMxArea } from './views/mx-area.js';
 import { renderMxCompare } from './views/mx-compare.js';
+import { renderShopSell } from './views/shop-sell.js';
+import { renderShopOverview, renderShopReport, renderShopCompare } from './views/shop-reports.js';
+import { renderShopSales } from './views/shop-sales.js';
+import { renderShopStock } from './views/shop-stock.js';
+import { renderShopPurchases } from './views/shop-purchases.js';
+import { renderShopSetup } from './views/shop-setup.js';
 
 export const state = {
   role: null,
@@ -57,6 +63,18 @@ const ROUTES = [
   // Reached by clicking a room in the report rather than from the menu.
   { path: 'mx-area', label: 'Room', permission: 'mx_reports', render: renderMxArea, hidden: true },
 
+  // ------------------------------------------------------------- craft shop --
+  // The till comes first: it is the screen somebody stands at all day, and the
+  // only one an assistant can open at all.
+  { path: 'shop-sell', label: 'Till', permission: 'shop_sell', render: renderShopSell, group: 'Craft shop' },
+  { path: 'shop-sales', label: 'Sales', permission: 'shop_sell', render: renderShopSales, group: 'Craft shop' },
+  { path: 'shop-overview', label: 'Takings', permission: 'shop_reports', render: renderShopOverview, group: 'Craft shop' },
+  { path: 'shop-report', label: 'Report', permission: 'shop_reports', render: renderShopReport, group: 'Craft shop' },
+  { path: 'shop-compare', label: 'Compare', permission: 'shop_reports', render: renderShopCompare, group: 'Craft shop' },
+  { path: 'shop-stock', label: 'Stock', permission: 'shop_stock', render: renderShopStock, group: 'Craft shop' },
+  { path: 'shop-purchases', label: 'Bought', permission: 'shop_purchases', render: renderShopPurchases, group: 'Craft shop' },
+  { path: 'shop-setup', label: 'Setup', permission: 'shop_setup', render: renderShopSetup, group: 'Craft shop' },
+
   // Open to everyone: the person most likely to need it is the one with the
   // fewest permissions.
   { path: 'guide', label: 'Help', permission: null, render: renderGuide },
@@ -79,7 +97,13 @@ function currentRoute() {
 
 /** Land people on the most useful screen they are actually allowed to open. */
 function defaultRoute() {
-  const preferred = ['overview', 'entry', 'mx-overview', 'mx-issue', 'stock', 'purchases', 'setup', 'admin'];
+  const preferred = [
+    'overview', 'entry', 'mx-overview', 'mx-issue',
+    // The till before the shop's reports: an assistant who can do both is
+    // still standing at a counter.
+    'shop-sell', 'shop-overview',
+    'stock', 'purchases', 'setup', 'admin',
+  ];
   return preferred.find((path) => allowed(ROUTES.find((r) => r.path === path))) ?? 'entry';
 }
 
@@ -446,7 +470,15 @@ function resetSession() {
   state.catalog = null;
 }
 
-const ROLE_LABELS = { cook: 'Kitchen', manager: 'Manager', admin: 'Administrator' };
+const ROLE_LABELS = {
+  cook: 'Kitchen',
+  manager: 'Manager',
+  technician: 'Maintenance',
+  maintenance_manager: 'Maintenance manager',
+  shop_assistant: 'Craft shop',
+  shop_manager: 'Shop manager',
+  admin: 'Administrator',
+};
 function roleLabel(role) {
   return ROLE_LABELS[role] || 'Signed in';
 }

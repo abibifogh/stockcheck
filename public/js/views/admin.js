@@ -801,11 +801,11 @@ function inAppCard(data, reload) {
     h('p.muted', { style: { fontSize: '.87rem', marginTop: 0 } },
       'These need no email account and no setup. Everybody sees what their own access allows: '
       + 'a submitted breakfast sheet reaches whoever can read reports, a count waiting for '
-      + 'approval reaches administrators, and a stock count that has come round reaches '
-      + 'whoever was asked to do it.'),
+      + 'approval — in the parts store or the craft shop — reaches administrators, and a '
+      + 'scheduled stock count that has come round reaches whoever was asked to do it.'),
     h('div.field-row',
       h('label.field', h('span', 'The bell'), inApp),
-      h('label.field', h('span', 'A part count needs approving'), countPending),
+      h('label.field', h('span', 'A stock count needs approving'), countPending),
       h('label.field', h('span', 'A scheduled stock count is due'), stocktakeDue),
     ),
     h('div.btn-row', { style: { marginTop: '1rem' } },

@@ -59,6 +59,23 @@ indistinguishable from "we forgot" and silently drags every average down.
 | **Daily email** | A summary of each submitted day, with the analysis, to whichever addresses you choose. |
 | **Erase data** | Clear a trial run before going live, with a typed confirmation. Keeps people, settings and the ingredient list. |
 
+### For the craft shop — a till
+
+The third store, and the only one that takes money. Cash or card; nothing else
+is offered, because nothing else is accepted.
+
+| Feature | What it does |
+|---|---|
+| **Till** | Tap the goods, choose cash or card, type what the customer handed over and the change appears. A receipt follows the sale, printable from the browser. Prices come from the server, never from the browser. |
+| **Voiding** | A wrong sale is voided, never deleted — it stays on the list with who voided it and why, stops counting towards takings, and the stock goes back on the shelf. |
+| **Takings** | Revenue and margin together on every screen. Cash and card are separated, because only one of the two can be short at the end of a day. |
+| **Stock** | The same weighted-average ledger as the other two stores, plus what the shelf would fetch at today's prices. Dead stock gets as much room as shortages: in a craft shop that is where the money goes. |
+| **Staff** | `shop_assistant` opens the till and nothing else in the whole system — and never sees what anything cost the hotel. `shop_manager` runs the shop. |
+
+A product with no selling price cannot be sold: the till greys it out and the
+server refuses it. A price of zero is almost always something nobody got round
+to pricing, and letting it through means giving stock away at the counter.
+
 ---
 
 ## How the numbers are worked out
@@ -285,8 +302,10 @@ MANAGER_PIN=9999
 src/
   index.js            Worker entry: routing, auth endpoints
   lib/
-    ledger.js         Weighted-average costing and book stock
-    analytics.js      Daily / weekly / monthly / stock analysis
+    ledger.js         Weighted-average costing and book stock, shared by all three stores
+    analytics.js      Breakfast: daily / weekly / monthly / stock analysis
+    maintenance.js    Parts store: cost by room and area
+    shop.js           Craft shop: takings, margin and what is not selling
     auth.js           PIN login, signed session cookies
     http.js           JSON responses, input validation
   routes/             API handlers
