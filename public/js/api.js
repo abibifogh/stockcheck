@@ -120,6 +120,8 @@ export const api = {
   eraseData: (body) => request('/api/data/erase', { method: 'POST', body }),
 
   saveStockCounts: (body) => request('/api/stock-counts', { method: 'POST', body }),
+  pendingStockCounts: () => request('/api/stock-counts/pending'),
+  reviewStockCounts: (body) => request('/api/stock-counts/review', { method: 'POST', body }),
   updateSettings: (body) => request('/api/settings', { method: 'PUT', body }),
 
   // ------------------------------------------------------------ maintenance --

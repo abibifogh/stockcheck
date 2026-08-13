@@ -58,6 +58,7 @@ indistinguishable from "we forgot" and silently drags every average down.
 | **Bulk entry** | Download a spreadsheet template, fill in a backlog, upload it. Always previews before it writes. |
 | **Daily email** | A summary of each submitted day, with the analysis, to whichever addresses you choose. |
 | **Erase data** | Clear a trial run before going live, with a typed confirmation. Keeps people, settings and the ingredient list. |
+| **Approving counts** | A physical count in any of the three stores is a claim about the shelf; accepting it is what corrects the book. Whoever counts is never whoever decides. |
 
 ### For the bakery — a link, and nothing else
 

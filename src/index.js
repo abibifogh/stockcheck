@@ -77,6 +77,10 @@ const ROUTES = [
 
   ['GET', '/api/insights/stock', 'stock', insights.stock],
   ['POST', '/api/stock-counts', 'stock', catalog.createStockCount],
+  ['GET', '/api/stock-counts/pending', 'stock', catalog.pendingStockCounts],
+  // Accepting a count rewrites the shelf, so it is an administrator's call —
+  // never the same person who did the counting.
+  ['POST', '/api/stock-counts/review', 'users', catalog.reviewStockCounts],
 
   ['GET', '/api/purchases', 'purchases', catalog.listPurchases],
   ['GET', '/api/purchases/last-costs', 'purchases', catalog.getLastCosts],

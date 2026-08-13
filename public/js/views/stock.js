@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { state } from '../app.js';
+import { can, state } from '../app.js';
 import { fmtDay, fmtMoney, fmtNum, h, mount, toast, todayISO } from '../util.js';
 import { card, exportButton, groupedTable, statTile, table } from './components.js';
 
@@ -16,7 +16,10 @@ const STATUS_PILL = {
  */
 export async function renderStock(params) {
   const asOf = params.asOf || todayISO();
-  const data = await api.stock(asOf);
+  const [data, pending] = await Promise.all([
+    api.stock(asOf),
+    api.pendingStockCounts().catch(() => ({ counts: [], days: [] })),
+  ]);
   const host = h('div');
 
   const reload = async () => mount(host, await renderStock({ asOf }));
@@ -37,10 +40,12 @@ export async function renderStock(params) {
       accent: 'var(--bad)',
     }),
     statTile({
-      label: 'Counted variances',
-      value: fmtNum(data.shrinkage.length, 0),
-      sub: 'physical count differs from the book',
-      accent: data.shrinkage.length ? 'var(--warn)' : 'var(--good)',
+      label: 'Counts waiting',
+      value: fmtNum(pending.counts?.length ?? 0, 0),
+      sub: pending.counts?.length
+        ? 'for an administrator to accept'
+        : 'nothing waiting on a decision',
+      accent: pending.counts?.length ? 'var(--accent)' : 'var(--good)',
     }),
   );
 
@@ -70,20 +75,26 @@ export async function renderStock(params) {
     : null;
 
   const shrinkageCard = data.shrinkage.length
-    ? card('Count variances', { note: 'Physical count against the book balance', wide: true },
+    ? card('Count variances', { note: 'Counted, and still waiting on a decision', wide: true },
       table([
         { key: 'name', label: 'Ingredient' },
-        { key: 'lastCountDay', label: 'Counted on', format: (v) => fmtDay(v) },
-        { key: 'lastCountQty', label: 'Counted', align: 'right', format: (v, r) => `${fmtNum(v, 2)} ${r.unit}` },
+        { key: 'pendingCountDay', label: 'Counted on', format: (v) => fmtDay(v) },
+        { key: 'pendingCountQty', label: 'Counted', align: 'right', format: (v, r) => `${fmtNum(v, 2)} ${r.unit}` },
         { key: 'countVariance', label: 'Difference', align: 'right', format: (v, r) => h(`span.delta.${v < 0 ? 'up' : 'down'}`, `${v > 0 ? '+' : ''}${fmtNum(v, 2)} ${r.unit}`) },
         { key: 'countVarianceValue', label: 'Value', align: 'right', format: (v) => fmtMoney(v, { withSymbol: false }) },
       ], data.shrinkage),
       h('p.muted', { style: { fontSize: '.82rem', marginTop: '.6rem', marginBottom: 0 } },
-        'A shortfall means more left the store than was recorded as used — over-portioning, waste, unrecorded staff meals or loss. A surplus usually means a delivery was never keyed in.'))
+        'A shortfall means more left the store than was recorded as used — over-portioning, waste, unrecorded staff meals or loss. A surplus usually means a delivery was never keyed in. '
+        + 'Nothing here has moved the book yet.'))
     : null;
 
-  const countCard = card('Record a physical count', { note: 'Enter only what you actually counted' },
+  const countCard = card('Record a physical count', {
+    note: 'Enter only what you actually counted',
+  },
     countForm(reload),
+    h('p.muted', { style: { fontSize: '.82rem', marginTop: '.7rem', marginBottom: 0 } },
+      'A count does not change the figures on its own. It goes to an administrator, who sees what '
+      + 'accepting it would do to each item and decides. Until then the book stands.'),
   );
 
   const allCard = card('Full stock position', {
@@ -127,6 +138,7 @@ export async function renderStock(params) {
     tiles,
     reorderCard,
     shrinkageCard,
+    countApprovalCard(pending, reload),
     h('div.grid.grid-2', countCard, h('div')),
     allCard,
     bakeryHost,
@@ -137,6 +149,120 @@ export async function renderStock(params) {
   loadBakery(bakeryHost, reload);
 
   return host;
+}
+
+/**
+ * Counts waiting on a decision.
+ *
+ * Whoever counts is never whoever decides. Recounting a store is exactly the
+ * moment a shortfall could be quietly written off, so the two jobs are kept
+ * apart: anybody with the stock screen can count and see the queue, and only an
+ * administrator can accept one. The same rule as the parts store and the shop.
+ */
+function countApprovalCard(pending, reload) {
+  const counts = pending?.counts ?? [];
+  if (!counts.length) return null;
+
+  const isAdmin = can('users');
+  const chosen = new Set(counts.map((c) => c.id));
+  const note = h('input', { type: 'text', placeholder: 'Note (optional)', maxlength: 300 });
+  const label = h('span.muted', { style: { fontSize: '.85rem' } });
+
+  const refresh = () => {
+    const value = counts.filter((c) => chosen.has(c.id))
+      .reduce((n, c) => n + c.differenceValue, 0);
+    label.textContent = `${chosen.size} selected · ${chosen.size ? fmtMoney(value) : 'nothing'} `
+      + `${value < 0 ? 'short' : 'over'}`;
+  };
+
+  const boxes = new Map();
+  const tick = (count) => {
+    const box = h('input', {
+      type: 'checkbox', checked: true, style: { width: 'auto', margin: 0 },
+      onchange: () => {
+        if (box.checked) chosen.add(count.id); else chosen.delete(count.id);
+        refresh();
+      },
+    });
+    boxes.set(count.id, box);
+    return box;
+  };
+
+  const decide = async (event, approve) => {
+    if (!chosen.size) { toast('Nothing selected', 'bad'); return; }
+    const value = counts.filter((c) => chosen.has(c.id)).reduce((n, c) => n + c.differenceValue, 0);
+    if (approve && !confirm(
+      `Accept ${chosen.size} counted ${chosen.size === 1 ? 'figure' : 'figures'}? `
+      + `Stock will be corrected to what was counted, a change of ${fmtMoney(value)}.`,
+    )) return;
+
+    event.target.disabled = true;
+    try {
+      const result = await api.reviewStockCounts({
+        ids: [...chosen], approve, note: note.value.trim() || null,
+      });
+      toast(approve
+        ? `${result.approved} accepted — stock corrected`
+        : `${result.rejected} rejected — nothing changed`, 'good');
+      reload();
+    } catch (err) {
+      toast(err.message, 'bad');
+      event.target.disabled = false;
+    }
+  };
+
+  refresh();
+
+  return card('Counts waiting for a decision', {
+    wide: true,
+    note: `${counts.length} ${counts.length === 1 ? 'ingredient' : 'ingredients'} counted, nothing changed yet`,
+  },
+    isAdmin
+      ? null
+      : h('div.alert.info',
+        h('span.alert-icon', 'ℹ️'),
+        h('div',
+          h('div.alert-title', 'These are with an administrator'),
+          h('div.alert-detail',
+            'Stock stays as the book has it until somebody with Users & data accepts them.'))),
+
+    table([
+      ...(isAdmin ? [{ key: 'id', label: '', format: (v, r) => tick(r) }] : []),
+      { key: 'day', label: 'Counted', format: (v) => fmtDay(v) },
+      { key: 'name', label: 'Ingredient' },
+      { key: 'bookQty', label: 'Book says', align: 'right', format: (v, r) => `${fmtNum(v, 2)} ${r.unit}` },
+      { key: 'countedQty', label: 'Counted', align: 'right', format: (v, r) => h('strong', `${fmtNum(v, 2)} ${r.unit}`) },
+      {
+        key: 'difference',
+        label: 'Difference',
+        align: 'right',
+        format: (v, r) => h('span', {
+          style: { color: v < 0 ? 'var(--bad)' : v > 0 ? 'var(--good)' : undefined },
+        }, `${v > 0 ? '+' : ''}${fmtNum(v, 2)} ${r.unit}`),
+      },
+      { key: 'differenceValue', label: 'Worth', align: 'right', format: (v) => fmtMoney(v, { withSymbol: false }) },
+      { key: 'countedBy', label: 'By', format: (v) => v || h('span.muted', '—') },
+    ], counts),
+
+    isAdmin
+      ? h('div',
+        h('div.field-row', { style: { marginTop: '.8rem' } },
+          h('label.field', h('span', 'Note on this decision'), note)),
+        h('div.btn-row', { style: { marginTop: '.7rem', alignItems: 'center' } },
+          h('button.btn-sm', {
+            onclick: () => { boxes.forEach((b) => { b.checked = false; }); chosen.clear(); refresh(); },
+          }, 'Select none'),
+          h('button', { onclick: (e) => decide(e, false) }, 'Reject'),
+          h('button.btn-primary', { onclick: (e) => decide(e, true) }, 'Accept and correct stock'),
+          label,
+        ))
+      : null,
+
+    h('p.muted', { style: { fontSize: '.82rem', marginTop: '.8rem', marginBottom: 0 } },
+      'Accepting sets the book to what was counted, from that date onwards. A delivery keyed in '
+      + 'late and dated before the count does not unsettle it — you counted what was actually '
+      + 'there, and that stands.'),
+  );
 }
 
 /**
@@ -244,7 +370,7 @@ function countForm(onSaved) {
           event.target.disabled = true;
           try {
             await api.saveStockCounts({ day: day.value, counts });
-            toast(`Saved ${counts.length} counted ${counts.length === 1 ? 'item' : 'items'}`, 'good');
+            toast(`${counts.length} counted — waiting for an administrator to accept it`, 'good');
             onSaved();
           } catch (err) {
             toast(err.message, 'bad');

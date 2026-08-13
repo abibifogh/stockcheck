@@ -355,6 +355,86 @@ test('a physical count is reported as a variance against the book balance', () =
   assert.equal(report.rows[0].countVariance, -10);
   assert.equal(report.rows[0].countVarianceValue, -20);
   assert.equal(report.shrinkage.length, 1);
+
+  // A count taken before the approval step existed carries no status at all,
+  // and must show as waiting rather than silently moving the book.
+  assert.equal(report.rows[0].stock, 80, 'the book has not moved');
+  assert.equal(report.rows[0].pendingCountQty, 70);
+});
+
+/** One counted ingredient, so the approval rule can be exercised. */
+function counted(status) {
+  return makeDataset({
+    categories: CATEGORIES,
+    ingredients: [{ ...INGREDIENTS[0], opening_stock: 100, par_level: 0, default_unit_cost: 2 }],
+    settings: [],
+    stockCounts: [{ id: 1, day: '2026-03-02', ingredient_id: 1, counted_qty: 70, status }],
+    serviceDays: [
+      { day: '2026-03-02', inhouse_guests: 50, outside_guests: 0, outsider_fee: 0 },
+      { day: '2026-03-03', inhouse_guests: 50, outside_guests: 0, outsider_fee: 0 },
+    ],
+    usage: [
+      { day: '2026-03-02', ingredient_id: 1, qty: 20 },
+      { day: '2026-03-03', ingredient_id: 1, qty: 5 },
+    ],
+    purchases: [],
+  });
+}
+
+test('a pending count changes nothing, and says what it would change', () => {
+  const row = stockReport(counted('pending'), '2026-03-03').rows[0];
+
+  assert.equal(row.stock, 75, '100 opening less 25 used — the count has not been applied');
+  assert.equal(row.pendingCountQty, 70);
+  assert.equal(row.countVariance, -10, 'measured against the book on the day it was counted');
+});
+
+test('an accepted count sets the shelf from its date onwards', () => {
+  const row = stockReport(counted('approved'), '2026-03-03').rows[0];
+
+  assert.equal(row.stock, 65, 'counted 70 on the 2nd, then 5 used on the 3rd');
+  assert.equal(row.lastCountDay, '2026-03-02');
+  assert.equal(row.countVariance, null, 'nothing outstanding once it is accepted');
+  assert.equal(row.pendingCountQty, null);
+});
+
+test('a rejected count leaves every figure exactly as it was', () => {
+  const rejected = stockReport(counted('rejected'), '2026-03-03').rows[0];
+  const never = stockReport(makeDataset({
+    categories: CATEGORIES,
+    ingredients: [{ ...INGREDIENTS[0], opening_stock: 100, par_level: 0, default_unit_cost: 2 }],
+    settings: [],
+    stockCounts: [],
+    serviceDays: [
+      { day: '2026-03-02', inhouse_guests: 50, outside_guests: 0, outsider_fee: 0 },
+      { day: '2026-03-03', inhouse_guests: 50, outside_guests: 0, outsider_fee: 0 },
+    ],
+    usage: [
+      { day: '2026-03-02', ingredient_id: 1, qty: 20 },
+      { day: '2026-03-03', ingredient_id: 1, qty: 5 },
+    ],
+    purchases: [],
+  }), '2026-03-03').rows[0];
+
+  assert.equal(rejected.stock, never.stock);
+  assert.equal(rejected.countVariance, null, 'rejected is decided, so nothing is outstanding');
+  assert.equal(rejected.pendingCountQty, null);
+});
+
+test('a delivery keyed in late cannot unsettle an accepted count', () => {
+  // Counted 70 on the 2nd. A delivery of 30 is then recorded, dated the 1st —
+  // before the count. The shelf was counted at 70 whatever the paperwork says.
+  const ds = makeDataset({
+    categories: CATEGORIES,
+    ingredients: [{ ...INGREDIENTS[0], opening_stock: 100, par_level: 0, default_unit_cost: 2 }],
+    settings: [],
+    stockCounts: [{ id: 1, day: '2026-03-02', ingredient_id: 1, counted_qty: 70, status: 'approved' }],
+    serviceDays: [{ day: '2026-03-02', inhouse_guests: 50, outside_guests: 0, outsider_fee: 0 }],
+    usage: [{ day: '2026-03-02', ingredient_id: 1, qty: 20 }],
+    purchases: [{ day: '2026-03-01', ingredient_id: 1, qty: 30, unit_cost: 2 }],
+  });
+
+  assert.equal(stockReport(ds, '2026-03-02').rows[0].stock, 70);
 });
 
 // --------------------------------------------------------------- hints ---

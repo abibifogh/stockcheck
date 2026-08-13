@@ -85,6 +85,16 @@ export function makeDataset(raw) {
       })),
     ],
     usage: raw.usage,
+    // Only a count an administrator has accepted moves the book. A pending one
+    // is reported as a difference and changes nothing, which is what makes the
+    // approval step mean anything.
+    //
+    // Applied as a true-up rather than a stored delta: the count sets the
+    // balance, so a delivery keyed in late and dated before the count cannot
+    // unsettle it. You counted what was actually there, and that stands.
+    counts: (raw.stockCounts ?? [])
+      .filter((c) => c.status === 'approved')
+      .map((c) => ({ day: c.day, ingredient_id: c.ingredient_id, qty: c.counted_qty })),
   });
 
   // day -> ingredient -> qty produced. Wanted by the stock screen and the day
@@ -857,10 +867,23 @@ export function stockReport(ds, asOf) {
       const daysCover = dailyRate > 1e-9 ? round(stock / dailyRate, 1) : null;
       const par = Number(ing.par_level) || 0;
 
-      const count = ds.stockCounts
-        .filter((c) => c.ingredient_id === ing.id && c.day <= asOf)
+      // A pending count is the interesting one: a claim about the shelf the
+      // book has not accepted yet. Anything not decided counts as pending,
+      // including a row written before the approval step existed — a count
+      // that fell through a gap must show as waiting, never disappear.
+      const pending = ds.stockCounts
+        .filter((c) => c.ingredient_id === ing.id && c.day <= asOf
+          && c.status !== 'approved' && c.status !== 'rejected')
         .at(-1);
-      const variance = count ? round(Number(count.counted_qty) - ds.ledger.stockOn(ing.id, count.day), 3) : null;
+      const count = ds.stockCounts
+        .filter((c) => c.ingredient_id === ing.id && c.day <= asOf && c.status === 'approved')
+        .at(-1);
+
+      // For an accepted count the book has already been moved to match, so the
+      // difference worth showing is the one still outstanding.
+      const variance = pending
+        ? round(Number(pending.counted_qty) - ds.ledger.stockOn(ing.id, pending.day), 3)
+        : null;
 
       let status = 'ok';
       if (stock < 0) status = 'negative';
@@ -882,6 +905,8 @@ export function stockReport(ds, asOf) {
         suggestedOrder: par > 0 && stock < par ? round(par - stock, 2) : 0,
         lastCountDay: count?.day ?? null,
         lastCountQty: count ? round(Number(count.counted_qty), 3) : null,
+        pendingCountDay: pending?.day ?? null,
+        pendingCountQty: pending ? round(Number(pending.counted_qty), 3) : null,
         countVariance: variance,
         countVarianceValue: variance != null ? round(variance * unitCost, 2) : null,
         status,

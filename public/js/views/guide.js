@@ -704,6 +704,31 @@ const SECTIONS = [
       warn('Count the store once a month.', 'Everything else in this system is built on what people '
         + 'said they used. A physical count is the only thing that reveals waste, over-portioning and '
         + 'loss. The difference between the count and the book figure is the honest number.'),
+      h('h3', { style: { marginTop: '1.1rem' } }, 'A count is a claim. Accepting it is what makes it true.'),
+      steps(
+        h('span', h('strong', 'Count the shelf'), ' and enter the figures. You do not have to do the '
+          + 'whole store; enter what you counted.'),
+        h('span', h('strong', 'Nothing moves yet.'), ' The count goes into a queue with what the book '
+          + 'says beside it, and what the difference is worth.'),
+        h('span', h('strong', 'An administrator accepts or rejects it.'), ' Accepting corrects the '
+          + 'book to the counted figure. Rejecting leaves everything alone.'),
+      ),
+      warn('Whoever counts is never whoever decides.',
+        'Recounting a store is exactly the moment a shortfall could be quietly written off, so the '
+        + 'two jobs are kept apart. Anybody with the stock screen can record a count and see the '
+        + 'queue; only an administrator can accept one. The parts store and the craft shop work the '
+        + 'same way.'),
+      note('An accepted count wins from its date onwards.',
+        'Usage and deliveries after that date carry on from the counted figure. A delivery keyed in '
+        + 'late, dated before the count, does not unsettle it — you counted what was actually there, '
+        + 'and that stands.'),
+      note('Re-counting starts the decision again.',
+        'Changing a count for the same item on the same day puts it back in the queue, even if it '
+        + 'had already been accepted. An agreed figure cannot be edited underneath somebody.'),
+      note('Counts taken before this existed are waiting, not applied.',
+        'Every count recorded under the old rule — where a count never moved stock — is in the '
+        + 'queue as pending. That keeps today\u2019s figures exactly as they were and puts the '
+        + 'decision in front of a person, rather than silently rewriting months of history.'),
     ),
   },
 
@@ -1161,8 +1186,9 @@ const SECTIONS = [
       points(
         h('span', h('strong', 'A breakfast sheet was submitted —'), ' who recorded it, how many '
           + 'guests, and how many items. Goes to everybody who can read reports.'),
-        h('span', h('strong', 'A part or shop count is waiting for approval —'), ' goes to '
-          + 'administrators, because they are the only people who can accept one.'),
+        h('span', h('strong', 'A stock count is waiting for approval —'), ' from the kitchen, the '
+          + 'parts store or the shop. Goes to administrators, because they are the only people who '
+          + 'can accept one.'),
         h('span', h('strong', 'A scheduled stock count has come round —'), ' goes to whoever was '
           + 'asked to do it, and to whoever runs the parts store.'),
         h('span', h('strong', 'The bakery reported a production cycle —'), ' goes to whoever can '
