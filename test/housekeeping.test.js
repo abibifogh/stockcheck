@@ -387,11 +387,11 @@ const housekeeping = at('housekeeping');
 const evening = at('evening');
 
 test('the clock picks the round somebody most likely means', () => {
+  // Reception's two, which between them cover the whole day. The housekeeping
+  // round is chosen by who is asking rather than by when — see slots.test.js.
   assert.equal(slotForTime(8), 'morning');
-  assert.equal(slotForTime(9), 'morning');
-  assert.equal(slotForTime(11), 'housekeeping');
-  assert.equal(slotForTime(15), 'housekeeping');
-  assert.equal(slotForTime(20), 'evening');
+  assert.equal(slotForTime(13), 'morning');
+  assert.equal(slotForTime(14), 'evening');
   assert.equal(slotForTime(23), 'evening');
   assert.deepEqual(SLOTS.map((s) => s.key), ['morning', 'housekeeping', 'evening']);
 });

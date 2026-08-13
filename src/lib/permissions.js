@@ -63,13 +63,13 @@ export const ROLES = [
   {
     key: 'receptionist',
     label: 'Receptionist',
-    detail: 'Records the morning and evening bed checks from the desk. Sees nothing else.',
+    detail: 'Records the morning and afternoon bed checks from the desk. Sees nothing else.',
     defaults: ['hk_check'],
   },
   {
     key: 'housekeeper',
     label: 'Housekeeper',
-    detail: 'Walks the dorms and records the beds. Sees nothing else.',
+    detail: 'Walks the dorms and records the housekeeping round, which is theirs alone.',
     defaults: ['hk_check'],
   },
   {

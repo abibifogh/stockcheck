@@ -850,13 +850,20 @@ const SECTIONS = [
     lead: 'Two questions per bed. It should take about as long as it takes to look at the bed.',
     render: () => h('div',
       h('p', 'The dorms are walked three times a day, and each walk is its own report. '
-        + 'Reception check when they open up, housekeeping check again while the rooms are being '
-        + 'done, and reception check once more before closing. The point of three is that '
-        + 'something found in the morning can be put right before the evening.'),
+        + 'Reception check in the morning, housekeeping check again while the rooms are being '
+        + 'done, and reception check once more in the afternoon. The point of three is that '
+        + 'something found in the morning can be put right before the day ends.'),
+      h('p', h('strong', 'Each round has its own shift and its own hours.'), ' The morning check '
+        + 'runs from 6am to 2pm and the afternoon check from 2pm to midnight, both at reception. '
+        + 'The housekeeping round in between is the housekeepers’ own — nobody else can fill it in, '
+        + 'at any hour, because a round reception recorded says nothing about whether anybody '
+        + 'walked the rooms.'),
       steps(
         h('span', h('strong', 'Check you are on the right one.'), ' The three checks are along the '
-          + 'top — Morning, Housekeeping, Evening. The one the clock is in is already selected, so '
-          + 'usually there is nothing to do here. Each shows whether it has been done and by whom.'),
+          + 'top — Morning, Housekeeping, Afternoon. Yours is already selected: housekeepers open '
+          + 'on their own round whatever the hour, and reception on whichever of their two the '
+          + 'clock is in. A round you cannot fill in is faded, and says why. You can still open it '
+          + 'to read what the other shift found.'),
         h('span', h('strong', 'Open the room you are standing in.'), ' Rooms are listed down the '
           + 'screen. The first one with beds still to answer for is already open; tap any other '
           + 'room’s name to open it.'),
@@ -891,10 +898,16 @@ const SECTIONS = [
           h('p', 'Answer what you see now, not what somebody else saw earlier. If it has a tag now, '
             + 'say yes — that is how the system knows it was dealt with. Each check is a fresh look, '
             + 'and the reports compare them.')],
-        ['I am doing yesterday evening\u2019s check this morning.',
+        ['I am doing yesterday afternoon\u2019s check this morning.',
           h('p', 'Use the earlier checks at the foot of the screen to pick the right day and the '
-            + 'right one of the three. Better recorded late than not at all — but it is filed '
-            + 'against the round it belongs to, not the one you are standing in.')],
+            + 'right one of the three. The hours only apply to today, so a round caught up on later '
+            + 'is never refused — better recorded late than not at all. It is filed against the '
+            + 'round it belongs to, not the one you are standing in.')],
+        ['It says I cannot fill this round in.',
+          h('p', 'Either it is the housekeeping round and you are not housekeeping, or it is '
+            + 'reception\u2019s round outside its hours — the morning check closes at 2pm and the '
+            + 'afternoon one opens then. The message says which. A housekeeping manager can record '
+            + 'any round at any time, so ask them if something genuinely has to go in late.')],
         ['The signal dropped while I was in the basement.',
           h('p', 'Keep going. The screen says “not saved” and keeps trying on its own; as soon as '
             + 'there is signal again everything you tapped goes through.')],
@@ -916,7 +929,7 @@ const SECTIONS = [
         + 'goes in, and it is the only reason the reports can tell you a bed was found occupied when '
         + 'nobody was expected in it.'),
       h('p', h('strong', 'A roster is a night, not a day.'), ' The roster you write on Tuesday is '
-        + 'for Tuesday night. Two checks look at that night from either side: Tuesday evening, '
+        + 'for Tuesday night. Two checks look at that night from either side: Tuesday afternoon, '
         + 'before anybody sleeps in it, and Wednesday morning, to see what became of it. That is '
         + 'why this screen asks about two nights at once.'),
       steps(
@@ -971,13 +984,13 @@ const SECTIONS = [
     render: () => h('div',
       readings(
         ['The three checks',
-          'Morning, housekeeping and evening, each its own report with its own submitter. The panel '
+          'Morning, housekeeping and afternoon, each its own report with its own submitter. The panel '
           + 'shows how many of each were done, and who walked them.',
           'A round that keeps being missed is a rota problem, and the hours it covers are '
           + 'unwatched however good the other two look.'],
         ['Found and fixed',
           'Whether a finding survived the day. A bed untagged in the morning and tagged by the '
-          + 'evening was dealt with; the same bed untagged all day was not.',
+          + 'afternoon was dealt with; the same bed untagged all day was not.',
           'This is the number that says whether checking three times is worth anything. '
           + '"Still wrong at close" is the list to act on.'],
         ['Occupied, no name tag',

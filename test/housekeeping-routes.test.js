@@ -198,15 +198,23 @@ test('each of the three checks is its own round on the same day', async () => {
   }
 });
 
-test('a check that names no round falls to the one the clock is in', async () => {
+test('a check that names no round falls to the one the person is on', async () => {
   const db = fakeDb();
+  // The context signs in as a housekeeper, and the housekeeping round is the
+  // only one they can record — so it is the one they are handed, whatever the
+  // hour. Reception get whichever of their two the clock is in.
   await saveChecks(context({ day: '2026-08-10', checks: [{ bedId: 3, state: 'free' }] }, db));
 
-  // Whichever it picked, it must be a real one rather than blank — a check
-  // filed against nothing would vanish from every report.
   const { slot } = openedRound(db);
-  assert.ok(['morning', 'housekeeping', 'evening'].includes(slot), `picked ${slot}`);
+  assert.equal(slot, 'housekeeping');
   assert.equal(savedChecks(db)[0].slot, slot);
+
+  const desk = fakeDb();
+  await saveChecks(asRole(
+    { day: '2026-08-10', checks: [{ bedId: 3, state: 'free' }] },
+    { role: 'receptionist', permissions: ['hk_check'], db: desk },
+  ));
+  assert.ok(['morning', 'evening'].includes(openedRound(desk).slot));
 });
 
 test('a round nobody recognises is refused rather than invented', async () => {
@@ -266,4 +274,103 @@ test('an empty save is refused rather than opening an empty round', async () => 
     return true;
   });
   assert.equal(db.written.length, 0, 'nothing should have been written at all');
+});
+
+// -------------------------------------------------- whose round, and when --
+
+/**
+ * The two rules the server holds regardless of what the screen offers: the
+ * housekeeping round belongs to housekeeping, and reception's two rounds have
+ * hours. Both are enforced here rather than only in the interface, because an
+ * interface is a courtesy and the API is the gate.
+ */
+function asRole(body, { role, permissions, db }) {
+  return {
+    db,
+    env: {},
+    url: new URL('https://example.test/api/hk/checks'),
+    session: { user: { name: 'Kofi', role }, permissions },
+    request: new Request('https://example.test/api/hk/checks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  };
+}
+
+const todayHere = () => new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Africa/Accra', year: 'numeric', month: '2-digit', day: '2-digit',
+}).format(new Date());
+
+const hourHere = () => Number(new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Africa/Accra', hour: '2-digit', hour12: false,
+}).format(new Date()));
+
+test('reception cannot record the housekeeping round', async () => {
+  const db = fakeDb();
+  await assert.rejects(
+    () => saveChecks(asRole({
+      day: todayHere(),
+      slot: 'housekeeping',
+      checks: [{ bedId: 3, state: 'free' }],
+    }, { role: 'receptionist', permissions: ['hk_check'], db })),
+    (err) => err instanceof HttpError && /recorded by housekeeping/.test(err.message),
+  );
+  assert.equal(savedChecks(db).length, 0, 'and nothing was written on the way to refusing');
+});
+
+test('a housekeeper records their own round at any hour', async () => {
+  const db = fakeDb();
+  const response = await saveChecks(asRole({
+    day: todayHere(),
+    slot: 'housekeeping',
+    checks: [{ bedId: 3, state: 'free' }],
+  }, { role: 'housekeeper', permissions: ['hk_check'], db }));
+
+  assert.equal(response.status, 200);
+  assert.equal(savedChecks(db).length, 1);
+});
+
+test('reception’s rounds are refused outside their hours', async () => {
+  // Whichever round the clock is not in right now — so this holds at any hour
+  // the suite happens to run.
+  const shut = hourHere() < 14 ? 'evening' : 'morning';
+  const db = fakeDb();
+
+  await assert.rejects(
+    () => saveChecks(asRole({
+      day: todayHere(), slot: shut, checks: [{ bedId: 3, state: 'free' }],
+    }, { role: 'receptionist', permissions: ['hk_check'], db })),
+    (err) => err instanceof HttpError && /can be recorded between/.test(err.message),
+  );
+
+  // The one the clock is in goes through.
+  const open = shut === 'evening' ? 'morning' : 'evening';
+  const ok = await saveChecks(asRole({
+    day: todayHere(), slot: open, checks: [{ bedId: 3, state: 'free' }],
+  }, { role: 'receptionist', permissions: ['hk_check'], db }));
+  assert.equal(ok.status, 200);
+});
+
+test('the hours do not stand between anybody and yesterday', async () => {
+  const shut = hourHere() < 14 ? 'evening' : 'morning';
+  const db = fakeDb();
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+
+  const response = await saveChecks(asRole({
+    day: yesterday, slot: shut, checks: [{ bedId: 3, state: 'free' }],
+  }, { role: 'receptionist', permissions: ['hk_check'], db }));
+
+  assert.equal(response.status, 200, 'a round recorded late beats one never recorded');
+});
+
+test('a manager is not held to either rule', async () => {
+  const db = fakeDb();
+  const response = await saveChecks(asRole({
+    day: todayHere(),
+    slot: 'housekeeping',
+    checks: [{ bedId: 3, state: 'free' }],
+  }, { role: 'housekeeping_manager', permissions: ['hk_check', 'hk_reports'], db }));
+
+  assert.equal(response.status, 200);
 });

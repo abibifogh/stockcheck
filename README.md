@@ -65,10 +65,17 @@ A separate round, with its own screens, its own permissions and its own email.
 It answers one question the breakfast side cannot: **is every occupied bed in
 the dorms labelled, and is anything occupied that should not be?**
 
-- **Three checks a day, each its own report.** Reception check when they open
-  up, housekeeping check again while the rooms are being done, and reception
-  check once more before closing. Each is submitted and emailed on its own, by
-  the people who did it. The screen opens on whichever check the clock is in.
+- **Three checks a day, each its own report, each with its own shift and
+  hours.** Reception walk the **morning check** (6am–2pm) and the **afternoon
+  check** (2pm–midnight). The **housekeeping round** in between belongs to the
+  housekeepers: nobody else can record it, at any hour, because a round
+  reception filled in says nothing about whether anybody walked the rooms.
+  Each is submitted and emailed on its own, by the people who did it. The
+  screen opens on the round you are actually on — housekeepers on theirs,
+  reception on whichever of their two the clock is in — and a round you cannot
+  fill in is faded and says why. The hours apply to today only: catching up on
+  yesterday is never refused, and a housekeeping manager is held to neither
+  rule, since they are correcting the record rather than walking a round.
 - **Two questions per bed.** The person checking opens a room, taps **Free** or
   **Occupied** for each bed, and — only for an occupied bed — answers **does it
   have a name tag?** Any bed can carry a note. Nothing else is asked, and
@@ -104,7 +111,7 @@ simply raises no surprise either way. It is never shown to the person doing the
 round — somebody who knows the expected answer before they look is not checking.
 
 **A roster day is a night.** The roster written on Tuesday is for Tuesday
-night, and two checks look at that night from either side: Tuesday evening,
+night, and two checks look at that night from either side: Tuesday afternoon,
 before anybody sleeps in it, and Wednesday morning, to see what became of it.
 So the morning check is judged against *yesterday's* roster. This matters
 because bookings move all day — a bed cancelled at noon was still somebody's

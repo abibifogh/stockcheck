@@ -48,6 +48,11 @@ export async function renderHkCheck(params = {}) {
   }
 
   const allBeds = data.rooms.flatMap((r) => r.beds);
+  // A round somebody is not allowed to fill in — the housekeeping round for
+  // anybody but housekeeping, or reception's rounds outside their hours. It can
+  // still be read; the taps are simply inert, and the server would refuse them
+  // anyway.
+  const closed = (data.rounds ?? []).find((r) => r.slot === data.slot)?.closed ?? null;
   const pending = new Set();
   let saving = false;
   let saveTimer = null;
@@ -124,6 +129,7 @@ export async function renderHkCheck(params = {}) {
   // ------------------------------------------------------------ answering --
 
   function setState(bed, state) {
+    if (closed) return;
     const current = answers.get(bed.bedId);
     // Tapping the answer already given clears it, which is how somebody undoes
     // a mis-tap without hunting for an undo button.
@@ -150,6 +156,7 @@ export async function renderHkCheck(params = {}) {
   }
 
   function setTag(bed, hasTag) {
+    if (closed) return;
     const current = answers.get(bed.bedId);
     if (!current) return;
     current.nameTag = current.nameTag === hasTag ? null : hasTag;
@@ -159,6 +166,7 @@ export async function renderHkCheck(params = {}) {
   }
 
   function setNote(bed, text) {
+    if (closed) return;
     const current = answers.get(bed.bedId) ?? { state: null, nameTag: null, note: null };
     current.note = text.trim() || null;
     answers.set(bed.bedId, current);
@@ -356,7 +364,12 @@ export async function renderHkCheck(params = {}) {
       statusEl.textContent = 'Nothing recorded yet';
     }
 
-    submitBtn.disabled = !answered;
+    if (closed) {
+      statusEl.className = 'hk-status warn';
+      statusEl.textContent = closed;
+    }
+
+    submitBtn.disabled = !answered || Boolean(closed);
     submitBtn.textContent = data.submitted
       ? 'Submit again'
       : `Submit the ${(here?.short ?? 'round').toLowerCase()} check`;
@@ -440,7 +453,12 @@ export async function renderHkCheck(params = {}) {
     // Three checks a day, each its own report. The one the clock is in opens
     // by default, so the ordinary case needs no thought at all.
     h('div.hk-slots', (data.rounds ?? []).map((r) => h('button.hk-slot', {
-      class: `hk-slot${r.slot === data.slot ? ' on' : ''}${r.submitted ? ' done' : ''}`,
+      class: `hk-slot${r.slot === data.slot ? ' on' : ''}${r.submitted ? ' done' : ''}`
+        + `${r.closed ? ' shut' : ''}`,
+      // A closed round can still be opened and read — seeing what the other
+      // shift found is half of why the tabs are there — it simply cannot be
+      // answered.
+      title: r.closed || (r.from ? `${r.from}–${r.to}` : ''),
       onclick: async () => {
         if (r.slot === data.slot) return;
         clearTimeout(saveTimer);
@@ -454,8 +472,20 @@ export async function renderHkCheck(params = {}) {
         ? `✓ ${r.submittedBy ?? 'submitted'}`
         : r.started
           ? `${r.checked} of ${r.expected} beds`
-          : 'not started'),
+          : r.closed ? 'not yours' : 'not started'),
     ))),
+
+    // Said once, plainly, at the top — rather than letting somebody answer
+    // eleven beds and meet the refusal on the first save.
+    here?.closed
+      ? h('div.alert.warn',
+        h('span.alert-icon', '🔒'),
+        h('div',
+          h('div.alert-title', here.closed),
+          h('div.alert-detail', 'You can read this round, but not fill it in. '
+            + 'Anything already recorded is shown as it stands.'),
+        ))
+      : null,
 
     // Only shown to somebody who can see the roster, because it is about how
     // the roster is being applied. The morning round looks backwards, and a

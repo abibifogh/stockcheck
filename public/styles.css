@@ -1066,6 +1066,11 @@ body:has(.entry-footer) .toasts[popover] { bottom: calc(4.75rem + env(safe-area-
   background: var(--accent-soft); color: var(--text);
 }
 .hk-slot.done { border-top-color: var(--good); }
+/* A round this person cannot fill in — somebody else's shift, or outside its
+   hours. Still readable, and still openable: seeing what the other round found
+   is half of why the three are on screen together. */
+.hk-slot.shut { opacity: .62; border-style: dashed; }
+.hk-slot.shut.on { opacity: 1; }
 .hk-slot-name { font-weight: 680; font-size: .92rem; }
 .hk-slot-by { font-size: .72rem; color: var(--text-faint); }
 .hk-slot-state { font-size: .74rem; color: var(--text-faint); margin-top: .15rem; }

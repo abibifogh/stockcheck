@@ -29,7 +29,7 @@ import { addDays, diffDays, rangeDays } from '../util/dates.js';
  * The roster for day D says who should be in each bed on the night of D. Two
  * checks look at that night, and they are on either side of it:
  *
- *   the evening check of D      — the plan, before anybody sleeps in it
+ *   the afternoon check of D    — the plan, before anybody sleeps in it
  *   the morning check of D + 1  — what actually happened to it
  *
  * So the morning check is judged against yesterday's roster, not today's. This
@@ -50,16 +50,17 @@ const REPEAT_THRESHOLD = 2;
 /**
  * The three checks in a day, in the order they happen.
  *
- * Reception opens up and walks the dorms; housekeeping walks them again on the
- * room round; reception walks them once more before closing. Three different
+ * Reception walk the dorms in the morning; housekeeping walk them again on the
+ * room round; reception walk them once more in the afternoon. Three different
  * people, three different reasons for looking, and — the point of it — three
  * chances for a bed found wrong in the morning to be put right before the day
  * ends.
  *
- * `from` and `to` are what the shift is expected to happen between. Nothing is
- * enforced by them: a check recorded late is worth far more than one not
- * recorded at all. They decide which round the screen opens on, and they let a
- * report say a round was missed.
+ * `from` and `to` are the hours the round can be recorded in, and `roles` is
+ * who may record it. Both are enforced, and both bend in the same two places:
+ * a manager is correcting the record rather than walking a round, and catching
+ * up on a past day is never refused, because a check recorded late is worth far
+ * more than one never recorded at all.
  */
 export const SLOTS = [
   {
@@ -67,25 +68,35 @@ export const SLOTS = [
     label: 'Morning check',
     short: 'Morning',
     by: 'Reception',
-    from: '08:00',
-    detail: 'First thing, as reception opens up',
+    from: '06:00',
+    to: '14:00',
+    detail: 'From six in the morning until two',
   },
   {
     key: 'housekeeping',
     label: 'Housekeeping round',
     short: 'Housekeeping',
     by: 'Housekeeping',
-    from: '10:00',
-    detail: 'While the rooms are being done',
+    // No window. It belongs to the people doing the rooms, and they are the
+    // only ones who can record it, so there is nobody to keep out of it and
+    // no hour at which finishing late should mean not recording at all.
+    detail: 'While the rooms are being done, at whatever hour that is',
+    // Reception are not shut out of the property's other two rounds; this one
+    // is the housekeepers' own, and a round somebody else fills in is a round
+    // that says nothing about whether the rooms were walked.
+    roles: ['housekeeper', 'housekeeping_manager', 'admin'],
   },
   {
+    // The key stays `evening` — it is written on every check ever recorded, and
+    // renaming it in the database would be renaming the past. Only what people
+    // see has changed.
     key: 'evening',
-    label: 'Evening check',
-    short: 'Evening',
+    label: 'Afternoon check',
+    short: 'Afternoon',
     by: 'Reception',
-    from: '20:00',
-    to: '22:00',
-    detail: 'Last thing, before reception closes',
+    from: '14:00',
+    to: '23:59',
+    detail: 'From two in the afternoon until midnight',
   },
 ];
 
@@ -100,17 +111,69 @@ export function slotOf(key) {
 }
 
 /**
- * Which check somebody opening the screen right now most likely means.
+ * Which of reception's two checks the clock is in.
  *
- * Rounded generously in both directions: a morning check started at half past
- * seven is still the morning check, and one finished at midday still is too. The
- * housekeeper can always tap another round; this only decides which one they
- * find already open.
+ * The housekeeping round is never the answer here: it has no hours of its own
+ * and belongs to whoever is doing the rooms, so it is chosen by who is asking
+ * rather than by when they ask. See `defaultSlotFor`.
  */
 export function slotForTime(hour) {
-  if (hour < 10) return 'morning';
-  if (hour < 18) return 'housekeeping';
-  return 'evening';
+  return hour < 14 ? 'morning' : 'evening';
+}
+
+/** The hour a `HH:MM` window starts or ends, as a number. */
+const hourOf = (time) => Number(String(time).slice(0, 2));
+
+/**
+ * Is this round open at this hour?
+ *
+ * A round with no window is always open. `to` is the last hour it can still be
+ * recorded in, inclusive — "until two" means two o'clock has passed, so the
+ * morning check closes when the clock reaches 14:00, and the afternoon one runs
+ * to the last minute of the day.
+ */
+export function withinWindow(slot, hour) {
+  const s = slotOf(slot);
+  if (!s.from) return true;
+  return hour >= hourOf(s.from) && hour <= hourOf(s.to ?? '23:59');
+}
+
+/**
+ * Whose round is this?
+ *
+ * Only the housekeeping round names anybody. The other two are reception's by
+ * convention rather than by rule — somebody has to be able to cover a sick
+ * colleague, and a check nobody was allowed to record is worse than one
+ * recorded by the wrong shift.
+ */
+export function slotAllowsRole(slot, role) {
+  const allowed = slotOf(slot).roles;
+  return !allowed || allowed.includes(role);
+}
+
+/**
+ * Which round somebody opening the screen right now most likely means.
+ *
+ * A housekeeper gets their own round whatever the hour, because it is the only
+ * one they can record. Everybody else gets whichever of reception's two the
+ * clock is in.
+ */
+export function defaultSlotFor(hour, role) {
+  if (role === 'housekeeper') return 'housekeeping';
+  return slotForTime(hour);
+}
+
+/** Why a round cannot be recorded, in words, or null when it can. */
+export function slotClosedReason(slot, { hour, role, canManage = false, today = true }) {
+  const s = slotOf(slot);
+  if (!slotAllowsRole(slot, role)) {
+    return `The ${s.label.toLowerCase()} is recorded by housekeeping.`;
+  }
+  // Hours apply to today. Yesterday's round is caught up on whenever somebody
+  // gets to it — a check recorded late is worth far more than one never
+  // recorded at all — and a manager correcting something is never blocked.
+  if (!today || canManage || withinWindow(slot, hour)) return null;
+  return `The ${s.label.toLowerCase()} can be recorded between ${s.from} and ${s.to}.`;
 }
 
 export async function loadDataset(db) {
@@ -213,7 +276,7 @@ export function makeDataset(raw) {
  * The roster day (the night) each of the three checks is judged against.
  *
  * The morning check reports on the night that has just ended, so it looks
- * backwards. The evening check reports on the night about to begin. The
+ * backwards. The afternoon check reports on the night about to begin. The
  * housekeeping round falls between the two and is given both.
  */
 export function rosterNightsFor(day, slot) {

@@ -2,9 +2,9 @@ import {
   badRequest, csvResponse, json, notFound, num, readJson, rethrowConstraint, str,
 } from '../lib/http.js';
 import {
-  SLOTS, dayOverview, dayReport, expectedFor, exportRows, isSlot, loadDataset,
-  overview as overviewReport, periodReport, roomDetail, rosterNightsFor,
-  slotForTime, slotOf,
+  SLOTS, dayOverview, dayReport, defaultSlotFor, expectedFor, exportRows, isSlot,
+  loadDataset, overview as overviewReport, periodReport, roomDetail,
+  rosterNightsFor, slotClosedReason, slotOf,
 } from '../lib/housekeeping.js';
 import { notifyRoundSubmitted } from '../lib/email.js';
 import { createNotice, roundNotice } from '../lib/notices.js';
@@ -51,12 +51,42 @@ function seesRoster(ctx) {
  * browser's, so a manager looking from another country opens the round the
  * hostel is actually in the middle of.
  */
-function readSlot(value, timezone) {
-  if (isSlot(value)) return value;
+function hourIn(timezone) {
   const hour = Number(new Intl.DateTimeFormat('en-GB', {
     timeZone: timezone, hour: '2-digit', hour12: false,
   }).format(new Date()));
-  return slotForTime(Number.isFinite(hour) ? hour : 12);
+  return Number.isFinite(hour) ? hour : 12;
+}
+
+function readSlot(value, timezone, ctx = null) {
+  if (isSlot(value)) return value;
+  return defaultSlotFor(hourIn(timezone), ctx?.session?.user?.role);
+}
+
+/** A manager is correcting the record rather than walking a round. */
+function canManageRounds(ctx) {
+  return ctx.session.permissions.some((p) => p === 'hk_reports' || p === 'hk_setup');
+}
+
+/**
+ * Can this person record this round, right now?
+ *
+ * Two rules, answering two different worries. The housekeeping round is the
+ * housekeepers' own — a round reception filled in says nothing about whether
+ * anybody walked the rooms. And reception's two rounds have hours, so a check
+ * cannot be done at five in the morning and called the morning check.
+ *
+ * Both bend for a manager, and neither applies to catching up on a past day:
+ * a round recorded late is worth far more than one never recorded at all.
+ */
+function assertCanRecord(ctx, { day, slot, timezone, today }) {
+  const reason = slotClosedReason(slot, {
+    hour: hourIn(timezone),
+    role: ctx.session.user.role,
+    canManage: canManageRounds(ctx),
+    today: day === today,
+  });
+  if (reason) throw badRequest(reason);
 }
 
 function readDay(value, fallback) {
@@ -82,7 +112,7 @@ export async function bootstrap(ctx) {
   const ds = await loadDataset(ctx.db);
   const today = todayIn(ds.timezone);
   const day = readDay(ctx.url.searchParams.get('day'), today);
-  const slot = readSlot(ctx.url.searchParams.get('slot'), ds.timezone);
+  const slot = readSlot(ctx.url.searchParams.get('slot'), ds.timezone, ctx);
 
   const report = dayReport(ds, day, slot);
   const overview = dayOverview(ds, day);
@@ -101,12 +131,23 @@ export async function bootstrap(ctx) {
       short: r.short,
       by: r.by,
       detail: r.detail,
+      from: r.from ?? null,
+      to: r.to ?? null,
       started: r.started,
       submitted: r.submitted,
       submittedBy: r.submittedBy,
       checked: r.totals.checked,
       expected: r.totals.expected,
       untagged: r.totals.untagged,
+      // Why a round cannot be filled in, in the same words the server would
+      // refuse it with — so the screen can say so before somebody walks a
+      // floor and then finds out.
+      closed: slotClosedReason(r.slot, {
+        hour: hourIn(ds.timezone),
+        role: ctx.session.user.role,
+        canManage: canManageRounds(ctx),
+        today: day === today,
+      }),
     })),
     propertyName: ds.propertyName,
     submitted: report.submitted,
@@ -177,16 +218,19 @@ export async function saveChecks(ctx) {
   const timezone = settingRows.results?.[0]?.value || 'Africa/Accra';
   const today = todayIn(timezone);
   const day = readDay(body.day, today);
-  const slot = readSlot(body.slot, timezone);
-
-  // Which night this round is judged against — last night for the morning,
-  // tonight for the evening, both for the round in between.
-  const expectedByBed = await expectationsFor(ctx.db, day, slot);
+  const slot = readSlot(body.slot, timezone, ctx);
 
   if (day > today) throw badRequest('That date is in the future.');
   if (diffDays(day, today) > 60) {
     throw badRequest('That day is more than two months ago and can no longer be recorded.');
   }
+  // Whose round it is, and whether it is open. Checked before anything is read
+  // or written, so a refused round leaves no trace of having been started.
+  assertCanRecord(ctx, { day, slot, timezone, today });
+
+  // Which night this round is judged against — last night for the morning,
+  // tonight for the evening, both for the round in between.
+  const expectedByBed = await expectationsFor(ctx.db, day, slot);
 
   const entries = Array.isArray(body.checks) ? body.checks : [];
   if (!entries.length) throw badRequest('Nothing was recorded.');
@@ -296,6 +340,7 @@ export async function submitRound(ctx, day, slot) {
 
   const ds = await loadDataset(ctx.db);
   const report = dayReport(ds, day, slot);
+  assertCanRecord(ctx, { day, slot, timezone: ds.timezone, today: todayIn(ds.timezone) });
 
   const round = ds.roundByKey.get(`${day}|${slot}`);
   if (!round) throw badRequest('Nothing has been recorded for that check yet.');
