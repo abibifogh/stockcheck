@@ -17,7 +17,11 @@ import { DatabaseSync } from 'node:sqlite';
 const MIGRATIONS = readdirSync('migrations').sort();
 
 /** The hand-paste upgrades, in the order a database part-way along needs them. */
-const UPGRADE_FILES = ['housekeeping-upgrade-rounds.sql', 'housekeeping-upgrade-notices.sql'];
+const UPGRADE_FILES = [
+  'housekeeping-upgrade-rounds.sql',
+  'housekeeping-upgrade-notices.sql',
+  'housekeeping-upgrade-roster.sql',
+];
 
 function apply(db, files) {
   db.exec('PRAGMA foreign_keys = ON;');

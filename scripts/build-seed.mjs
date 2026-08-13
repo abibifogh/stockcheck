@@ -118,4 +118,9 @@ writeFileSync('seed/housekeeping-upgrade-rounds.sql', `${statementsOf('0008_chec
 // often as you like.
 writeFileSync('seed/housekeeping-upgrade-notices.sql', `${statementsOf('0009_notices.sql')}\n`);
 
+// The roster becoming a record per night. Also safe to paste twice: the table
+// is created only if absent, and the rows it carries over are INSERT OR IGNORE
+// against a primary key, so a second run adds nothing.
+writeFileSync('seed/housekeeping-upgrade-roster.sql', `${statementsOf('0010_roster_days.sql')}\n`);
+
 console.log('wrote the seed/ schema files');

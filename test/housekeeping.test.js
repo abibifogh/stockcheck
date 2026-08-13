@@ -13,12 +13,22 @@ const ROOMS = [
 ];
 
 const BEDS = [
-  { id: 1, room_id: 1, label: 'Bed 1', sort_order: 10, expected_state: 'occupied', expected_note: 'Ama', active: 1 },
-  { id: 2, room_id: 1, label: 'Bed 2', sort_order: 20, expected_state: 'free', expected_note: null, active: 1 },
-  { id: 3, room_id: 1, label: 'Bed 3', sort_order: 30, expected_state: null, expected_note: null, active: 1 },
-  { id: 4, room_id: 2, label: 'Bed 1', sort_order: 10, expected_state: null, expected_note: null, active: 1 },
-  { id: 5, room_id: 2, label: 'Bed 2', sort_order: 20, expected_state: null, expected_note: null, active: 1 },
-  { id: 6, room_id: 3, label: 'Bed 1', sort_order: 10, expected_state: null, expected_note: null, active: 1 },
+  { id: 1, room_id: 1, label: 'Bed 1', sort_order: 10, active: 1 },
+  { id: 2, room_id: 1, label: 'Bed 2', sort_order: 20, active: 1 },
+  { id: 3, room_id: 1, label: 'Bed 3', sort_order: 30, active: 1 },
+  { id: 4, room_id: 2, label: 'Bed 1', sort_order: 10, active: 1 },
+  { id: 5, room_id: 2, label: 'Bed 2', sort_order: 20, active: 1 },
+  { id: 6, room_id: 3, label: 'Bed 1', sort_order: 10, active: 1 },
+];
+
+/**
+ * The roster, which is a record per night rather than a standing value on the
+ * bed. Every day these tests use is covered by the last one written, so a
+ * single night stands in for "what the front desk expects".
+ */
+const ROSTER = [
+  { day: '2026-08-07', bed_id: 1, expected_state: 'occupied', expected_note: 'Ama', confirmed_at: null },
+  { day: '2026-08-07', bed_id: 2, expected_state: 'free', expected_note: null, confirmed_at: null },
 ];
 
 let nextId = 1;
@@ -48,6 +58,7 @@ function build(overrides = {}) {
     beds: BEDS,
     rounds: [],
     checks: [],
+    roster: ROSTER,
     settings: [{ key: 'timezone', value: 'Africa/Accra' }, { key: 'property_name', value: 'The Hostel' }],
     ...overrides,
   });

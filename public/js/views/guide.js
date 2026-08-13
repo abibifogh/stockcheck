@@ -915,30 +915,48 @@ const SECTIONS = [
       h('p', 'Reception know who is booked into which bed tonight. The Roster screen is where that '
         + 'goes in, and it is the only reason the reports can tell you a bed was found occupied when '
         + 'nobody was expected in it.'),
+      h('p', h('strong', 'A roster is a night, not a day.'), ' The roster you write on Tuesday is '
+        + 'for Tuesday night. Two checks look at that night from either side: Tuesday evening, '
+        + 'before anybody sleeps in it, and Wednesday morning, to see what became of it. That is '
+        + 'why this screen asks about two nights at once.'),
       steps(
-        h('span', h('strong', 'Open Roster under Housekeeping.'), ' Every dorm is listed with its '
-          + 'beds — the same beds the check screen walks.'),
-        h('span', h('strong', 'Set each bed.'), ' Should be free, should be occupied, or not tracked. '
-          + '“Set every bed to” does a whole room at once, then change the few that differ. Each '
-          + 'answer colours itself — green for a bed that should be empty, blue for one somebody is '
-          + 'booked into, grey for one nobody is tracking — so a room can be checked at a glance '
-          + 'rather than read line by line.'),
+        h('span', h('strong', 'First, say how last night ended.'), ' The left-hand column starts as '
+          + 'whatever last night’s roster said. Correct anything the bookings changed after it was '
+          + 'written — the cancellation at noon, the walk-in at eleven — because this is what this '
+          + 'morning’s check is judged against.'),
+        h('span', h('strong', 'Then set tonight.'), ' Should be free, should be occupied, or not '
+          + 'tracked. “Set tonight to” does a whole room at once, then change the few that differ. '
+          + 'Each answer colours itself — green for a bed that should be empty, blue for one '
+          + 'somebody is booked into, grey for one nobody is tracking — so a room can be checked at '
+          + 'a glance rather than read line by line.'),
         h('span', h('strong', 'Add who is expected, if it helps.'), ' A guest name or a booking '
           + 'reference beside a bed. It is optional, and it shows on the reports beside anything odd '
           + 'that bed turns up.'),
-        h('span', h('strong', 'Press Save the roster.'), ' One button for the whole property. The bar '
-          + 'at the bottom counts how many beds you have changed, and it stays greyed out until '
-          + 'there is something to save.'),
+        h('span', h('strong', 'Press Save the roster.'), ' One button for both nights. Saving '
+          + 'confirms last night, which settles it: its findings stop moving after that.'),
       ),
+      note('Why the morning check looks backwards.', 'Somebody in a bed at eight in the morning '
+        + 'slept there last night, under last night’s bookings. If the check were judged against '
+        + 'tonight’s roster, a guest who paid and has since checked out would be reported as a '
+        + 'stranger, and a bed sold this afternoon would be reported as empty when it should be '
+        + 'full. Neither is true, and both would train people to ignore the report.'),
+      note('The middle round is treated gently.', 'At eleven in the morning last night’s guest may '
+        + 'have gone and tonight’s has certainly not arrived, so a bed changing hands can honestly '
+        + 'be found either way. The housekeeping round is only judged where the two nights agree — '
+        + 'a bed both nights call free, found occupied, is still worth knowing about.'),
+      note('A night nobody wrote a roster for.', 'The last roster written carries forward, because '
+        + 'bookings run over several nights and treating a missed morning as “nobody is expected '
+        + 'anywhere” would quietly switch the reporting off. The screen says where it came from.'),
       note('“Not tracked” is a real answer.', 'A bed left as not tracked is still checked and still '
         + 'has to carry a name tag. It simply raises no surprise either way. Only beds you have set '
         + 'here can be reported as occupied when they should have been free.'),
       note('This screen cannot break anything.', 'It sets the roster and nothing else — the dorms, '
         + 'the beds and their names are on the Setup screen, which is a separate permission. Somebody '
         + 'given the roster cannot rename a dorm or delete a bed.'),
-      note('Changing the roster does not rewrite the past.', 'Every check keeps its own copy of what '
-        + 'was expected at the moment it was answered, so tonight’s bookings cannot change what last '
-        + 'Tuesday found.'),
+      note('Correcting an open night, and closing it.', 'Until a night is confirmed, correcting it '
+        + 'also corrects the rounds already judged against it — that is what makes it worth doing at '
+        + 'nine in the morning. Once confirmed, nothing moves: the front desk cannot change it, and '
+        + 'a housekeeping manager has to reopen it if something was confirmed too early.'),
       note('The person walking the dorms should not see this.', 'Somebody who knows the answer before '
         + 'they look at the bed is not really checking it. That is why the roster is its own '
         + 'permission and is left off the bed check screen.'),
@@ -1009,33 +1027,26 @@ const SECTIONS = [
 
   {
     id: 'hk-setup',
-    title: 'Setting up the dorms and the roster',
+    title: 'Setting up the dorms',
     permission: 'hk_setup',
-    lead: 'Rooms and beds are set up once. The roster is the part you keep up to date.',
+    lead: 'Rooms and beds are set up once and barely touched again.',
     render: () => h('div',
       steps(
         h('span', h('strong', 'Add each dorm room with its beds.'), ' Say how many beds and they are '
           + 'numbered for you — six beds gives you Bed 1 to Bed 6. Rename any of them afterwards to '
           + 'match what is painted on the frame, because that is what the housekeeper is looking at.'),
-        h('span', h('strong', 'Set what the roster expects of each bed.'), ' Should be free, should be '
-          + 'occupied, or not tracked. You can set a whole room at once and then change the few that '
-          + 'differ.'),
-        h('span', h('strong', 'Save the room.'), ' One button saves the bed names and the roster '
-          + 'together.'),
+        h('span', h('strong', 'Save the room.'), ' One button saves any bed you renamed.'),
       ),
-      note('“Not tracked” is a real answer.', 'A bed left as not tracked is still checked and still '
-        + 'has to carry a name tag. It simply raises no surprise either way. Only beds you have told '
-        + 'the system about can be reported as occupied when they should have been free.'),
       note('Erasing a period.', 'Under Users & data there is an “Erase bed checks” panel. Set a '
         + 'From and To date and it counts what falls inside them — so many checks, so many beds — '
         + 'before you confirm. Only that period goes: the dorms, the beds, the people and every '
         + 'other day are untouched. There is no undo, which is why it counts first.'),
       note('The roster is never shown to the housekeeper.', 'Somebody who can see what the answer is '
-        + 'supposed to be before they answer is not really checking. It appears on the reports, on '
-        + 'this screen, on the Roster screen, and nowhere else.'),
-      note('The front desk can keep the roster without this screen.', 'Give somebody “The roster” on '
-        + 'its own and they get a Roster screen with the same three columns and none of the renaming '
-        + 'and deleting. Anybody with setup already has it.'),
+        + 'supposed to be before they answer is not really checking. It appears on the reports and '
+        + 'on the Roster screen, and nowhere else.'),
+      note('The roster is not here any more.', 'It moved to its own screen when it became a record '
+        + 'per night, confirmed each morning. This screen is the furniture — rooms and beds — which '
+        + 'changes a few times a year rather than several times a day.'),
       note('Changing the roster does not rewrite the past.', 'Every check keeps its own copy of what '
         + 'was expected at the time, so tonight’s bookings cannot change what last Tuesday found.'),
       note('Closing a room keeps its history.', 'A room or bed that has ever been checked is closed '

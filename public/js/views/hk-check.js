@@ -457,6 +457,17 @@ export async function renderHkCheck(params = {}) {
           : 'not started'),
     ))),
 
+    // Only shown to somebody who can see the roster, because it is about how
+    // the roster is being applied. The morning round looks backwards, and a
+    // manager reading its findings needs to know that.
+    data.night
+      ? h('p.muted', { style: { fontSize: '.82rem', marginTop: '-.4rem' } },
+        data.nights?.length > 1
+          ? `Between two nights — judged only where ${fmtDay(data.nights[0])} and `
+            + `${fmtDay(data.nights[1])} agree.`
+          : `Judged against the night of ${fmtDay(data.night)}.`)
+      : null,
+
     data.submitted
       ? h('div.alert.info',
         h('span.alert-icon', 'ℹ️'),

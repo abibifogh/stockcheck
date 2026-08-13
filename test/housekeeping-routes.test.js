@@ -13,15 +13,31 @@ import { HttpError } from '../src/lib/http.js';
  */
 
 const BEDS = [
-  { id: 1, label: 'Bed 1', expected_state: 'occupied', active: 1 },
-  { id: 2, label: 'Bed 2', expected_state: 'free', active: 1 },
-  { id: 3, label: 'Bed 3', expected_state: null, active: 1 },
+  { id: 1, label: 'Bed 1', active: 1 },
+  { id: 2, label: 'Bed 2', active: 1 },
+  { id: 3, label: 'Bed 3', active: 1 },
   // Sits in a room that has been closed, so the query that folds the room's
   // state into the bed's reports it as inactive.
-  { id: 9, label: 'Bed 1', expected_state: null, active: 0 },
+  { id: 9, label: 'Bed 1', active: 0 },
 ];
 
-function fakeDb({ beds = BEDS, round = { id: 7, day: '2026-08-10', submitted_at: null } } = {}) {
+/**
+ * The roster, night by night. A check is judged against the night it looks at
+ * — last night for the morning round, tonight for the evening one — so the
+ * rows a save reads depend on which round is being recorded.
+ */
+const ROSTER = {
+  '2026-08-09': [
+    { bed_id: 1, expected_state: 'free', expected_note: null },
+    { bed_id: 2, expected_state: 'occupied', expected_note: null },
+  ],
+  '2026-08-10': [
+    { bed_id: 1, expected_state: 'occupied', expected_note: null },
+    { bed_id: 2, expected_state: 'free', expected_note: null },
+  ],
+};
+
+function fakeDb({ beds = BEDS, roster = ROSTER, round = { id: 7, day: '2026-08-10', submitted_at: null } } = {}) {
   const written = [];
 
   const statement = (sql) => ({
@@ -30,12 +46,24 @@ function fakeDb({ beds = BEDS, round = { id: 7, day: '2026-08-10', submitted_at:
     bind(...args) { this.binds = args; return this; },
     async all() {
       if (/FROM hk_beds/.test(sql)) return { results: beds };
+      if (/FROM hk_roster/.test(sql)) {
+        const day = this.binds[0];
+        return { results: (roster[day] ?? []).map((r) => ({ day, ...r })) };
+      }
       if (/FROM settings/.test(sql)) return { results: [{ value: 'Africa/Accra' }] };
       return { results: [] };
     },
     async first() {
       if (/FROM hk_rounds/.test(sql)) return round;
       if (/AS checked/.test(sql)) return { checked: 3, occupied: 2, untagged: 1 };
+      // The lookup for "the last night anybody wrote a roster for", used when
+      // the night asked about has none of its own.
+      if (/FROM hk_roster/.test(sql)) {
+        const asked = this.binds[0];
+        const day = Object.keys(roster).filter((d) => d <= asked).sort().at(-1);
+        return day ? { day } : null;
+      }
+      if (/FROM settings/.test(sql)) return { value: 'Africa/Accra' };
       return null;
     },
     async run() { written.push({ sql, binds: this.binds }); return { success: true }; },
@@ -112,8 +140,9 @@ test('a free bed stores no answer to a question it was never asked', async () =>
   assert.equal(saved.by, 'Akosua');
 });
 
-test('the roster is copied onto the check as it stands at the moment of the round', async () => {
+test('the check is stamped with the night it is looking at', async () => {
   const db = fakeDb();
+  // The evening round of the 10th is the plan for the night of the 10th.
   await saveChecks(context({
     day: '2026-08-10',
     slot: 'evening',
@@ -129,6 +158,23 @@ test('the roster is copied onto the check as it stands at the moment of the roun
   assert.deepEqual(saved.map((s) => s.nameTag), [1, 0, null]);
   assert.equal(saved[1].note, 'someone is in it');
   assert.ok(saved.every((s) => s.roundId === 7 && s.day === '2026-08-10'));
+});
+
+test('the morning round of the same day is stamped with the night before', async () => {
+  // Same beds, same day, the other end of it — and the opposite answers,
+  // because the two rounds are looking at two different nights.
+  const db = fakeDb();
+  await saveChecks(context({
+    day: '2026-08-10',
+    slot: 'morning',
+    checks: [
+      { bedId: 1, state: 'occupied', nameTag: true },
+      { bedId: 2, state: 'occupied', nameTag: true },
+      { bedId: 3, state: 'free' },
+    ],
+  }, db));
+
+  assert.deepEqual(savedChecks(db).map((s) => s.expected), ['free', 'occupied', null]);
 });
 
 // ------------------------------------------------------------- the rounds --

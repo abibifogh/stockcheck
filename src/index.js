@@ -165,7 +165,10 @@ const ROUTES = [
   ['POST', '/api/hk/beds', 'hk_setup', hk.createBed],
   ['PUT', '/api/hk/beds/:id', 'hk_setup', hk.updateBed],
   ['DELETE', '/api/hk/beds/:id', 'hk_setup', hk.deleteBed],
+  ['GET', '/api/hk/roster', ['hk_roster', 'hk_setup'], hk.getRoster],
   ['POST', '/api/hk/roster', ['hk_roster', 'hk_setup'], hk.saveRoster],
+  // Reopening a settled night is a manager's job, not the front desk's.
+  ['POST', '/api/hk/roster/:day/reopen', 'hk_setup', hk.reopenRoster],
   ['PUT', '/api/hk/settings', 'hk_setup', hk.updateSettings],
 ];
 

@@ -193,7 +193,9 @@ export const api = {
   hkCreateBed: (body) => request('/api/hk/beds', { method: 'POST', body }),
   hkUpdateBed: (id, body) => request(`/api/hk/beds/${id}`, { method: 'PUT', body }),
   hkDeleteBed: (id) => request(`/api/hk/beds/${id}`, { method: 'DELETE' }),
+  hkRoster: (day) => request(`/api/hk/roster${day ? `?day=${day}` : ''}`),
   hkSaveRoster: (body) => request('/api/hk/roster', { method: 'POST', body }),
+  hkReopenRoster: (day) => request(`/api/hk/roster/${day}/reopen`, { method: 'POST' }),
   hkUpdateSettings: (body) => request('/api/hk/settings', { method: 'PUT', body }),
 
   exportUrl: (type, from, to) =>

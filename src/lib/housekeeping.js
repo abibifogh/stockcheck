@@ -22,6 +22,25 @@ import { addDays, diffDays, rangeDays } from '../util/dates.js';
  * A finding is only ever derived from what was recorded on the day: a check
  * carries its own snapshot of what was expected of that bed, so editing the
  * roster today cannot rewrite what last week's round found.
+ *
+ * ---------------------------------------------------------------------------
+ * A roster day is a night.
+ *
+ * The roster for day D says who should be in each bed on the night of D. Two
+ * checks look at that night, and they are on either side of it:
+ *
+ *   the evening check of D      — the plan, before anybody sleeps in it
+ *   the morning check of D + 1  — what actually happened to it
+ *
+ * So the morning check is judged against yesterday's roster, not today's. This
+ * matters because bookings move all day: a bed cancelled at noon is free
+ * tonight but somebody was in it last night, and judging this morning's check
+ * against tonight's roster would report a guest who paid as a stranger.
+ *
+ * The housekeeping round sits in the gap — last night's guests are leaving,
+ * tonight's have not arrived — so it is judged only where the two nights agree.
+ * A bed both nights call free, found occupied, is still worth knowing about;
+ * everything else at that hour is just the changeover.
  */
 
 // A bed that keeps turning up untagged is a different problem from a bed that
@@ -95,11 +114,12 @@ export function slotForTime(hour) {
 }
 
 export async function loadDataset(db) {
-  const [rooms, beds, rounds, checks, settings] = await Promise.all([
+  const [rooms, beds, rounds, checks, roster, settings] = await Promise.all([
     db.prepare('SELECT * FROM hk_rooms ORDER BY sort_order, name').all(),
     db.prepare('SELECT * FROM hk_beds ORDER BY room_id, sort_order, label').all(),
     db.prepare('SELECT * FROM hk_rounds ORDER BY day').all(),
     db.prepare('SELECT * FROM hk_checks ORDER BY day, id').all(),
+    db.prepare('SELECT * FROM hk_roster ORDER BY day').all(),
     db.prepare('SELECT key, value FROM settings').all(),
   ]);
 
@@ -108,6 +128,7 @@ export async function loadDataset(db) {
     beds: beds.results ?? [],
     rounds: rounds.results ?? [],
     checks: checks.results ?? [],
+    roster: roster.results ?? [],
     settings: settings.results ?? [],
   });
 }
@@ -152,10 +173,22 @@ export function makeDataset(raw) {
     }
   }
 
+  // The roster, night by night. Days with no rows are not filled in here: a
+  // reader asks for a night and gets the nearest one at or before it, so a
+  // roster nobody rewrote on Sunday still governs Sunday night.
+  const rosterByDay = new Map();
+  for (const row of raw.roster ?? []) {
+    if (!rosterByDay.has(row.day)) rosterByDay.set(row.day, new Map());
+    rosterByDay.get(row.day).set(row.bed_id, row);
+  }
+  const rosterDays = [...rosterByDay.keys()].sort();
+
   return {
     settings,
     timezone: settings.timezone || 'Africa/Accra',
     propertyName: settings.property_name || 'Hostel',
+    rosterByDay,
+    rosterDays,
     rooms,
     roomById,
     activeRooms: rooms.filter((r) => r.active),
@@ -169,6 +202,86 @@ export function makeDataset(raw) {
     byRound,
     byDay,
     recordedDays: [...byDay.keys()].sort(),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Which night a check is looking at
+// ---------------------------------------------------------------------------
+
+/**
+ * The roster day (the night) each of the three checks is judged against.
+ *
+ * The morning check reports on the night that has just ended, so it looks
+ * backwards. The evening check reports on the night about to begin. The
+ * housekeeping round falls between the two and is given both.
+ */
+export function rosterNightsFor(day, slot) {
+  const previous = addDays(day, -1);
+  if (slot === 'evening') return { nights: [day], governing: day };
+  if (slot === 'housekeeping') return { nights: [previous, day], governing: previous };
+  return { nights: [previous], governing: previous };
+}
+
+/**
+ * What a bed was expected to be, given the roster on either side of a check.
+ *
+ * `previous` and `tonight` are what the two nights say: 'free', 'occupied', or
+ * null for a bed nobody is tracking. The answer is what the check will be
+ * judged against, and null means "do not judge this one".
+ *
+ * The changeover round is the interesting case. At eleven in the morning
+ * last night's guest may have gone and tonight's has certainly not arrived, so
+ * a bed that changes hands today can legitimately be found either way. Only
+ * where both nights agree is there anything to be surprised by.
+ */
+export function expectedFor(slot, previous, tonight) {
+  const prev = previous ?? null;
+  const now = tonight ?? null;
+  if (slot === 'morning') return prev;
+  if (slot === 'evening') return now;
+  return prev === now ? prev : null;
+}
+
+/**
+ * The roster as it stood for one night, carried forward.
+ *
+ * A night nobody wrote a roster for is governed by the last one that was
+ * written: bookings run over several nights, and treating a missed morning as
+ * "nobody is expected anywhere" would quietly switch the reporting off.
+ */
+export function rosterOn(ds, day) {
+  if (ds.rosterByDay.has(day)) return { day, rows: ds.rosterByDay.get(day), carried: false };
+
+  let nearest = null;
+  for (const d of ds.rosterDays) {
+    if (d <= day) nearest = d;
+    else break;
+  }
+  if (!nearest) return { day: null, rows: new Map(), carried: false };
+  return { day: nearest, rows: ds.rosterByDay.get(nearest), carried: true };
+}
+
+/**
+ * Everything a screen needs to know about what was expected of one bed at one
+ * check: the answer, where it came from, and whether that night is settled.
+ */
+export function expectationFor(ds, day, slot, bedId) {
+  const { nights, governing } = rosterNightsFor(day, slot);
+  const previous = rosterOn(ds, nights[0]);
+  const tonight = nights.length > 1 ? rosterOn(ds, nights[1]) : previous;
+
+  const prevRow = previous.rows.get(bedId) ?? null;
+  const nowRow = tonight.rows.get(bedId) ?? null;
+  const source = slot === 'evening' ? nowRow : prevRow;
+
+  return {
+    state: expectedFor(slot, prevRow?.expected_state ?? null, nowRow?.expected_state ?? null),
+    note: source?.expected_note ?? null,
+    night: governing,
+    from: slot === 'evening' ? tonight.day : previous.day,
+    carried: slot === 'evening' ? tonight.carried : previous.carried,
+    confirmed: Boolean(source?.confirmed_at),
   };
 }
 
@@ -344,11 +457,16 @@ export function dayReport(ds, day, slot = 'morning') {
     const beds = (ds.bedsByRoom.get(room.id) ?? []).filter((b) => b.active);
     const bedRows = beds.map((bed) => {
       const check = onDay.get(bed.id) ?? null;
+      // What this round is judged against, which for the morning is last
+      // night's roster rather than tonight's.
+      const expected = expectationFor(ds, day, slot, bed.id);
       return {
         bedId: bed.id,
         label: bed.label,
-        expectedState: bed.expected_state ?? null,
-        expectedNote: bed.expected_note ?? null,
+        expectedState: expected.state,
+        expectedNote: expected.note,
+        expectedFrom: expected.night,
+        expectedConfirmed: expected.confirmed,
         state: check?.state ?? null,
         nameTag: check?.name_tag ?? null,
         note: check?.note ?? null,
@@ -381,10 +499,16 @@ export function dayReport(ds, day, slot = 'morning') {
   const allChecks = [...onDay.values()];
   const expected = ds.activeBeds.length;
 
+  const nights = rosterNightsFor(day, slot);
+
   return {
     day,
     slot,
     slotLabel: slotOf(slot).label,
+    // Which night this round is reporting on, so a screen can say so rather
+    // than leaving somebody to work out why the morning looks backwards.
+    night: nights.governing,
+    nights: nights.nights,
     round: round_
       ? {
           id: round_.id,
@@ -890,11 +1014,13 @@ export function roomDetail(ds, roomId, from, to) {
     beds: beds.map((bed) => {
       const checks = inRange.filter((c) => c.bed_id === bed.id);
       const t = tally(checks, days.length);
+      // Tonight's roster, which is what "Roster now" means on this screen.
+      const tonight = rosterOn(ds, to).rows.get(bed.id) ?? null;
       return {
         bedId: bed.id,
         label: bed.label,
-        expectedState: bed.expected_state ?? null,
-        expectedNote: bed.expected_note ?? null,
+        expectedState: tonight?.expected_state ?? null,
+        expectedNote: tonight?.expected_note ?? null,
         ...t,
         lastCheck: checks.at(-1)
           ? {

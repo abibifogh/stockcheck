@@ -2,8 +2,9 @@ import {
   badRequest, csvResponse, json, notFound, num, readJson, rethrowConstraint, str,
 } from '../lib/http.js';
 import {
-  SLOTS, dayOverview, dayReport, exportRows, isSlot, loadDataset,
-  overview as overviewReport, periodReport, roomDetail, slotForTime, slotOf,
+  SLOTS, dayOverview, dayReport, expectedFor, exportRows, isSlot, loadDataset,
+  overview as overviewReport, periodReport, roomDetail, rosterNightsFor,
+  slotForTime, slotOf,
 } from '../lib/housekeeping.js';
 import { notifyRoundSubmitted } from '../lib/email.js';
 import { createNotice, roundNotice } from '../lib/notices.js';
@@ -112,6 +113,9 @@ export async function bootstrap(ctx) {
     round: report.round,
     totals: report.totals,
     canSeeRoster: roster,
+    // Which night this round is judged against. Only sent to somebody who can
+    // see the roster in the first place — it is meaningless without it.
+    ...(roster ? { night: report.night, nights: report.nights } : {}),
     rooms: report.rooms.map((room) => ({
       roomId: room.roomId,
       name: room.name,
@@ -162,7 +166,7 @@ export async function saveChecks(ctx) {
     // A bed in a closed room is not a bed anybody should be answering for, so
     // the room's own state is folded into the bed's here.
     ctx.db.prepare(
-      `SELECT b.id, b.label, b.expected_state,
+      `SELECT b.id, b.label,
               CASE WHEN b.active = 1 AND r.active = 1 THEN 1 ELSE 0 END AS active
          FROM hk_beds b JOIN hk_rooms r ON r.id = b.room_id`,
     ).all(),
@@ -174,6 +178,10 @@ export async function saveChecks(ctx) {
   const today = todayIn(timezone);
   const day = readDay(body.day, today);
   const slot = readSlot(body.slot, timezone);
+
+  // Which night this round is judged against — last night for the morning,
+  // tonight for the evening, both for the round in between.
+  const expectedByBed = await expectationsFor(ctx.db, day, slot);
 
   if (day > today) throw badRequest('That date is in the future.');
   if (diffDays(day, today) > 60) {
@@ -207,9 +215,10 @@ export async function saveChecks(ctx) {
       bedId,
       state,
       nameTag,
-      // The roster as it stands right now, frozen onto the check. Editing the
-      // roster tomorrow must not change what today's round found.
-      expected: bed.expected_state ?? null,
+      // What the governing night's roster says, frozen onto the check. It can
+      // still move until that night is confirmed the following morning — and
+      // confirming re-stamps these — but after that it is settled for good.
+      expected: expectedByBed.get(bedId) ?? null,
       note: str(entry.note, 'Note', { max: 300, fallback: '' }) || null,
     });
   }
@@ -630,12 +639,169 @@ function setting(db, key, value) {
   ).bind(key, value);
 }
 
+// ---------------------------------------------------------------------------
+// The roster, night by night
+// ---------------------------------------------------------------------------
+
+/** 'occupied', 'free', or null for a bed nobody is tracking — which is a real answer. */
+function readExpected(value) {
+  return value === 'occupied' ? 'occupied' : value === 'free' ? 'free' : null;
+}
+
 /**
- * Set what the front desk expects of each bed tonight.
+ * The roster as it stood on one night, carried forward from the last night
+ * anybody wrote one. Two small queries rather than the whole dataset: this runs
+ * on every save of a round.
+ */
+async function rosterRowsOn(db, day) {
+  const exact = await db.prepare('SELECT * FROM hk_roster WHERE day = ?').bind(day).all();
+  if (exact.results?.length) {
+    return { day, rows: new Map(exact.results.map((r) => [r.bed_id, r])), carried: false };
+  }
+
+  const nearest = await db.prepare(
+    'SELECT day FROM hk_roster WHERE day <= ? ORDER BY day DESC LIMIT 1',
+  ).bind(day).first();
+  if (!nearest) return { day: null, rows: new Map(), carried: false };
+
+  const rows = await db.prepare('SELECT * FROM hk_roster WHERE day = ?').bind(nearest.day).all();
+  return { day: nearest.day, rows: new Map((rows.results ?? []).map((r) => [r.bed_id, r])), carried: true };
+}
+
+/**
+ * What each bed is expected to be at one check, by bed id.
+ *
+ * The rule lives in the analytics layer so the reports and the writes cannot
+ * disagree about it; this only fetches the two nights it needs.
+ */
+async function expectationsFor(db, day, slot) {
+  const { nights } = rosterNightsFor(day, slot);
+  const previous = await rosterRowsOn(db, nights[0]);
+  const tonight = nights.length > 1 ? await rosterRowsOn(db, nights[1]) : previous;
+
+  const out = new Map();
+  for (const bedId of new Set([...previous.rows.keys(), ...tonight.rows.keys()])) {
+    out.set(bedId, expectedFor(
+      slot,
+      previous.rows.get(bedId)?.expected_state ?? null,
+      tonight.rows.get(bedId)?.expected_state ?? null,
+    ));
+  }
+  return out;
+}
+
+/**
+ * Re-stamp the checks a night governs.
+ *
+ * A check freezes what was expected of the bed at the moment it was answered,
+ * which is what stops last week's findings moving when tonight's bookings do.
+ * But the roster for a night is not final until the next morning — cancellations
+ * and walk-ins arrive all day — so while a night is still open, correcting it
+ * has to correct the rounds that were judged against it. Otherwise the eight
+ * o'clock check is measured against a roster written after it, which is the
+ * whole complaint this replaced.
+ *
+ * Once the night is confirmed nothing calls this for it again, so a settled
+ * day stays settled.
+ */
+async function restampNight(db, night) {
+  const next = addDays(night, 1);
+  const affected = [
+    { day: night, slot: 'evening' },
+    { day: next, slot: 'morning' },
+    { day: next, slot: 'housekeeping' },
+  ];
+
+  let updated = 0;
+  for (const { day, slot } of affected) {
+    const expected = await expectationsFor(db, day, slot);
+    const checks = await db.prepare('SELECT id, bed_id, expected_state FROM hk_checks WHERE day = ? AND slot = ?')
+      .bind(day, slot).all();
+
+    const statements = (checks.results ?? [])
+      .filter((c) => (c.expected_state ?? null) !== (expected.get(c.bed_id) ?? null))
+      .map((c) => db.prepare('UPDATE hk_checks SET expected_state = ?2 WHERE id = ?1')
+        .bind(c.id, expected.get(c.bed_id) ?? null));
+
+    if (statements.length) {
+      await db.batch(statements);
+      updated += statements.length;
+    }
+  }
+  return updated;
+}
+
+/**
+ * The roster screen's data: last night, tonight, and where each came from.
+ *
+ * Both nights in one response because they are filled in together — the person
+ * writing tonight's roster first says how last night actually ended, and asking
+ * them to load two screens to do one job is how the confirming stops happening.
+ */
+export async function getRoster(ctx) {
+  const timezone = (await ctx.db.prepare("SELECT value FROM settings WHERE key = 'timezone'")
+    .first())?.value || 'Africa/Accra';
+  const today = todayIn(timezone);
+  const day = readDay(ctx.url.searchParams.get('day'), today);
+  const previousDay = addDays(day, -1);
+
+  const [rooms, beds, tonight, lastNight] = await Promise.all([
+    ctx.db.prepare('SELECT * FROM hk_rooms WHERE active = 1 ORDER BY sort_order, name').all(),
+    ctx.db.prepare(
+      `SELECT b.* FROM hk_beds b JOIN hk_rooms r ON r.id = b.room_id
+        WHERE b.active = 1 AND r.active = 1 ORDER BY b.room_id, b.sort_order, b.label`,
+    ).all(),
+    rosterRowsOn(ctx.db, day),
+    rosterRowsOn(ctx.db, previousDay),
+  ]);
+
+  const byRoom = new Map();
+  for (const bed of beds.results ?? []) {
+    if (!byRoom.has(bed.room_id)) byRoom.set(bed.room_id, []);
+    const now = tonight.rows.get(bed.id) ?? null;
+    const was = lastNight.rows.get(bed.id) ?? null;
+    byRoom.get(bed.room_id).push({
+      bedId: bed.id,
+      label: bed.label,
+      tonight: now?.expected_state ?? null,
+      tonightNote: now?.expected_note ?? null,
+      lastNight: was?.expected_state ?? null,
+      lastNightNote: was?.expected_note ?? null,
+    });
+  }
+
+  const confirmedRow = [...lastNight.rows.values()].find((r) => r.confirmed_at);
+
+  return json({
+    day,
+    previousDay,
+    today,
+    // A night nobody wrote a roster for is governed by the last one that was
+    // written, and the screen says so rather than looking mysteriously full.
+    tonightFrom: tonight.carried ? tonight.day : null,
+    lastNightFrom: lastNight.carried ? lastNight.day : null,
+    lastNightConfirmed: confirmedRow
+      ? { at: confirmedRow.confirmed_at, by: confirmedRow.confirmed_by }
+      : null,
+    rooms: (rooms.results ?? []).map((room) => ({
+      roomId: room.id,
+      name: room.name,
+      block: room.block ?? null,
+      beds: byRoom.get(room.id) ?? [],
+    })),
+  });
+}
+
+/**
+ * Write a night's roster.
  *
  * Kept as a bulk save because it is filled in the way it is read — a whole room
  * at a time, off a booking sheet — and because a roster half-applied is a
  * roster that invents surprises where there are none.
+ *
+ * `confirm` closes the night: this is what last night actually came to. After
+ * that the night is settled, and only somebody who can set the property up can
+ * reopen it, because everything judged against it has already been reported.
  */
 export async function saveRoster(ctx) {
   const body = await readJson(ctx.request);
@@ -643,22 +809,81 @@ export async function saveRoster(ctx) {
   if (!entries.length) throw badRequest('Nothing to save.');
   if (entries.length > 500) throw badRequest('That is more than 500 beds in one save.');
 
+  const timezone = (await ctx.db.prepare("SELECT value FROM settings WHERE key = 'timezone'")
+    .first())?.value || 'Africa/Accra';
+  const day = readDay(body.day, todayIn(timezone));
+  const confirm = body.confirm === true;
+
+  const settled = await ctx.db.prepare(
+    'SELECT confirmed_at, confirmed_by FROM hk_roster WHERE day = ? AND confirmed_at IS NOT NULL LIMIT 1',
+  ).bind(day).first();
+  if (settled && !ctx.session.permissions.includes('hk_setup')) {
+    throw badRequest(
+      `That night was confirmed by ${settled.confirmed_by || 'somebody'} and cannot be changed. `
+      + 'A housekeeping manager can reopen it.',
+    );
+  }
+
+  const who = ctx.session.user.name;
   const statements = entries.map((entry) => {
     const bedId = Number(entry.bedId);
     if (!Number.isFinite(bedId) || bedId <= 0) throw badRequest('A bed was not recognised.');
 
     // Three states, and the third one matters: a bed nobody is tracking raises
     // no expectation, which is different from a bed expected to be empty.
-    const expected = entry.expected === 'occupied' ? 'occupied'
-      : entry.expected === 'free' ? 'free'
-        : null;
+    const expected = readExpected(entry.expected);
+    const note = str(entry.note, 'Note', { max: 120, fallback: '' }) || null;
 
     return ctx.db.prepare(
-      'UPDATE hk_beds SET expected_state = ?2, expected_note = ?3 WHERE id = ?1',
-    ).bind(bedId, expected, str(entry.note, 'Note', { max: 120, fallback: '' }) || null);
+      `INSERT INTO hk_roster (day, bed_id, expected_state, expected_note, set_by, updated_at, confirmed_at, confirmed_by)
+       VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'), ?6, ?7)
+       ON CONFLICT(day, bed_id) DO UPDATE SET
+         expected_state = ?3,
+         expected_note  = ?4,
+         set_by         = ?5,
+         updated_at     = datetime('now'),
+         confirmed_at   = COALESCE(?6, hk_roster.confirmed_at),
+         confirmed_by   = COALESCE(?7, hk_roster.confirmed_by)`,
+    ).bind(
+      day, bedId, expected, note, who,
+      confirm ? new Date().toISOString().slice(0, 19).replace('T', ' ') : null,
+      confirm ? who : null,
+    );
   });
 
-  await ctx.db.batch(statements);
-  await audit(ctx, 'hk.roster.save', null, { beds: entries.length });
-  return json({ ok: true, saved: entries.length });
+  try {
+    await ctx.db.batch(statements);
+  } catch (err) {
+    rethrowConstraint(err, { foreignKey: 'One of those beds is no longer on the list.' });
+    throw err;
+  }
+
+  // The rounds judged against this night are brought back into line with it.
+  // While the night is open this is what lets a correction reach the check that
+  // was recorded before it; on confirmation it is the last time it happens.
+  const restamped = await restampNight(ctx.db, day);
+
+  await audit(ctx, confirm ? 'hk.roster.confirm' : 'hk.roster.save', day, {
+    beds: entries.length, restamped,
+  });
+  return json({
+    ok: true, day, saved: entries.length, confirmed: confirm, restamped,
+  });
+}
+
+/**
+ * Reopen a night that was confirmed too early.
+ *
+ * Rare, and deliberately not on the roster screen's main path — but a manager
+ * who confirms at nine and hears about a late checkout at ten needs a way back
+ * that is not editing the database.
+ */
+export async function reopenRoster(ctx, day) {
+  if (!isDay(day)) throw badRequest('That date is not valid.');
+  const result = await ctx.db.prepare(
+    'UPDATE hk_roster SET confirmed_at = NULL, confirmed_by = NULL WHERE day = ?',
+  ).bind(day).run();
+
+  await audit(ctx, 'hk.roster.reopen', day, null);
+  return json({ ok: true, day, beds: result.meta?.changes ?? 0 });
 }

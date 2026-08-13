@@ -1,16 +1,15 @@
 import { api } from '../api.js';
 import { confirmAction, h, mount, toast } from '../util.js';
 import { card, table } from './components.js';
-import { rosterSelect } from './hk-roster.js';
 
 /**
- * The dorms, their beds, and who is expected in them.
+ * The dorms and their beds.
  *
- * Two jobs on one screen, deliberately. Rooms and beds are set up once and
- * barely touched again; the roster — which bed should be occupied tonight — is
- * edited constantly, and it is the only thing that can turn "this bed is
- * occupied" into "this bed should not be". Keeping them together means the
- * person who adds a bed is looking straight at the column that makes it useful.
+ * Just the furniture. The roster used to sit here too, when it was one standing
+ * value per bed — but a roster is a different thing now, written per night and
+ * confirmed the next morning, and it changes several times a day while this
+ * screen changes a few times a year. They belong apart, and the Roster screen
+ * is where it lives.
  */
 export async function renderHkSetup() {
   const [data, me] = await Promise.all([api.hkRooms(), api.me()]);
@@ -132,28 +131,16 @@ function roomCard(room, reload) {
   const beds = room.beds.filter((b) => b.active);
 
   // Every editable control for this room, held by bed id, so one Save button
-  // can send the whole room in two requests rather than one per keystroke.
+  // can send the whole room in one pass rather than one request per keystroke.
   const labels = new Map();
-  const rosters = new Map();
-  const notes = new Map();
 
   const bedRows = beds.map((bed) => {
     const label = h('input', { type: 'text', value: bed.label, maxlength: 40 });
-    const roster = rosterSelect(bed.expected_state);
-    const note = h('input', {
-      type: 'text', value: bed.expected_note ?? '', maxlength: 120,
-      placeholder: 'Guest or booking (optional)',
-    });
-
     labels.set(bed.id, label);
-    rosters.set(bed.id, roster);
-    notes.set(bed.id, note);
 
     return {
       id: bed.id,
       label,
-      roster,
-      note,
       remove: h('button.btn-ghost.btn-sm', {
         title: `Remove ${bed.label}`,
         onclick: async () => {
@@ -172,21 +159,11 @@ function roomCard(room, reload) {
     };
   });
 
-  const setAll = (value) => {
-    for (const select of rosters.values()) {
-      select.value = value;
-      // The control colours itself on change, and setting `.value` in code
-      // fires nothing — so say it changed.
-      select.dispatchEvent(new Event('change'));
-    }
-  };
-
   const save = async (event) => {
     event.target.disabled = true;
     event.target.textContent = 'Saving…';
     try {
-      // Only the names that actually changed are sent: an unchanged bed does
-      // not need a write, and a failed one would take the roster with it.
+      // Only the names that actually changed are sent.
       const renamed = beds.filter((bed) => labels.get(bed.id).value.trim() !== bed.label);
       for (const bed of renamed) {
         await api.hkUpdateBed(bed.id, {
@@ -196,17 +173,7 @@ function roomCard(room, reload) {
         });
       }
 
-      if (beds.length) {
-        await api.hkSaveRoster({
-          beds: beds.map((bed) => ({
-            bedId: bed.id,
-            expected: rosters.get(bed.id).value || null,
-            note: notes.get(bed.id).value.trim() || null,
-          })),
-        });
-      }
-
-      toast(`${room.name} saved`, 'good');
+      toast(renamed.length ? `${room.name} saved` : 'Nothing to save', renamed.length ? 'good' : 'warn');
       reload();
     } catch (err) {
       toast(err.message, 'bad');
@@ -234,8 +201,6 @@ function roomCard(room, reload) {
 
   const bedTable = table([
     { key: 'label', label: 'Bed' },
-    { key: 'roster', label: 'Tonight the roster says' },
-    { key: 'note', label: 'Who is expected' },
     { key: 'remove', label: '', align: 'right' },
   ], bedRows, { empty: 'No beds in this room yet — add the first one below.' });
 
@@ -264,13 +229,6 @@ function roomCard(room, reload) {
   },
     bedTable,
 
-    h('div.btn-row', { style: { marginTop: '.8rem' } },
-      h('span.muted', { style: { fontSize: '.82rem' } }, 'Set every bed to:'),
-      h('button.btn-sm', { onclick: () => setAll('') }, 'Not tracked'),
-      h('button.btn-sm', { onclick: () => setAll('free') }, 'Should be free'),
-      h('button.btn-sm', { onclick: () => setAll('occupied') }, 'Should be occupied'),
-    ),
-
     h('div.field-row', { style: { marginTop: '.8rem' } },
       h('label.field', h('span', 'Add another bed'), newBed),
       h('div.field', h('span', ' '), h('button.btn-sm', { onclick: addBed }, 'Add bed')),
@@ -278,9 +236,8 @@ function roomCard(room, reload) {
     ),
 
     h('p.muted', { style: { fontSize: '.82rem', marginTop: '.7rem', marginBottom: 0 } },
-      'A bed left as “not tracked” is still checked and still has to have a name tag — it simply '
-      + 'raises no surprise either way. Only the beds you tell the system about can be reported '
-      + 'as occupied when they should have been free.'),
+      'Who is expected in each bed is set on the Roster screen, night by night — it changes daily, '
+      + 'and this screen barely changes at all.'),
   );
 }
 

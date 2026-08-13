@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { h, mount, toast } from '../util.js';
+import { fmtDay, h, mount, shiftDay, toast } from '../util.js';
 import { card, table } from './components.js';
 
 /**
@@ -46,60 +46,72 @@ export function rosterTag(value, { short = false } = {}) {
 }
 
 /**
- * Tonight's roster, and nothing else.
+ * The roster: last night closed off, tonight set.
  *
- * The front desk knows who is booked into which bed tonight, and that knowledge
- * is what turns "this bed is occupied" into "this bed should not have been".
- * But knowing the bookings is no reason to be handed the screen that renames
- * dorms and deletes beds, so the roster gets a page of its own: the same three
- * columns as the setup screen, without the destructive half around them.
+ * Two jobs on one screen, in the order they are actually done. Whoever writes
+ * the roster in the morning starts by saying how last night really ended —
+ * cancellations, no-shows, the walk-in at eleven — because that is what this
+ * morning's check is being judged against. Then they set tonight.
  *
- * One Save for the lot. Reception is setting a dozen beds at a time between
- * check-ins, and a Save button per room would mean a dozen presses and a dozen
- * chances to walk away having pressed eleven.
+ * Splitting them across two screens would mean the confirming never happens,
+ * and an unconfirmed night is one where the morning check is measured against
+ * a guess.
  */
-export async function renderHkRoster() {
-  const data = await api.hkRooms();
-  const rooms = data.rooms.filter((room) => room.active);
+export async function renderHkRoster(params = {}) {
+  const data = await api.hkRoster(params.day);
   const host = h('div.hk-page');
-  const reload = async () => mount(host, await renderHkRoster());
+  const reload = async (day) => mount(host, await renderHkRoster({ day: day ?? data.day }));
 
   // Every control on the page, held by bed id alongside what it started as, so
-  // the save can send only what actually changed and the count in the footer
-  // can say how much that is.
-  const edits = new Map();
+  // a save sends only what actually changed.
+  const tonight = new Map();
+  const lastNight = new Map();
+  const settled = Boolean(data.lastNightConfirmed);
 
-  const statusEl = h('div.hk-status', 'Set what each bed should be tonight, then save.');
+  const statusEl = h('div.hk-status', '');
   const countEl = h('div.hk-progress', '');
 
-  const refreshCount = () => {
-    const changed = [...edits.values()].filter(isChanged);
-    if (changed.length) {
-      mount(countEl, `${changed.length} ${changed.length === 1 ? 'bed' : 'beds'} changed`);
-    } else {
-      mount(countEl, tally(edits));
-    }
-    saveBtn.disabled = changed.length === 0;
+  const changedIn = (edits) => [...edits.values()].filter(isChanged);
+
+  const refresh = () => {
+    const changes = changedIn(tonight).length + (settled ? 0 : changedIn(lastNight).length);
+    mount(countEl, changes
+      ? `${changes} ${changes === 1 ? 'bed' : 'beds'} changed`
+      : tally(tonight));
+    saveBtn.disabled = changes === 0;
+    statusEl.textContent = settled
+      ? `Last night was confirmed by ${data.lastNightConfirmed.by || 'somebody'}.`
+      : 'Confirm last night, set tonight, then save.';
+    statusEl.className = 'hk-status';
   };
 
   const saveBtn = h('button.btn-primary.hk-submit', {
     disabled: true,
     onclick: async () => {
-      const changed = [...edits.values()].filter(isChanged);
-      if (!changed.length) return;
+      const tonightChanges = changedIn(tonight);
+      const lastNightChanges = settled ? [] : changedIn(lastNight);
+      if (!tonightChanges.length && !lastNightChanges.length) return;
+
       saveBtn.disabled = true;
       saveBtn.textContent = 'Saving…';
       statusEl.className = 'hk-status';
       statusEl.textContent = 'Saving…';
+
       try {
-        await api.hkSaveRoster({
-          beds: changed.map((edit) => ({
-            bedId: edit.id,
-            expected: edit.roster.value || null,
-            note: edit.note.value.trim() || null,
-          })),
-        });
-        toast(`Roster saved — ${changed.length} ${changed.length === 1 ? 'bed' : 'beds'}`, 'good');
+        // Last night first. It is the one with a deadline on it — the morning
+        // check has already been walked — and if the second call fails, the
+        // half that landed is the half that matters.
+        if (!settled) {
+          await api.hkSaveRoster({
+            day: data.previousDay,
+            confirm: true,
+            beds: payload([...lastNight.values()]),
+          });
+        }
+        if (tonightChanges.length) {
+          await api.hkSaveRoster({ day: data.day, beds: payload(tonightChanges) });
+        }
+        toast(settled ? 'Roster saved' : 'Last night confirmed, roster saved', 'good');
         reload();
       } catch (err) {
         statusEl.className = 'hk-status bad';
@@ -110,27 +122,64 @@ export async function renderHkRoster() {
     },
   }, 'Save the roster');
 
+  const confirmBar = settled
+    ? h('div.alert.info',
+      h('span.alert-icon', '✓'),
+      h('div',
+        h('div.alert-title', `${fmtDay(data.previousDay)} is settled`),
+        h('div.alert-detail',
+          `Confirmed by ${data.lastNightConfirmed.by || 'somebody'}`
+          + `${data.lastNightConfirmed.at ? ` at ${String(data.lastNightConfirmed.at).slice(11, 16)}` : ''}. `
+          + 'What the morning check found that day can no longer move.'),
+      ))
+    : h('div.alert.warn',
+      h('span.alert-icon', '⚠️'),
+      h('div',
+        h('div.alert-title', `First: how did ${fmtDay(data.previousDay)} actually end?`),
+        h('div.alert-detail',
+          'This morning’s check is judged against last night, not tonight — so a bed that '
+          + 'cancelled today was still somebody’s bed last night. Correct anything the bookings '
+          + 'changed after the roster was written, then save. It settles that night for good.'),
+      ));
+
   mount(host,
     h('div.page-head',
       h('div',
-        h('h1', 'Tonight’s roster'),
-        h('div.sub', 'Who should be in each bed when the next check walks the dorms'),
+        h('h1', 'The roster'),
+        h('div.sub', `Tonight: ${fmtDay(data.day)}`
+          + (data.tonightFrom ? ` · carried forward from ${fmtDay(data.tonightFrom)}` : '')),
+      ),
+      h('div.toolbar', { style: { marginBottom: 0 } },
+        h('button.btn-sm', { onclick: () => reload(shiftDay(data.day, -1)) }, '‹'),
+        h('input', {
+          type: 'date', value: data.day, max: data.today,
+          onchange: (e) => e.target.value && reload(e.target.value),
+        }),
+        h('button.btn-sm', {
+          onclick: () => reload(shiftDay(data.day, 1)),
+          disabled: data.day >= data.today,
+        }, '›'),
+        data.day === data.today ? null
+          : h('button.btn-sm', { onclick: () => reload(data.today) }, 'Today'),
       ),
     ),
 
-    ...rooms.map((room) => roomCard(room, edits, refreshCount)),
+    data.rooms.length ? confirmBar : null,
 
-    rooms.length ? null : h('div.card.empty',
+    ...data.rooms.map((room) => roomCard(room, { tonight, lastNight, settled, onChange: refresh })),
+
+    data.rooms.length ? null : h('div.card.empty',
       h('h3', 'No dorm rooms yet'),
       h('p', 'Once the dorms and their beds are set up, they appear here for the roster.'),
     ),
 
-    rooms.length ? h('p.muted', { style: { fontSize: '.82rem' } },
+    data.rooms.length ? h('p.muted', { style: { fontSize: '.82rem' } },
       'A bed left as “not tracked” is still checked and still has to have a name tag — it simply '
-      + 'raises no surprise either way. Only the beds you set here can be reported as occupied '
-      + 'when they should have been free.') : null,
+      + 'raises no surprise either way. The housekeeping round in the middle of the day is only '
+      + 'judged where last night and tonight agree, because a bed changing hands can honestly be '
+      + 'found either way at eleven in the morning.') : null,
 
-    rooms.length ? h('div.hk-footer',
+    data.rooms.length ? h('div.hk-footer',
       h('div.hk-footer-inner',
         h('div.hk-footer-text', countEl, statusEl),
         saveBtn,
@@ -138,17 +187,26 @@ export async function renderHkRoster() {
     ) : null,
   );
 
-  refreshCount();
+  refresh();
   return host;
+}
+
+/** What the API wants: the bed, its state and its note. */
+function payload(edits) {
+  return edits.map((edit) => ({
+    bedId: edit.id,
+    expected: edit.roster.value || null,
+    note: edit.note ? edit.note.value.trim() || null : null,
+  }));
 }
 
 /** Changed since the page loaded — an unchanged bed is not worth a write. */
 function isChanged(edit) {
   return (edit.roster.value || null) !== edit.was.expected
-    || (edit.note.value.trim() || null) !== edit.was.note;
+    || (edit.note && (edit.note.value.trim() || null) !== edit.was.note);
 }
 
-/** What the roster currently says, for the footer when nothing has been touched. */
+/** What tonight's roster currently says, for the footer when nothing is pending. */
 function tally(edits) {
   let occupied = 0;
   let free = 0;
@@ -167,28 +225,38 @@ function tally(edits) {
   );
 }
 
-function roomCard(room, edits, onChange) {
-  const beds = room.beds.filter((bed) => bed.active);
+function roomCard(room, { tonight, lastNight, settled, onChange }) {
+  const beds = room.beds;
   const selects = [];
 
   const rows = beds.map((bed) => {
-    const roster = rosterSelect(bed.expected_state, onChange);
-
+    const was = settled
+      ? rosterTag(bed.lastNight)
+      : rosterSelect(bed.lastNight, onChange);
+    const now = rosterSelect(bed.tonight, onChange);
     const note = h('input', {
-      type: 'text', value: bed.expected_note ?? '', maxlength: 120,
+      type: 'text', value: bed.tonightNote ?? '', maxlength: 120,
       placeholder: 'Guest or booking (optional)',
       oninput: onChange,
     });
 
-    selects.push(roster);
-    edits.set(bed.id, {
-      id: bed.id,
-      roster,
+    if (!settled) {
+      lastNight.set(bed.bedId, {
+        id: bed.bedId,
+        roster: was,
+        note: null,
+        was: { expected: bed.lastNight ?? null, note: bed.lastNightNote ?? null },
+      });
+    }
+    selects.push(now);
+    tonight.set(bed.bedId, {
+      id: bed.bedId,
+      roster: now,
       note,
-      was: { expected: bed.expected_state ?? null, note: bed.expected_note ?? null },
+      was: { expected: bed.tonight ?? null, note: bed.tonightNote ?? null },
     });
 
-    return { id: bed.id, label: bed.label, roster, note };
+    return { id: bed.bedId, label: bed.label, was, now, note };
   });
 
   const setAll = (value) => {
@@ -206,12 +274,13 @@ function roomCard(room, edits, onChange) {
   },
     table([
       { key: 'label', label: 'Bed' },
-      { key: 'roster', label: 'Tonight the roster says' },
+      { key: 'was', label: 'Last night ended as' },
+      { key: 'now', label: 'Tonight the roster says' },
       { key: 'note', label: 'Who is expected' },
     ], rows, { empty: 'No beds in this room yet.' }),
 
     beds.length ? h('div.btn-row', { style: { marginTop: '.8rem' } },
-      h('span.muted', { style: { fontSize: '.82rem' } }, 'Set every bed to:'),
+      h('span.muted', { style: { fontSize: '.82rem' } }, 'Set tonight to:'),
       h('button.btn-sm', { onclick: () => setAll('') }, 'Not tracked'),
       h('button.btn-sm', { onclick: () => setAll('free') }, 'Should be free'),
       h('button.btn-sm', { onclick: () => setAll('occupied') }, 'Should be occupied'),

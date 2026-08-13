@@ -94,16 +94,33 @@ The manager's side is built around the findings rather than the activity:
 | **Report** | A period, against the period before it — untagged beds, tag compliance, unexpected occupancy, coverage, and who walked what. Exports to CSV. |
 | **Every room, every day** | A room-by-day grid, one square per room per day, coloured by the worst thing found. Grey means nobody checked, which is treated as loudly as red. |
 | **A room's own page** | Every check ever made in one dorm, bed by bed, with its notes and its history. |
-| **Roster** | Tonight's expectation for every bed on one page, saved in one press. Its own permission, so the front desk can keep it without being able to rename or delete a dorm. |
-| **Setup** | The rooms and their beds, and the roster alongside them. |
+| **Roster** | Last night confirmed and tonight set, on one page, saved in one press. Its own permission, so the front desk can keep it without being able to rename or delete a dorm. |
+| **Setup** | The rooms and their beds. Changes a few times a year; the roster changes several times a day, so it lives on its own screen. |
 
 **The roster** is what turns "this bed is occupied" into "this bed should have
 been empty". Each bed is marked *should be free*, *should be occupied* or *not
 tracked*; a bed left untracked is still checked and still needs a name tag, it
 simply raises no surprise either way. It is never shown to the person doing the
-round — somebody who knows the expected answer before they look is not checking
-— and every check keeps its own copy of what was expected at the time, so
-editing tonight's roster cannot rewrite what last Tuesday found.
+round — somebody who knows the expected answer before they look is not checking.
+
+**A roster day is a night.** The roster written on Tuesday is for Tuesday
+night, and two checks look at that night from either side: Tuesday evening,
+before anybody sleeps in it, and Wednesday morning, to see what became of it.
+So the morning check is judged against *yesterday's* roster. This matters
+because bookings move all day — a bed cancelled at noon was still somebody's
+bed last night, and judging the eight o'clock check against tonight's roster
+would report a guest who paid as a stranger. The housekeeping round falls in
+the gap between two nights, when last night's guests are leaving and tonight's
+have not arrived, so it is judged only where the two nights agree.
+
+**Confirming settles it.** Writing today's roster starts by saying how last
+night actually ended, on the same screen — the cancellation, the no-show, the
+walk-in at eleven. Until a night is confirmed, correcting it also corrects the
+rounds already judged against it, which is what lets a nine o'clock correction
+reach the eight o'clock check. After confirmation the night is closed: the
+front desk cannot change it, and its findings stop moving. A night nobody wrote
+a roster for is governed by the last one written, since bookings run over
+several nights.
 
 Keeping the roster and building the dorms are **separate permissions**. The
 front desk knows tonight's bookings, and that is no reason to hand them the
@@ -529,8 +546,12 @@ without a database, which is what `test/analytics.test.js` does.
   nobody opened, is reported as a gap in its own right and shown in grey on the
   room-by-day grid. Coverage sits beside every other figure so a spotless week
   on a quarter of the beds cannot be mistaken for a spotless week.
-- **The roster is snapshotted onto each check.** Editing tonight's expected
-  occupancy cannot change which of last week's beds counted as a surprise.
+- **The roster is snapshotted onto each check, and the night is sealed the
+  next morning.** A night's roster stays editable while it is still a plan —
+  bookings move all day, and a correction at nine has to reach the check walked
+  at eight, or the check is being measured against a roster written after it.
+  Confirming closes the night, and after that nothing can change what last
+  week's beds counted as.
 - **Two ways to sign in, chosen by role.** A PIN is right for a cook at a
   tablet with flour on their hands. It is not right for an account that can see
   every cost, manage people and erase data, so administrators use an email
