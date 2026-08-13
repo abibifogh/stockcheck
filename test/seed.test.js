@@ -176,3 +176,18 @@ test('upgrading an older database keeps the checks already recorded', () => {
   db.prepare('INSERT INTO hk_rounds (day, slot) VALUES (?,?)').run('2026-08-01', 'evening');
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM hk_rounds WHERE day='2026-08-01'").get().n, 2);
 });
+
+test('every file the database workflow offers actually exists', () => {
+  // The button fails at the worst possible moment otherwise — after somebody
+  // has clicked it, against a live database.
+  const workflow = readFileSync('.github/workflows/housekeeping-db.yml', 'utf8');
+  const offered = [...workflow.matchAll(/^\s+- (housekeeping[\w-]*\.sql)$/gm)].map((m) => m[1]);
+
+  assert.ok(offered.length, 'no file options found — has the workflow changed shape?');
+  for (const file of offered) {
+    assert.ok(readFileSync(`seed/${file}`, 'utf8').trim().length, `seed/${file} is missing or empty`);
+  }
+  for (const file of UPGRADE_FILES) {
+    assert.ok(offered.includes(file), `${file} is an upgrade nobody can run from the button`);
+  }
+});

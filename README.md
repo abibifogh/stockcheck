@@ -332,6 +332,13 @@ That SQL file is the migration with every comment stripped out, because the D1
 console rejects a paste it reads as comments alone — it is otherwise identical,
 and safe to run twice.
 
+**Running one without pasting anything.** Actions → *Housekeeping database* →
+**Run workflow**, pick the file, type `housekeeping` to confirm. It needs
+`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the repository secrets,
+with D1 edit permission on the token; it runs on nobody's schedule, only when
+somebody presses it, and it prints the state of the database afterwards so a
+schema change is never something you have to take on trust.
+
 **Which file for which job.** `housekeeping-database.sql` builds a database
 from nothing. The `-upgrade-` files move one that already exists, in order:
 `housekeeping-upgrade-rounds.sql` (one check a day to three, run once) then
