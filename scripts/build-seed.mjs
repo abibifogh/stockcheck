@@ -94,15 +94,44 @@ function statementsOf(file) {
   return out.join('\n');
 }
 
+/**
+ * The `users` table after 0003 has rebuilt it.
+ *
+ * Only the correspondence seed uses this. That file skips 0003 — a paste-able
+ * schema must never run `DROP TABLE users` against a database whose own tables
+ * reference it — so the finished shape has to be written out directly instead.
+ */
+const FINAL_USERS = {
+  users: `CREATE TABLE IF NOT EXISTS users (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  name          TEXT    NOT NULL,
+  pin_hash      TEXT    UNIQUE,
+  email         TEXT    UNIQUE,
+  password_hash TEXT,
+  role          TEXT    NOT NULL DEFAULT 'cook',
+  permissions   TEXT,
+  active        INTEGER NOT NULL DEFAULT 1,
+  note          TEXT,
+  created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+  last_login_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_users_active ON users (active);
+CREATE INDEX IF NOT EXISTS idx_users_email  ON users (email);`,
+};
+
 /** Swap a CREATE TABLE block, and the indexes that follow it, for the final one. */
-function withFinalTables(sql) {
-  for (const [table, replacement] of Object.entries(FINAL_TABLES)) {
+function withFinalTables(sql, tables = FINAL_TABLES) {
+  for (const [table, replacement] of Object.entries(tables)) {
     const create = new RegExp(`CREATE TABLE IF NOT EXISTS ${table} \\([\\s\\S]*?\\n\\);`, 'g');
     if (!create.test(sql)) continue;
     sql = sql.replace(create, replacement);
     // The old indexes are now duplicated inside the replacement block.
     sql = sql.replace(
-      new RegExp(`^CREATE INDEX IF NOT EXISTS \\w+ ON ${table} \\([^)]*\\);$`, 'gm'),
+      // Tolerant of the spacing: the migrations line their index names up in
+      // columns, so `idx_users_email  ON users` has two spaces where
+      // `idx_users_active ON users` has one. A pattern that only matched one
+      // left the wider line behind and the file ended up with the index twice.
+      new RegExp(`^CREATE INDEX IF NOT EXISTS \\w+ +ON ${table} +\\([^)]*\\);$`, 'gm'),
       '',
     );
     // Put the replacement's own indexes back, which the sweep above removed.
@@ -111,15 +140,58 @@ function withFinalTables(sql) {
   return sql.split('\n').filter((l) => l.trim()).join('\n');
 }
 
-function build(files, out) {
+/**
+ * Take a table out of the finished file entirely.
+ *
+ * Some migrations create shared foundations and one site's own tables in the
+ * same file — 0001 has `settings` and `audit_log` next to `ingredients`. A
+ * deployment that has no kitchen should not be handed a kitchen, so the tables
+ * that do not belong are removed by name after the file is assembled rather
+ * than by splitting every migration in two.
+ *
+ * Everything that names the table goes with it: the CREATE, its indexes, any
+ * ALTER against it, and any seed rows inserted into it.
+ */
+function withoutTables(sql, tables) {
+  for (const table of tables) {
+    sql = sql
+      .replace(new RegExp(`CREATE TABLE IF NOT EXISTS ${table} \\([\\s\\S]*?\\n\\);`, 'g'), '')
+      .replace(new RegExp(`^CREATE INDEX IF NOT EXISTS \\w+ +ON ${table} +\\([^)]*\\);$`, 'gm'), '')
+      .replace(new RegExp(`^ALTER TABLE ${table} [^;]*;$`, 'gm'), '')
+      .replace(new RegExp(`^INSERT[^;\\n]*INTO ${table}\\b[\\s\\S]*?;$`, 'gm'), '');
+  }
+  return sql.split('\n').filter((l) => l.trim()).join('\n');
+}
+
+function build(files, out, { drop = [], extraFinal = null, append = [] } = {}) {
+  const finals = extraFinal ? { ...FINAL_TABLES, ...extraFinal } : FINAL_TABLES;
   let sql = files.map(statementsOf).join('\n');
-  sql = withFinalTables(sql);
+  sql = withFinalTables(sql, finals);
   for (const pattern of FOLDED_IN) sql = sql.replace(pattern, '');
-  // Re-attach the index lines that belong to the rebuilt tables.
-  const indexes = Object.values(FINAL_TABLES)
-    .flatMap((block) => block.split('\n').filter((l) => l.startsWith('CREATE INDEX')))
-    .filter((line) => !sql.includes(line));
-  writeFileSync(out, `${[sql, ...indexes].join('\n')}\n`);
+  if (drop.length) sql = withoutTables(sql, drop);
+  // Re-attach the index lines belonging to the rebuilt tables, which the sweep
+  // above took out along with the originals.
+  //
+  // Two conditions, both learned the hard way. An index is only re-attached if
+  // its table is actually created in this file — `FINAL_TABLES` describes the
+  // bed check, and a practice seed that carried `idx_hk_checks_day` without
+  // `hk_checks` fails on the first line nobody reads. And it is keyed by index
+  // name rather than by the whole line, because two spaces where the original
+  // had one is not a second index.
+  const named = new Set([...sql.matchAll(/^CREATE INDEX IF NOT EXISTS (\w+)/gm)].map((m) => m[1]));
+  const indexes = [];
+  for (const line of Object.values(finals).flatMap((block) => block.split('\n'))) {
+    const match = line.match(/^CREATE INDEX IF NOT EXISTS (\w+) +ON (\w+)/);
+    if (!match) continue;
+    const [, index, table] = match;
+    if (named.has(index)) continue;
+    if (drop.includes(table)) continue;
+    if (!sql.includes(`CREATE TABLE IF NOT EXISTS ${table} (`)) continue;
+    named.add(index);
+    indexes.push(line);
+  }
+
+  writeFileSync(out, `${[sql, ...indexes, ...append].join('\n')}\n`);
 }
 
 // `.sql` only: `migrations/console/` is a directory of paste-able copies.
@@ -144,10 +216,58 @@ const OTHER_STORES = new Set([
   '0011_bakery.sql',
   // Alters the kitchen's stock_counts, which this site never reads.
   '0012_breakfast_count_approval.sql',
+  // The accounting practice. A hostel has no correspondence register.
+  '0014_correspondence.sql',
 ]);
 
 // The whole database a housekeeping-only site needs.
 build(all.filter((f) => upgrades(f) && !OTHER_STORES.has(f)), 'seed/housekeeping-database.sql');
+
+/**
+ * The database the correspondence site needs.
+ *
+ * The foundations every deployment shares — people, settings, the audit log,
+ * the bell, push — plus the register itself. Nothing from the hotel and nothing
+ * from the dorm: a practice that found `service_days` in its database would
+ * rightly wonder what else had been left lying around.
+ *
+ * Two mechanisms, because the migrations mix the two kinds of table. Whole
+ * files are skipped where a file is entirely one store's; individual tables are
+ * dropped by name where a file carries both — 0001 defines `settings` and
+ * `ingredients` side by side.
+ */
+const NOT_THE_PRACTICE = new Set([
+  '0005_maintenance.sql',
+  '0006_part_attributes.sql',
+  '0007_count_approval.sql',
+  '0007_housekeeping.sql',
+  '0010_craft_shop.sql',
+  '0011_bakery.sql',
+  '0012_breakfast_count_approval.sql',
+  // Its own `users` rebuild, replaced below by the finished shape. Running a
+  // DROP TABLE users against a database whose co_ tables reference it is not
+  // something a paste-able file should ever attempt.
+  '0003_admin_credentials.sql',
+]);
+
+const HOTEL_TABLES = [
+  'categories', 'ingredients', 'service_days', 'usage', 'purchases', 'stock_counts',
+  'suppliers', 'day_revisions', 'period_locks',
+  'mx_stocktake_schedules', 'mx_stocktake_assignees', 'mx_stocktake_tasks',
+];
+
+build(
+  all.filter((f) => upgrades(f) && !NOT_THE_PRACTICE.has(f)),
+  'seed/correspondence-database.sql',
+  {
+    drop: HOTEL_TABLES,
+    extraFinal: FINAL_USERS,
+    // 0003 is skipped above, so the one setting it adds has to come from here.
+    // Without it a fresh practice database has no way back in if the last
+    // administrator locks themselves out.
+    append: ["INSERT OR IGNORE INTO settings (key, value) VALUES ('allow_recovery_pin', '1');"],
+  },
+);
 
 // Just the bed check's own tables, for adding them to a database that already
 // has the rest. Named, not numbered — the other 0007 belongs to the parts

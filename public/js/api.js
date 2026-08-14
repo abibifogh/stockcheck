@@ -273,7 +273,117 @@ export const api = {
 
   exportUrl: (type, from, to) =>
     `/api/export?${new URLSearchParams({ type, ...(from ? { from } : {}), ...(to ? { to } : {}) })}`,
+
+  // -------------------------------------------------------- correspondence --
+  coBootstrap: () => request('/api/co/bootstrap'),
+
+  coLetters: (params = {}) => request(`/api/co/letters?${clean(params)}`),
+  coLetter: (id) => request(`/api/co/letters/${id}`),
+  coCreateLetter: (body) => request('/api/co/letters', { method: 'POST', body }),
+  coUpdateLetter: (id, body) => request(`/api/co/letters/${id}`, { method: 'PUT', body }),
+  coSetStatus: (id, body) => request(`/api/co/letters/${id}/status`, { method: 'POST', body }),
+  coArchiveLetter: (id, archived) =>
+    request(`/api/co/letters/${id}/archive`, { method: 'POST', body: { archived } }),
+  coLinkLetter: (id, body) => request(`/api/co/letters/${id}/links`, { method: 'POST', body }),
+  coExportUrl: (from, to) => `/api/co/export?${clean({ from, to })}`,
+
+  coMine: () => request('/api/co/mine'),
+  coRoute: (id, body) => request(`/api/co/letters/${id}/routes`, { method: 'POST', body }),
+  coActOnRoute: (routeId, body) => request(`/api/co/routes/${routeId}/act`, { method: 'POST', body }),
+  coCancelRoute: (routeId) => request(`/api/co/routes/${routeId}/cancel`, { method: 'POST', body: {} }),
+
+  coSign: (id, body) => request(`/api/co/letters/${id}/sign`, { method: 'POST', body }),
+  coVerify: (id) => request(`/api/co/letters/${id}/verify`),
+
+  // Files go up as form data rather than JSON, so they skip `request` — see
+  // `upload` below. Downloads are a plain link, because a link is what a
+  // browser already knows how to open in a new tab.
+  coUploadAttachment: (form) => upload('/api/co/attachments', form),
+  coAttachmentUrl: (id) => `/api/co/attachments/${id}`,
+  coDeleteAttachment: (id) => request(`/api/co/attachments/${id}`, { method: 'DELETE' }),
+
+  coTemplates: () => request('/api/co/templates'),
+  coRenderTemplate: (id, params = {}) => request(`/api/co/templates/${id}/render?${clean(params)}`),
+
+  coParties: (params = {}) => request(`/api/co/parties?${clean(params)}`),
+  coCreateParty: (body) => request('/api/co/parties', { method: 'POST', body }),
+  coUpdateParty: (id, body) => request(`/api/co/parties/${id}`, { method: 'PUT', body }),
+
+  coCases: (params = {}) => request(`/api/co/cases?${clean(params)}`),
+  coCase: (id) => request(`/api/co/cases/${id}`),
+  coCreateCase: (body) => request('/api/co/cases', { method: 'POST', body }),
+  coUpdateCase: (id, body) => request(`/api/co/cases/${id}`, { method: 'PUT', body }),
+  coCasesExportUrl: () => '/api/co/cases-export',
+
+  coTasks: (params = {}) => request(`/api/co/tasks?${clean(params)}`),
+  coCreateTask: (body) => request('/api/co/tasks', { method: 'POST', body }),
+  coUpdateTask: (id, body) => request(`/api/co/tasks/${id}`, { method: 'PUT', body }),
+
+  coMeetings: (params = {}) => request(`/api/co/meetings?${clean(params)}`),
+  coMeeting: (id) => request(`/api/co/meetings/${id}`),
+  coCreateMeeting: (body) => request('/api/co/meetings', { method: 'POST', body }),
+  coUpdateMeeting: (id, body) => request(`/api/co/meetings/${id}`, { method: 'PUT', body }),
+  coRecordMinutes: (id, body) => request(`/api/co/meetings/${id}/minutes`, { method: 'POST', body }),
+  coMarkAttendance: (id, attendance) =>
+    request(`/api/co/meetings/${id}/attendance`, { method: 'POST', body: { attendance } }),
+
+  coOverview: () => request('/api/co/reports/overview'),
+  coProductivity: (from, to) => request(`/api/co/reports/productivity?${clean({ from, to })}`),
+  coDepartments: (from, to) => request(`/api/co/reports/departments?${clean({ from, to })}`),
+  coActivity: (from, to) => request(`/api/co/reports/activity?${clean({ from, to })}`),
+  coRetention: () => request('/api/co/reports/retention'),
+  coTrailExportUrl: (from, to) => `/api/co/reports/trail-export?${clean({ from, to })}`,
+
+  coSetup: () => request('/api/co/setup'),
+  coUpdateSetup: (body) => request('/api/co/setup/settings', { method: 'PUT', body }),
+  coCreateDepartment: (body) => request('/api/co/setup/departments', { method: 'POST', body }),
+  coUpdateDepartment: (id, body) => request(`/api/co/setup/departments/${id}`, { method: 'PUT', body }),
+  coCreateCoCategory: (body) => request('/api/co/setup/categories', { method: 'POST', body }),
+  coUpdateCoCategory: (id, body) => request(`/api/co/setup/categories/${id}`, { method: 'PUT', body }),
+  coCreateTemplate: (body) => request('/api/co/setup/templates', { method: 'POST', body }),
+  coUpdateTemplate: (id, body) => request(`/api/co/setup/templates/${id}`, { method: 'PUT', body }),
+  coDeleteTemplate: (id) => request(`/api/co/setup/templates/${id}`, { method: 'DELETE' }),
+  coSaveWorkflow: (id, body) => (id
+    ? request(`/api/co/setup/workflows/${id}`, { method: 'PUT', body })
+    : request('/api/co/setup/workflows', { method: 'POST', body })),
+  coDeleteWorkflow: (id) => request(`/api/co/setup/workflows/${id}`, { method: 'DELETE' }),
+  coSaveStaff: (userId, body) => request(`/api/co/setup/staff/${userId}`, { method: 'PUT', body }),
+  coSweepNow: () => request('/api/co/setup/sweep', { method: 'POST', body: {} }),
 };
+
+/** Query string from an object, dropping anything empty. */
+function clean(params) {
+  const out = new URLSearchParams();
+  for (const [key, value] of Object.entries(params ?? {})) {
+    if (value == null || value === '' || value === false) continue;
+    out.set(key, value === true ? '1' : String(value));
+  }
+  return out.toString();
+}
+
+/**
+ * A multipart upload.
+ *
+ * Separate from `request` because that one sets a JSON content type, and
+ * setting any content type at all on a FormData body breaks it: the browser has
+ * to add the multipart boundary itself, and it will not do that if we have
+ * already written the header.
+ */
+async function upload(path, form) {
+  let response;
+  try {
+    response = await fetch(path, { method: 'POST', body: form, credentials: 'same-origin' });
+  } catch {
+    throw new ApiError(0, 'No connection to the server. The file has not been uploaded.');
+  }
+  if (response.status === 401) {
+    onUnauthorized();
+    throw new ApiError(401, 'Your session has expired. Sign in again.');
+  }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new ApiError(response.status, data.error || `Upload failed (${response.status})`);
+  return data;
+}
 
 // --------------------------------------------------------------- offline --
 // Day sheets are queued locally when a save fails, so a dropped connection in

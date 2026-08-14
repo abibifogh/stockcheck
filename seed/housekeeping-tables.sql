@@ -69,4 +69,3 @@ CREATE INDEX IF NOT EXISTS idx_hk_checks_day ON hk_checks (day);
 CREATE INDEX IF NOT EXISTS idx_hk_checks_bed ON hk_checks (bed_id, day);
 CREATE INDEX IF NOT EXISTS idx_hk_checks_round ON hk_checks (round_id);
 CREATE INDEX IF NOT EXISTS idx_hk_checks_slot ON hk_checks (day, slot);
-CREATE INDEX IF NOT EXISTS idx_app_notices_at ON app_notices (id DESC);

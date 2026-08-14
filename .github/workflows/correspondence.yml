@@ -1,0 +1,142 @@
+name: Correspondence · Test & Deploy
+
+# The accounting practice's site. Its own workflow rather than another job in
+# deploy.yml, for the same reason it has its own wrangler config: deploying the
+# practice must never be able to restart, replace or break the hotel, and a
+# shared workflow is a shared failure.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'seed/correspondence-*.sql'
+      - 'migrations/0014_correspondence.sql'
+      - 'wrangler.correspondence.toml'
+      - '.github/workflows/correspondence.yml'
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      starter:
+        description: Also load the starter templates and workflows
+        type: boolean
+        default: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+      # The seed file is what actually builds a practice database, and the tests
+      # above read it. Rebuilding it here catches the one mistake nobody notices
+      # until deploy day: a migration changed and the seed was not rebuilt.
+      - name: Check the schema file is up to date
+        run: |
+          npm run build:seed
+          if ! git diff --quiet seed/; then
+            echo "::error::seed/ is out of date. Run 'npm run build:seed' and commit the result."
+            git diff --stat seed/
+            exit 1
+          fi
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-correspondence
+      cancel-in-progress: false
+    steps:
+      # Deploying from here is optional. If the site is connected to Cloudflare
+      # directly (Workers → Builds), Cloudflare does the deploy on its own and
+      # these credentials will not be set. Skip quietly rather than failing, so
+      # a perfectly healthy setup does not report a red build on every save.
+      - name: Check for Cloudflare credentials
+        id: creds
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -n "$CF_TOKEN" ] && [ -n "$CF_ACCOUNT" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "### Deploy skipped" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "No Cloudflare credentials are set in this repository, so nothing was deployed." >> "$GITHUB_STEP_SUMMARY"
+            echo "This is expected — and correct — if Cloudflare deploys the site itself via Workers Builds." >> "$GITHUB_STEP_SUMMARY"
+            echo "The tests above still ran." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.creds.outputs.ready == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.creds.outputs.ready == 'true'
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+        if: steps.creds.outputs.ready == 'true'
+
+      # The schema goes on before the code, so new code never meets an old
+      # database. This file is the destination rather than a step, and it is
+      # tested for being safe to run twice — which is what makes it safe to run
+      # on every single deploy.
+      - name: Apply the schema
+        if: steps.creds.outputs.ready == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >
+            d1 execute correspondence --remote
+            --config wrangler.correspondence.toml
+            --file=./seed/correspondence-database.sql
+
+      # Only when somebody asks for it from the Actions tab. Templates and
+      # workflows are examples to edit; a firm that has rewritten them should
+      # not have the originals put back on every deploy.
+      - name: Load the starter templates and workflows
+        if: steps.creds.outputs.ready == 'true' && inputs.starter
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >
+            d1 execute correspondence --remote
+            --config wrangler.correspondence.toml
+            --file=./seed/correspondence-starter.sql
+
+      - name: Deploy the Worker
+        if: steps.creds.outputs.ready == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy --config wrangler.correspondence.toml
+
+      # Read back what is actually there. A deploy you cannot see the result of
+      # is a deploy nobody trusts.
+      - name: What the database looks like now
+        if: steps.creds.outputs.ready == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >
+            d1 execute correspondence --remote
+            --config wrangler.correspondence.toml
+            --command "SELECT (SELECT COUNT(*) FROM co_letters) AS letters,
+                              (SELECT COUNT(*) FROM co_parties) AS parties,
+                              (SELECT COUNT(*) FROM co_cases) AS engagements,
+                              (SELECT COUNT(*) FROM co_workflows) AS workflows,
+                              (SELECT COUNT(*) FROM co_templates) AS templates,
+                              (SELECT COUNT(*) FROM users WHERE active = 1) AS people"

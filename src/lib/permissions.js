@@ -41,6 +41,22 @@ export const PERMISSIONS = [
   // one, and a permission that bundles the two would force the choice.
   { key: 'hk_roster', label: 'The roster', detail: 'Set who is expected in each bed tonight' },
   { key: 'hk_setup', label: 'Housekeeping setup', detail: 'Dorm rooms and beds — and the roster with them' },
+
+  // Correspondence. A different kind of operation entirely — an accounting
+  // practice rather than a hotel — and its own deployment, but the same idea:
+  // a registry clerk logs the post and nothing else, and a partner sees the
+  // restricted file that nobody else knows exists.
+  { key: 'co_register', label: 'Register correspondence', detail: 'Log letters in and out, and amend them' },
+  { key: 'co_route', label: 'Route and act', detail: 'Send correspondence to people, and act on what is sent to you' },
+  { key: 'co_approve', label: 'Approve and sign', detail: 'Approve, reject and place a signature on a document' },
+  { key: 'co_cases', label: 'Clients and engagements', detail: 'The client list and the engagement file' },
+  { key: 'co_tasks', label: 'Action points', detail: 'Raise, assign and close action points' },
+  { key: 'co_meetings', label: 'Meetings', detail: 'Schedule meetings and record minutes' },
+  { key: 'co_reports', label: 'Correspondence reports', detail: 'Statistics, turnaround and productivity' },
+  { key: 'co_setup', label: 'Practice setup', detail: 'Departments, categories, templates and workflows' },
+  // The one with real teeth: restricted correspondence is invisible to
+  // everybody else, including managers, and this is what sees it.
+  { key: 'co_oversight', label: 'Partner oversight', detail: 'See restricted files, verify audit trails, override' },
 ];
 
 export const PERMISSION_KEYS = PERMISSIONS.map((p) => p.key);
@@ -108,6 +124,34 @@ export const ROLES = [
     detail: 'Runs the bed check: the round, the reports, and the roster of who is expected where.',
     defaults: ['hk_check', 'hk_reports', 'hk_roster', 'hk_setup'],
   },
+  // ------------------------------------------------------------ the practice --
+  {
+    key: 'registry_clerk',
+    label: 'Registry clerk',
+    detail: 'Logs the post in and out and sends it on. Sees no client file and no reports.',
+    defaults: ['co_register', 'co_route'],
+  },
+  {
+    key: 'practice_staff',
+    label: 'Professional staff',
+    detail: 'Acts on what is sent to them, keeps action points and attends meetings.',
+    defaults: ['co_route', 'co_tasks', 'co_meetings'],
+  },
+  {
+    key: 'practice_manager',
+    label: 'Manager',
+    detail: 'Runs engagements: the register, the client file, approvals and the numbers.',
+    defaults: ['co_register', 'co_route', 'co_approve', 'co_cases', 'co_tasks', 'co_meetings', 'co_reports'],
+  },
+  {
+    key: 'partner',
+    label: 'Partner',
+    detail: 'Everything a manager sees, plus restricted files and the audit-trail check.',
+    defaults: [
+      'co_register', 'co_route', 'co_approve', 'co_cases', 'co_tasks', 'co_meetings',
+      'co_reports', 'co_setup', 'co_oversight',
+    ],
+  },
   {
     key: 'admin',
     label: 'Administrator',
@@ -131,22 +175,42 @@ const ROLE_MAP = new Map(ROLES.map((r) => [r.key, r]));
  */
 const HOUSEKEEPING_KEYS = ['hk_check', 'hk_reports', 'hk_roster', 'hk_setup'];
 
+const CORRESPONDENCE_KEYS = [
+  'co_register', 'co_route', 'co_approve', 'co_cases', 'co_tasks',
+  'co_meetings', 'co_reports', 'co_setup', 'co_oversight',
+];
+
+/**
+ * The permission keys each single-purpose site owns.
+ *
+ * A site absent from here carries everything, which is what the original
+ * breakfast deployment does. Keys listed here belong to that site alone: the
+ * correspondence deployment never offers "Bed check", and the hotel deployments
+ * never offer "Approve and sign".
+ */
+const SITE_KEYS = {
+  housekeeping: HOUSEKEEPING_KEYS,
+  correspondence: CORRESPONDENCE_KEYS,
+};
+
 export function permissionsFor(site) {
-  if (site !== 'housekeeping') return PERMISSIONS;
-  return PERMISSIONS.filter((p) => HOUSEKEEPING_KEYS.includes(p.key));
+  const keys = SITE_KEYS[site];
+  if (!keys) return PERMISSIONS;
+  return PERMISSIONS.filter((p) => keys.includes(p.key));
 }
 
 export function rolesFor(site) {
-  if (site !== 'housekeeping') return ROLES;
+  const keys = SITE_KEYS[site];
+  if (!keys) return ROLES;
   return ROLES
-    .filter((r) => r.key === 'admin' || r.defaults.some((d) => HOUSEKEEPING_KEYS.includes(d)))
+    .filter((r) => r.key === 'admin' || r.defaults.some((d) => keys.includes(d)))
     .map((role) => ({
       ...role,
       // An administrator here administers this site, so their defaults are this
       // site's sections rather than every section in the codebase.
       defaults: role.key === 'admin'
-        ? [...HOUSEKEEPING_KEYS, 'users']
-        : role.defaults.filter((d) => HOUSEKEEPING_KEYS.includes(d)),
+        ? [...keys, 'users']
+        : role.defaults.filter((d) => keys.includes(d)),
     }));
 }
 
@@ -188,6 +252,10 @@ export function effectivePermissions(user) {
   // sits on the same screen, and a setup holder who could not touch it would be
   // looking at a control that refused them.
   if (list.includes('hk_setup') && !list.includes('hk_roster')) list.push('hk_roster');
+  // Registering a letter you cannot then send to anybody is a dead end: the
+  // screen offers the control and the API refuses it. Whoever logs the post can
+  // always route it.
+  if (list.includes('co_register') && !list.includes('co_route')) list.push('co_route');
   return list;
 }
 

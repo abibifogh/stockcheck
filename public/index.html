@@ -10,18 +10,28 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍳</text></svg>" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <script>
-    // Two Workers serve these same files: the breakfast site, and the
-    // housekeeping site at housekeeping.niceoperation.com. The tab title, the
-    // favicon and — the one that matters — the identity a phone records when
-    // somebody adds the page to their home screen are all settled before any
-    // module loads, so the decision is made here, inline, by the same rule
-    // public/js/brand.js uses.
+    // Three Workers serve these same files: the breakfast site, the
+    // housekeeping site at housekeeping.niceoperation.com, and the accounting
+    // practice's correspondence register. The tab title, the favicon and — the
+    // one that matters — the identity a phone records when somebody adds the
+    // page to their home screen are all settled before any module loads, so the
+    // decision is made here, inline, by the same rule public/js/brand.js uses.
+    var icon = function (glyph) {
+      return "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>"
+        + "<text y='.9em' font-size='90'>" + glyph + "</text></svg>";
+    };
     if (/housekeeping/.test(location.hostname)) {
       document.documentElement.dataset.app = 'housekeeping';
       document.title = 'Bed Check · Nice Operation';
       document.querySelector('link[rel="manifest"]').href = '/manifest.housekeeping.webmanifest';
-      document.querySelector('link[rel="icon"]').href =
-        "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛏</text></svg>";
+      document.querySelector('link[rel="icon"]').href = icon('🛏');
+    } else if (/correspondence|(^|\.)cms\./.test(location.hostname)) {
+      document.documentElement.dataset.app = 'correspondence';
+      document.title = 'Correspondence';
+      document.querySelector('link[rel="manifest"]').href = '/manifest.correspondence.webmanifest';
+      document.querySelector('link[rel="icon"]').href = icon('🗂');
+      document.querySelector('meta[name="description"]').content =
+        'Correspondence register, engagements, action points and meetings.';
     }
   </script>
 </head>

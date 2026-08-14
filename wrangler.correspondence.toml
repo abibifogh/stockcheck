@@ -1,0 +1,68 @@
+# The correspondence site: the accounting practice's register.
+#
+# A third Worker, deployed from the same code as the other two but entirely its
+# own deployment. Nothing here touches `wrangler.toml` or
+# `wrangler.housekeeping.toml`, and deploying this one cannot restart, replace
+# or break either of them — which is the whole point of keeping them apart.
+#
+#   npm run deploy:correspondence
+#
+# What is shared and what is not:
+#
+# Nothing at all is shared. Its own database, so its own people, its own client
+# list and its own history. Its own secrets too, because Workers never share
+# those — this one needs its own SESSION_SECRET, its own DOC_SECRET, and its own
+# RESEND_API_KEY if it is to send email.
+#
+# `APP_SITE` is what makes this deployment the practice: the breakfast, parts,
+# shop and bed-check screens are absent from the menu, absent from the guide,
+# absent from the roles you can hand out, and their API answers 404 here.
+
+name = "practice-correspondence"
+main = "src/index.js"
+compatibility_date = "2025-05-01"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "correspondence"
+# Replace with the id printed by `npm run co:db:create`.
+database_id = "REPLACE_WITH_YOUR_DATABASE_ID"
+
+# Attachments — scanned letters, signed engagement letters, working papers.
+#
+# The bytes are AES-GCM encrypted inside the Worker before they are written, so
+# the bucket holds ciphertext. Without this binding everything else still works;
+# the upload button says file storage has not been set up, and says how.
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "practice-documents"
+
+[vars]
+# Everything here is safe to keep in source control. Secrets — SESSION_SECRET,
+# DOC_SECRET, RESEND_API_KEY — are set with `wrangler secret put`. See the README.
+APP_NAME = "Practice · Correspondence"
+APP_SITE = "correspondence"
+
+# Custom domain. Comment this block out for the very first deploy if the
+# hostname does not exist on Cloudflare yet, otherwise the deploy fails on an
+# unknown route; you will get a *.workers.dev address to test on, and can put
+# this back once the zone is active.
+[[routes]]
+pattern = "cms.example.com"
+custom_domain = true
+
+# Hourly, on the hour. Deadlines here are measured in hours rather than days —
+# "with the tax manager for 48 hours" has to mean something — so a once-a-day
+# sweep would let a breach sit unnoticed for most of a working day. The sweep is
+# idempotent, so an extra run costs a few queries and changes nothing.
+[triggers]
+crons = ["0 * * * *"]
+
+[observability]
+enabled = true

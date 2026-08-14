@@ -20,6 +20,15 @@ served by a second Worker from this same code and the same database — separate
 deployments, so neither site can take the other down. See *The housekeeping
 site* under Setup.
 
+A third deployment built on the same foundations serves a different business
+entirely: a **correspondence management system for an accounting practice** —
+the register of letters in and out, engagements, action points and meetings.
+It shares only what every deployment needs (signing in, people, notifications)
+and has its own database, its own hostname and its own permissions. See
+[*The correspondence system*](#the-correspondence-system) below, and
+[docs/correspondence-deployment.md](docs/correspondence-deployment.md) for
+setting it up on your own domain.
+
 ---
 
 ## What it does
@@ -182,6 +191,103 @@ server refuses it. A price of zero is almost always something nobody got round
 to pricing, and letting it through means giving stock away at the counter.
 | **Email alerts** | A summary of each submitted day sheet, and of each submitted bed check, to whichever addresses you choose — two separate lists, one sender. |
 | **Erase a period** | Delete everything recorded between two dates, with a typed confirmation. The panel counts what falls inside the dates first — so many checks, so many beds answered for — and that count comes from the same columns the delete uses, so it cannot promise one thing and do another. Only activity goes: people, settings, the ingredient list and the dorm layout are never touched by a period. |
+
+---
+
+## The correspondence system
+
+A different business on the same foundations: an accounting practice's register
+of everything it sends and receives, and the work that hangs off it. Its own
+Worker, its own database, its own hostname. The hotel screens are not hidden
+there behind a permission — they are absent, and their API answers 404.
+
+Deployed with `npm run deploy:correspondence`. Setting it up, including
+connecting a domain bought through Wix, is
+[docs/correspondence-deployment.md](docs/correspondence-deployment.md).
+
+### The register
+
+Every letter, memo and circular gets a reference the moment it reaches the desk
+— `TAX-2026-0007` — issued from a counter row rather than `MAX(ref) + 1`. A
+deleted letter takes its number with it. A gap in a register is a question with
+an answer; a repeated number is two letters filed as one.
+
+| Feature | What it does |
+|---|---|
+| **Registration** | Incoming, outgoing, internal memo, circular. Client, engagement, category, department, channel, their reference, the date on the letter and the date it arrived. The deadline is filled in from the category and can be overridden. |
+| **The register** | Filters that compose and live in the URL — overdue, with me, a client, a category, a date range, free text over reference, subject, summary and client name. Paste the URL to a colleague and they see the same list. |
+| **Threads** | A letter can be linked to another as a reply, a follow-up or simply related. Held both ways round, so a thread reads from either end. |
+| **Archive and retention** | Each category carries a keeping period. Nothing is deleted automatically — a retention policy says how long something must be kept, not how quickly it must be destroyed. The screen lists what is past its period; a person decides. |
+
+### Routing and workflow
+
+"Who has this?" is answered by the routes attached to a letter, not by a status
+field. Several can be open at once, which is how correspondence actually moves:
+a tax assessment goes to the tax manager for action, the engagement partner for
+information, and the managing partner for approval, each with its own deadline
+and its own outcome.
+
+| Feature | What it does |
+|---|---|
+| **Ask for something specific** | For action, for review, for approval, for signature, for information. Approval and signature *block dispatch* — a letter cannot be marked as sent while either is open, which is the whole reason those routes exist. |
+| **Pools** | A route can go to a department, or to anyone holding a permission. It stays one route, and the first person to acknowledge it has their name written against it. One route per person in Tax would mean five people each thinking the other four had it. |
+| **Acknowledge, complete, return, pass on** | Passing a letter on does not discharge it — the original stays open until you report back. A letter that could be discharged by forwarding would go round the firm until everybody thought somebody else had it. |
+| **Workflows** | An ordered list of steps held in the database, not in code. Each step names who it goes to, what is asked, how long they have, and who hears about it if that runs out. A category with a workflow attached starts it on registration, with nothing to press. |
+| **Rejection** | Stops the run where it stands and sends the letter back to whoever wrote it — the only person who can act on "no". A rejection must say why; the server refuses one that does not. |
+| **Deadlines in working hours** | 24 hours from Friday afternoon is Monday afternoon, not Saturday. Working days are a setting. |
+| **Escalation** | Overdue past a grace period and the head of department is told — the step's named person, then the department head, then the late person's own head. It **never reassigns**: moving late work to a partner's queue is how a partner ends up with forty items and the person who was late ends up with none. |
+| **Cover** | Somebody away names a delegate. The delegate sees their work and hears about it going late. Nothing is reassigned; the work stays theirs. |
+| **The hourly sweep** | Reminders, escalations, action points falling due, meeting reminders, and rolling recurring meetings forward. Everything it does is stamped and idempotent, so a cron that fires twice cannot send the same reminder twice. There is a button in Setup to run it now. |
+
+### Security
+
+| Feature | What it does |
+|---|---|
+| **Restricted files** | Three levels: normal, confidential, restricted. A restricted letter is **absent** from everybody else's register — not greyed out, not "you may not see this". A row saying a file exists is itself the disclosure, for exactly the letters that get marked restricted. Opening one directly answers 404, the same answer as a letter that does not exist. Only a partner can mark something restricted. |
+| **Tamper-evident trail** | Every action against a letter is one row, chained by keyed hash: each entry commits to the one before it. A row edited or deleted in a database console breaks the chain, and *Verify this record* says whether the break is the entry itself or its ancestry, and where it starts. |
+| **Signatures** | Typed or drawn. Signing seals the subject, the text and every attachment as they stand, and the letter can no longer be edited — a follow-up is registered instead. The seal is a keyed digest held against `DOC_SECRET`, which lives in the Worker and not in the database, so a stolen copy of the database cannot mint one. |
+| **Verification tells you two things separately** | *Is the seal genuine* and *has the document moved since it was signed* fail for different reasons and need different answers. Swapping the scanned page behind a signed letter changes nothing in the letters table and is caught anyway, because attachment fingerprints are folded into the digest. |
+| **Encrypted attachments** | Files are AES-GCM encrypted inside the Worker before they reach R2, with a key derived per object. The bucket holds ciphertext; one leaked object cannot open the rest. Downloads stream back through the Worker so the confidentiality check runs on every fetch. |
+| **Templates** | Engagement letters, management letters, confirmation requests, fee notes, filing reminders. Placeholders are filled from the client and the engagement; anything the system cannot fill is **left on the page** as `{{like_this}}`, because a blank is a letter that goes out with a hole in it. |
+
+### Engagements, action points and meetings
+
+| Feature | What it does |
+|---|---|
+| **Engagements** | Audit, tax, payroll, bookkeeping, advisory, company secretarial. Client, period, partner, manager, budget hours and fee. The board is sorted by statutory deadline and nothing else — every other ordering is a way of looking at a list; this one is the order in which the firm gets into trouble. |
+| **Two deadlines, deliberately** | The statutory deadline is separate from the internal target. Missing your own costs a conversation; missing the Registrar's costs a penalty, and the two should never be the same field. |
+| **Action points** | Raised by hand, by a letter, or written straight out of a meeting's minutes. Assignee, deadline, priority, hours. Reminded before they fall due. |
+| **Meetings** | One-off or recurring. A recurring meeting is stored once as the rule; the diary holds only the next occurrence, and the sweep adds the one after it as each passes. Generating a year in advance leaves fifty wrong rows behind the first time the time changes. |
+| **Minutes make work** | Minutes and action points are recorded in the same dialog. "Ama to write to the Registrar by Friday" typed into a minutes box is a sentence; typed into the rows below it is a thing with a name, a date and a reminder attached. |
+
+### Dashboards and reporting
+
+Turnaround is measured from registration to close, over letters that actually
+closed. Averaging in the ones still open would make a growing backlog look like
+fast work.
+
+- **Overview** — open, overdue, due within a week, unclaimed pool routes,
+  average and worst turnaround, twelve months of volume with incoming against
+  outgoing, department load, action-point progress, and the statutory deadline
+  board.
+- **Productivity** — per person: registered, received, completed, clearance
+  rate, average hours to complete, open now, late now, escalated, action points
+  done, hours. Hedged on the page itself, because the numbers are easy to
+  misread: it is here so a partner asking "is anything stuck with anyone" has
+  somewhere to look, not because it is a performance score.
+- **Activity** — busiest clients, categories, how correspondence arrived,
+  closure rate.
+- **Exports** — the register, the engagement board, and the whole audit trail
+  with entry hashes, for an inspection visit.
+
+### Who sees what
+
+| Role | Gets |
+|---|---|
+| **Registry clerk** | Logs the post in and out and sends it on. No client file, no reports. |
+| **Professional staff** | Acts on what is sent to them, keeps action points, attends meetings. |
+| **Manager** | The register, the client file, approvals and the numbers. |
+| **Partner** | All of that, plus restricted files, practice setup and the audit-trail check. |
 
 ---
 
