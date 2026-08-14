@@ -349,6 +349,63 @@ test('a template comes back with the client filled in and the rest left to type'
   assert.match(rendered.body.body, /\{\{engagement\}\}/, 'no engagement was named, so the prompt stays');
 });
 
+test('a reply template quotes their reference back at them', async () => {
+  const env = environment();
+  const partner = client(env, await cookieFor(1, 'partner'));
+
+  const incoming = await partner('POST', '/api/co/letters', {
+    type: 'incoming',
+    subject: 'Query on input VAT',
+    theirRef: 'GRA/LTU/2026/118',
+    noWorkflow: true,
+  });
+  const party = await partner('POST', '/api/co/parties', {
+    name: 'Kwame Foods Ltd', kind: 'client', tin: 'C0001234',
+  });
+  const template = env.DB.sqlite.prepare(
+    "SELECT id FROM co_templates WHERE name = 'Response to a Revenue query'",
+  ).get();
+
+  const rendered = await partner(
+    'GET',
+    `/api/co/templates/${template.id}/render`
+      + `?party=${party.body.party.id}&letter=${incoming.body.letter.id}`,
+  );
+  assert.equal(rendered.status, 200);
+  assert.match(rendered.body.body, /Your reference: GRA\/LTU\/2026\/118/);
+  assert.match(rendered.body.body, /Kwame Foods Ltd/);
+  assert.ok(!rendered.body.body.includes('{{their_ref}}'), 'no placeholder left where an answer exists');
+
+  // Without the letter it stays a prompt rather than going out blank.
+  const alone = await partner('GET', `/api/co/templates/${template.id}/render`);
+  assert.match(alone.body.body, /\{\{their_ref\}\}/);
+});
+
+test('a template cannot be used to read a restricted letter', async () => {
+  const env = environment();
+  const partner = client(env, await cookieFor(1, 'partner'));
+  const clerk = client(env, await cookieFor(3, 'registry_clerk'));
+
+  const restricted = await partner('POST', '/api/co/letters', {
+    type: 'incoming',
+    subject: 'Suspected irregularity',
+    theirRef: 'SECRET-REF-9',
+    confidentiality: 'restricted',
+    noWorkflow: true,
+  });
+  const template = env.DB.sqlite.prepare(
+    "SELECT id FROM co_templates WHERE name = 'Response to a Revenue query'",
+  ).get();
+
+  const sneaky = await clerk(
+    'GET',
+    `/api/co/templates/${template.id}/render?letter=${restricted.body.letter.id}`,
+  );
+  assert.equal(sneaky.status, 200, 'the template still renders');
+  assert.ok(!sneaky.body.body.includes('SECRET-REF-9'), 'but tells them nothing about the letter');
+  assert.match(sneaky.body.body, /\{\{their_ref\}\}/);
+});
+
 test('an engagement takes a reference from the same register as the letters', async () => {
   const env = environment();
   const partner = client(env, await cookieFor(1, 'partner'));

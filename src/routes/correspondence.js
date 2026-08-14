@@ -1029,11 +1029,18 @@ export async function renderTemplate(ctx, id) {
 
   const partyId = url.searchParams.get('party');
   const caseId = url.searchParams.get('case');
+  // The letter being answered, when there is one. A reply to the Revenue quotes
+  // their reference back at them, and the one place that reference exists is
+  // the letter that arrived — so a template that asks for it has to be given it.
+  const replyToId = url.searchParams.get('letter');
 
-  const [party, kase, settings] = await Promise.all([
+  const [party, kase, settings, replyTo] = await Promise.all([
     partyId ? db.prepare('SELECT * FROM co_parties WHERE id = ?').bind(Number(partyId)).first() : null,
     caseId ? db.prepare('SELECT * FROM co_cases WHERE id = ?').bind(Number(caseId)).first() : null,
     coSettings(db),
+    // Loaded through the same gate as anything else: a template is not a way to
+    // read the subject line of a restricted letter.
+    replyToId ? loadLetter(db, Number(replyToId), ctx.session).catch(() => null) : null,
   ]);
 
   const today = new Date();
@@ -1052,6 +1059,11 @@ export async function renderTemplate(ctx, id) {
     period_end: kase?.period_end ?? null,
     statutory_due: kase?.statutory_due ?? null,
     signer_name: ctx.session.user.name,
+    // From the letter being answered.
+    their_ref: replyTo?.their_ref ?? null,
+    our_ref: replyTo?.ref ?? null,
+    their_subject: replyTo?.subject ?? null,
+    their_date: replyTo?.letter_date ?? replyTo?.received_at?.slice(0, 10) ?? null,
   };
 
   return json({

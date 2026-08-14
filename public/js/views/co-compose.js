@@ -86,6 +86,9 @@ export async function openCompose({ boot = null, type = 'incoming', caseId = nul
           const rendered = await api.coRenderTemplate(value, {
             party: party.value || undefined,
             case: kase.value || undefined,
+            // When this is a reply, the template can quote their reference back
+            // at them without anybody retyping it.
+            letter: replyTo ?? undefined,
           });
           subject.value = rendered.subject;
           body.value = rendered.body;

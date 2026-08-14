@@ -420,10 +420,22 @@ function openTemplate(template, data, reload) {
     field('Body', body),
     field('Note for whoever uses it', note),
     template ? h('label.inline-check', active, h('span', 'Active')) : null,
-    h('p.muted', { style: { fontSize: '.82rem' } },
-      'Available placeholders: {{firm_name}} {{today}} {{year}} {{client_name}} {{client_contact}} '
-      + '{{client_address}} {{client_tin}} {{client_code}} {{engagement}} {{engagement_ref}} '
-      + '{{period}} {{period_end}} {{statutory_due}} {{signer_name}}'),
+    h('div', { style: { fontSize: '.82rem' } },
+      h('p.muted', { style: { marginBottom: '.3rem' } }, 'Placeholders filled from the client:'),
+      h('p.mono', { style: { marginTop: 0 } },
+        '{{client_name}} {{client_contact}} {{client_address}} {{client_tin}} {{client_code}}'),
+      h('p.muted', { style: { marginBottom: '.3rem' } }, 'From the engagement:'),
+      h('p.mono', { style: { marginTop: 0 } },
+        '{{engagement}} {{engagement_ref}} {{period}} {{period_end}} {{statutory_due}}'),
+      h('p.muted', { style: { marginBottom: '.3rem' } },
+        'From the letter being answered, when the template is opened on a reply:'),
+      h('p.mono', { style: { marginTop: 0 } },
+        '{{their_ref}} {{our_ref}} {{their_subject}} {{their_date}}'),
+      h('p.muted', { style: { marginBottom: '.3rem' } }, 'Always available:'),
+      h('p.mono', { style: { marginTop: 0 } }, '{{firm_name}} {{signer_name}} {{today}} {{year}}'),
+      h('p.muted', { style: { marginBottom: 0 } },
+        'Anything the system cannot fill is left on the page as a prompt rather than blanked — '
+        + 'a gap in a letter that went out is worse than a placeholder somebody has to notice.')),
   );
 
   dialog.append(dialogActions(dialog, 'Save', async () => {
