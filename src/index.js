@@ -344,6 +344,7 @@ const ROUTES = [
   ['DELETE', '/api/co/setup/workflows/:id', 'co_setup', coSetup.deleteWorkflow],
   ['PUT', '/api/co/setup/staff/:id', 'co_setup', coSetup.saveStaff],
   ['POST', '/api/co/setup/sweep', 'co_setup', coSetup.sweepNow],
+  ['POST', '/api/co/setup/email-test', 'co_setup', coSetup.emailTest],
 ];
 
 function match(pattern, pathname) {

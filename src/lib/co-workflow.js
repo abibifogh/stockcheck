@@ -30,6 +30,8 @@ import {
   hoursUntil, isoStamp, nowStamp, recordEvent,
 } from './correspondence.js';
 import { activeRecipients, closeEnvelope, recordEnvelopeEvent } from './envelopes.js';
+import { emailHolders, emailPeople, sendSigningInvitation } from './co-email.js';
+import { openSecret } from './co-crypto.js';
 
 // ---------------------------------------------------------------------------
 // Starting and advancing a run
@@ -249,7 +251,14 @@ export async function advanceWorkflow(db, env, letter, route, actor) {
 // Telling people
 // ---------------------------------------------------------------------------
 
-/** The bell entry — and the email — for a route somebody now holds. */
+/**
+ * The bell entry — and the email — for a route somebody now holds.
+ *
+ * Emailed only when it is addressed to a person by name. A pool route belongs
+ * to a department until somebody claims it, and mailing everybody in Tax about
+ * something four of them will not touch is how a department learns to filter
+ * the whole system into a folder.
+ */
 export async function announceRoute(db, env, letter, route) {
   const due = route.due_at ? ` Due ${route.due_at.slice(0, 16).replace('T', ' ')}.` : '';
   const what = {
@@ -268,6 +277,21 @@ export async function announceRoute(db, env, letter, route) {
     // route itself, on the Mine screen, is what says whose it actually is.
     audience: route.action === 'information' ? null : 'co_route',
     actor: route.from_name ?? null,
+  });
+
+  if (!route.to_user_id) return;
+
+  await emailPeople(db, env, {
+    kind: 'co_route',
+    userIds: [route.to_user_id],
+    subject: `${what[0].toUpperCase()}${what.slice(1)}: ${letter.ref}`,
+    heading: `${letter.ref} is with you ${what}`,
+    lead: `“${letter.subject}”`
+      + (route.from_name ? `, from ${route.from_name}.` : '.')
+      + (route.instruction ? ` ${route.instruction}` : '')
+      + (route.due_at ? ` Due ${String(route.due_at).slice(0, 16).replace('T', ' ')}.` : ''),
+    link: `/#/co-letter?id=${letter.id}`,
+    linkLabel: 'Open the letter',
   });
 }
 
@@ -343,6 +367,7 @@ export async function runSweep(db, env, now = new Date()) {
     meetingsReminded: 0,
     occurrencesCreated: 0,
     envelopesChased: 0,
+    recipientsChased: 0,
     envelopesExpired: 0,
   };
 
@@ -367,7 +392,7 @@ export async function runSweep(db, env, now = new Date()) {
  */
 async function chaseEnvelopes(db, env, now, result) {
   const rows = await db.prepare(
-    `SELECT e.*, l.subject
+    `SELECT e.*, l.subject, l.ref AS letter_ref
        FROM co_envelopes e JOIN co_letters l ON l.id = e.letter_id
       WHERE e.status = 'sent' AND e.reminder_days > 0
       LIMIT 100`,
@@ -392,22 +417,51 @@ async function chaseEnvelopes(db, env, now, result) {
       'UPDATE co_envelope_recipients SET reminded_at = ? WHERE id = ?',
     ).bind(nowStamp(), r.id)));
 
+    // Chase the person who actually has to act, not only the firm. This is the
+    // whole point of the reminder: a partner learning on Friday that a client
+    // has not signed is a partner who then has to write the email themselves.
+    const days = Math.round(daysSince);
+    let emailed = 0;
+    for (const person of waiting) {
+      if (!person.email) continue;
+      const token = await openSecret(env, person.token_sealed);
+      if (!token) continue;
+      const outcome = await sendSigningInvitation(db, env, {
+        envelope,
+        recipient: person,
+        letterRef: envelope.letter_ref ?? envelope.ref,
+        token,
+        chasing: true,
+        daysWaiting: days,
+      });
+      if (outcome.sent) emailed += 1;
+    }
+
     await recordEnvelopeEvent(db, envelope.id, {
       actor: 'Reminders',
       action: 'envelope.reminded',
-      detail: { to: waiting.map((r) => r.name), daysOutstanding: Math.round(daysSince) },
+      detail: { to: waiting.map((r) => r.name), daysOutstanding: days, emailed },
     });
 
-    await notify(db, {
-      kind: 'co_envelope_chase',
-      level: 'warn',
-      title: `${envelope.ref} is still unsigned`,
-      body: `“${envelope.subject}” has been with ${waiting.map((r) => r.name).join(', ')} for `
-        + `${Math.round(daysSince)} day${Math.round(daysSince) === 1 ? '' : 's'}.`,
-      link: `#/co-letter?id=${envelope.letter_id}`,
-      audience: 'co_register',
-    });
+    // The firm hears about it only when nobody could be chased directly —
+    // otherwise this is a notice a week saying "we sent a reminder", which is
+    // the sort of thing that teaches people to stop reading the bell.
+    const unreachable = waiting.filter((r) => !r.email).map((r) => r.name);
+    if (!emailed || unreachable.length) {
+      await notify(db, {
+        kind: 'co_envelope_chase',
+        level: 'warn',
+        title: `${envelope.ref} is still unsigned`,
+        body: `“${envelope.subject}” has been with ${waiting.map((r) => r.name).join(', ')} for `
+          + `${days} day${days === 1 ? '' : 's'}.`
+          + (unreachable.length ? ` No address for ${unreachable.join(', ')} — chase them yourself.` : '')
+          + (!emailed && !unreachable.length ? ' The reminder could not be emailed.' : ''),
+        link: `#/co-letter?id=${envelope.letter_id}`,
+        audience: 'co_register',
+      });
+    }
     result.envelopesChased += 1;
+    result.recipientsChased += emailed;
   }
 }
 
@@ -444,6 +498,16 @@ async function expireEnvelopes(db, env, now, result) {
       body: `“${envelope.subject}” was not signed before its links ran out. Send a fresh one if it is still wanted.`,
       link: `#/co-letter?id=${envelope.letter_id}`,
       audience: 'co_register',
+    });
+    await emailHolders(db, env, {
+      kind: 'co_envelope_expired',
+      permission: 'co_register',
+      subject: `Expired unsigned: ${letter.ref}`,
+      heading: `${envelope.ref} expired without being signed`,
+      lead: `“${envelope.subject}” ran out of time. Send a fresh request if it is still wanted — `
+        + 'the client probably meant to sign it.',
+      link: `/#/co-letter?id=${letter.id}`,
+      linkLabel: 'Open the letter',
     });
     result.envelopesExpired += 1;
   }
@@ -517,15 +581,36 @@ async function escalateRoutes(db, env, settings, now, result) {
       },
     });
 
+    const howLate = Math.round(late / 24) >= 1
+      ? `${Math.round(late / 24)} day(s)`
+      : `${Math.round(late)} hour(s)`;
+
     await notify(db, {
       kind: 'co_escalation',
       level: 'high',
-      title: `${route.ref} is ${Math.round(late / 24) >= 1 ? `${Math.round(late / 24)} day(s)` : `${Math.round(late)} hour(s)`} late`,
+      title: `${route.ref} is ${howLate} late`,
       body: `“${route.subject}” has been with ${route.to_name ?? 'someone'} since it was due.`
         + (targetName ? ` Escalated to ${targetName}.` : ' Nobody is set to escalate to.'),
       link: `#/co-letter?id=${route.letter_id}`,
       audience: targetName ? 'co_route' : OVERSIGHT,
     });
+
+    // Escalation is the one internal event that has to leave the app. If the
+    // person it goes to were already reading the bell, it would not have needed
+    // escalating.
+    const tell = [target, route.to_user_id, delegate].filter(Boolean);
+    if (tell.length) {
+      await emailPeople(db, env, {
+        kind: 'co_escalation',
+        userIds: [...new Set(tell)],
+        subject: `${howLate} late: ${route.ref}`,
+        heading: `${route.ref} is ${howLate} past its deadline`,
+        lead: `“${route.subject}” is with ${route.to_name ?? 'someone'} and was due `
+          + `${String(route.due_at).slice(0, 16).replace('T', ' ')}.`,
+        link: `/#/co-letter?id=${route.letter_id}`,
+        linkLabel: 'Open the letter',
+      });
+    }
     result.escalated += 1;
   }
 }

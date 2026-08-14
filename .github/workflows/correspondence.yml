@@ -14,6 +14,7 @@ on:
       - 'seed/correspondence-*.sql'
       - 'migrations/0014_correspondence.sql'
       - 'migrations/0015_envelopes.sql'
+      - 'migrations/0016_signing_email.sql'
       - 'wrangler.correspondence.toml'
       - '.github/workflows/correspondence.yml'
   pull_request:
@@ -25,11 +26,11 @@ on:
         default: false
       upgrade:
         description: >
-          Add signature requests to a database built before they existed.
-          Run once. The schema file below builds the destination and skips
-          whatever already exists, which is exactly wrong for a database
-          part-way along — it would leave the old tables alone and the new
-          columns would never arrive.
+          Add signature requests and their email columns to a database built
+          before those existed. Run once. The schema file below builds the
+          destination and skips whatever already exists, which is exactly
+          wrong for a database part-way along — it would leave the old tables
+          alone and the new columns would never arrive.
         type: boolean
         default: false
 
@@ -128,7 +129,7 @@ jobs:
       # Only when somebody asks for it, and only once. Adding a column twice
       # is an error, which is why this is a button rather than part of every
       # deploy.
-      - name: Add the signature-request tables to an older database
+      - name: Add the signature-request tables and email columns to an older database
         if: steps.creds.outputs.ready == 'true' && inputs.upgrade
         uses: cloudflare/wrangler-action@v3
         with:

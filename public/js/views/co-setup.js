@@ -45,6 +45,7 @@ export async function renderCoSetup() {
     ),
 
     settingsCard(data, reload),
+    emailCard(data, reload),
     departmentsCard(data, reload),
     categoriesCard(data, reload),
     workflowsCard(data, reload),
@@ -102,6 +103,99 @@ function settingsCard(data, reload) {
     field('Working days', h('div.btn-row', ...dayBoxes.map((d) => d.el)),
       'Deadlines set in hours skip the rest — a Friday afternoon deadline lands on Monday'),
     h('label.inline-check', sweep, h('span', 'Run the hourly sweep (reminders, escalations, recurring meetings)')),
+  );
+}
+
+/**
+ * Email.
+ *
+ * Its own card because it is the one part of setup with an outside dependency,
+ * and the one people get wrong. The banner at the top is the honest answer to
+ * "will anything actually leave the building" — a firm can tick both switches,
+ * fill in a from-address, and still send nothing because no provider key exists
+ * on the deployment, which is a Worker secret rather than anything on a screen.
+ */
+function emailCard(data, reload) {
+  const s = data.settings;
+  const from = h('input', { type: 'email', value: s.emailFrom, maxlength: 200, placeholder: 'practice@yourfirm.com' });
+  const senderName = h('input', { value: s.emailSenderName, maxlength: 120, placeholder: s.firmName });
+  const replyTo = h('input', { type: 'email', value: s.emailReplyTo, maxlength: 200, placeholder: 'office@yourfirm.com' });
+  const siteUrl = h('input', { value: s.siteUrl, maxlength: 200, placeholder: 'https://cms.yourfirm.com' });
+  const toRecipients = h('input', { type: 'checkbox', checked: s.emailRecipients });
+  const toStaff = h('input', { type: 'checkbox', checked: s.emailStaff });
+
+  const save = () => act(api.coUpdateSetup({
+    emailFrom: from.value.trim(),
+    emailSenderName: senderName.value.trim(),
+    emailReplyTo: replyTo.value.trim(),
+    siteUrl: siteUrl.value.trim().replace(/\/+$/, ''),
+    emailRecipients: toRecipients.checked,
+    emailStaff: toStaff.checked,
+  }), 'Saved', reload);
+
+  const sendTest = async (event) => {
+    event.target.disabled = true;
+    event.target.textContent = 'Sending…';
+    try {
+      const result = await api.coEmailTest();
+      toast(`Sent to ${result.to}. Check your inbox — and the spam folder.`, 'good');
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+    event.target.disabled = false;
+    event.target.textContent = 'Send a test to myself';
+  };
+
+  return card('Email', {
+    wide: true,
+    note: 'Signing invitations, reminders to clients who have not signed, and escalations.',
+    actions: h('div.btn-row',
+      h('button.btn-sm', { onclick: sendTest }, 'Send a test to myself'),
+      h('button.btn-sm.btn-primary', { onclick: save }, 'Save'),
+    ),
+  },
+    s.emailConfigured
+      ? (s.emailFrom
+        ? h('div.alert.good',
+          h('span.alert-icon', '✓'),
+          h('div',
+            h('div.alert-title', 'Email is set up'),
+            h('div.alert-detail', `Messages go out from ${s.emailFrom}. Press “Send a test to myself” to prove it.`)))
+        : h('div.alert.warn',
+          h('span.alert-icon', '⚠️'),
+          h('div',
+            h('div.alert-title', 'Almost there'),
+            h('div.alert-detail', 'A provider key is set on this deployment, but no from-address. '
+              + 'Fill one in below and save — it has to be an address your domain authorises the provider to send as.'))))
+      : h('div.alert.info',
+        h('span.alert-icon', 'ℹ️'),
+        h('div',
+          h('div.alert-title', 'No mail provider on this deployment'),
+          h('div.alert-detail',
+            'Nothing is emailed. The bell still works, and signing links can still be copied out by '
+            + 'hand when a request is sent. To turn email on, add RESEND_API_KEY as a Worker secret — '
+            + 'see “Turning email on” in the setup guide.'))),
+
+    h('div.field-row',
+      field('From address', from, 'The address your provider is authorised to send as'),
+      field('Sender name', senderName, 'What a client sees in their inbox'),
+    ),
+    h('div.field-row',
+      field('Replies go to', replyTo, 'Blank sends replies to the from-address — usually a mailbox nobody watches'),
+      field('Site address', siteUrl, 'Every link in every message is built from this'),
+    ),
+
+    h('div', { style: { marginTop: '.6rem' } },
+      h('label.inline-check', toRecipients,
+        h('span', 'Email people outside the firm — signing invitations, reminders, receipts')),
+      h('label.inline-check', toStaff,
+        h('span', 'Email the firm’s own people — work routed to them, escalations, a client signing or declining')),
+    ),
+
+    h('p.muted', { style: { fontSize: '.82rem', marginBottom: 0 } },
+      'The bell is unaffected by either switch and needs no configuration. Email is the second '
+      + 'channel, for the people who do not live in the app — which, on the day something is late, '
+      + 'is usually the person you need.'),
   );
 }
 

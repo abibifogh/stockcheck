@@ -12,6 +12,7 @@ import { badRequest, bool, int, json, notFound, readJson, str } from '../lib/htt
 import { ACTION_KEYS, TYPE_KEYS, coSettings } from '../lib/correspondence.js';
 import { PERMISSIONS } from '../lib/permissions.js';
 import { runSweep } from '../lib/co-workflow.js';
+import { emailPeople } from '../lib/co-email.js';
 
 // ---------------------------------------------------------------------------
 // Everything, in one call
@@ -56,6 +57,17 @@ export async function setup(ctx) {
       workingDays: [...settings.workingDays].sort(),
       sweepEnabled: settings.sweepEnabled,
       timezone: settings.timezone,
+      // Email. `configured` is the server's answer to "will anything actually
+      // leave the building" — the two switches below it are only what the firm
+      // wants, and a firm that has ticked both and set no provider key would
+      // otherwise sit waiting for messages that were never going to arrive.
+      emailConfigured: Boolean(ctx.env.RESEND_API_KEY),
+      emailFrom: settings.raw.email_from ?? '',
+      emailSenderName: settings.raw.co_email_sender_name ?? '',
+      emailReplyTo: settings.raw.co_email_reply_to ?? '',
+      emailRecipients: settings.raw.co_email_recipients !== '0',
+      emailStaff: settings.raw.co_email_staff !== '0',
+      siteUrl: settings.raw.site_url ?? '',
     },
     departments: departments.results ?? [],
     categories: categories.results ?? [],
@@ -91,6 +103,28 @@ export async function updateSettings(ctx) {
   if (body.defaultDueHours !== undefined) put('co_default_due_hours', int(body.defaultDueHours, 'Default deadline', { min: 1, max: 8760 }));
   if (body.sweepEnabled !== undefined) put('co_sweep_enabled', bool(body.sweepEnabled, true) ? '1' : '0');
   if (body.timezone !== undefined) put('timezone', str(body.timezone, 'Time zone', { required: true, max: 60 }));
+
+  // Email. `site_url` lives here rather than under notifications because every
+  // link in every message is built from it, and a message whose button goes
+  // nowhere is worse than no message.
+  if (body.siteUrl !== undefined) put('site_url', str(body.siteUrl, 'Site address', { max: 200 }) ?? '');
+  if (body.emailFrom !== undefined) {
+    const from = str(body.emailFrom, 'From address', { max: 200 }) ?? '';
+    if (from && !/^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(from.replace(/^.*<|>$/g, ''))) {
+      throw badRequest('That does not look like an email address');
+    }
+    put('email_from', from);
+  }
+  if (body.emailSenderName !== undefined) put('co_email_sender_name', str(body.emailSenderName, 'Sender name', { max: 120 }) ?? '');
+  if (body.emailReplyTo !== undefined) {
+    const replyTo = str(body.emailReplyTo, 'Reply-to', { max: 200 }) ?? '';
+    if (replyTo && !/^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(replyTo)) {
+      throw badRequest('That reply-to does not look like an email address');
+    }
+    put('co_email_reply_to', replyTo);
+  }
+  if (body.emailRecipients !== undefined) put('co_email_recipients', bool(body.emailRecipients, true) ? '1' : '0');
+  if (body.emailStaff !== undefined) put('co_email_staff', bool(body.emailStaff, true) ? '1' : '0');
 
   if (body.workingDays !== undefined) {
     const days = (Array.isArray(body.workingDays) ? body.workingDays : [])
@@ -416,4 +450,54 @@ export async function saveStaff(ctx, userId) {
 export async function sweepNow(ctx) {
   const result = await runSweep(ctx.db, ctx.env, new Date());
   return json({ ok: true, ...result });
+}
+
+/**
+ * Send a test message to whoever asked for it.
+ *
+ * To the person pressing the button and nowhere else. A test that goes to the
+ * whole firm is a test nobody presses twice, and the question being answered is
+ * only ever "does anything leave the building at all".
+ */
+export async function emailTest(ctx) {
+  const { db, env, session } = ctx;
+
+  if (!session.user.email) {
+    throw badRequest(
+      'Your own account has no email address, so there is nowhere to send a test. '
+      + 'Add one under Users & data first.',
+    );
+  }
+  if (!env.RESEND_API_KEY) {
+    throw badRequest(
+      'No mail provider key is set on this deployment. '
+      + 'Add RESEND_API_KEY as a Worker secret — see “Turning email on” in the setup guide.',
+    );
+  }
+
+  const settings = await coSettings(db);
+  if (!settings.raw.email_from?.trim()) {
+    throw badRequest('Set a from address above and save before sending a test.');
+  }
+
+  const result = await emailPeople(db, env, {
+    kind: 'co_email_test',
+    userIds: [session.user.id],
+    subject: 'Test message from the correspondence register',
+    heading: 'Email is working',
+    lead: `Sent by ${session.user.name} from Practice setup. If you can read this, `
+      + 'signing invitations, reminders and escalations will reach people the same way.',
+    link: '/#/co-mine',
+    linkLabel: 'Open the register',
+  });
+
+  if (!result.sent) {
+    throw badRequest(
+      result.reason === 'switched off'
+        ? 'Email to the firm is switched off above. Turn it on and save first.'
+        : `The provider refused it: ${result.reason ?? 'no reason given'}`,
+    );
+  }
+
+  return json({ ok: true, to: session.user.email });
 }

@@ -349,6 +349,7 @@ export const api = {
   coDeleteWorkflow: (id) => request(`/api/co/setup/workflows/${id}`, { method: 'DELETE' }),
   coSaveStaff: (userId, body) => request(`/api/co/setup/staff/${userId}`, { method: 'PUT', body }),
   coSweepNow: () => request('/api/co/setup/sweep', { method: 'POST', body: {} }),
+  coEmailTest: () => request('/api/co/setup/email-test', { method: 'POST', body: {} }),
 
   // ------------------------------------------------------------- envelopes --
   coEnvelopes: (letterId) => request(`/api/co/letters/${letterId}/envelopes`),

@@ -262,15 +262,25 @@ export const CO_SECTIONS = [
         + 'its own enough to sign.'),
 
       h('h3', 'The links'),
-      note('They are shown once.', 'Only their fingerprints are stored, so nothing in the system '
-        + 'can show you a link again. That is the point: a copy of the database is not a working '
-        + 'set of signatures. If one goes astray, press ', true),
-      p(h('b', 'New link'), ' against that person. The old one stops working immediately.'),
+      p('Everyone is emailed their own link the moment you press send, and the links are shown on '
+        + 'screen as well with a copy button — so a recipient with no email address, or a firm '
+        + 'that has not set email up yet, is never stuck.'),
+      p('Watch the recipient list on the letter. It says ', h('b', 'emailed'), ' and when, or '
+        + 'names the reason a send failed, or says the person has no address and you will have to '
+        + 'pass the link on yourself. A failure is never silent.'),
+      p('If a link goes astray, press ', h('b', 'New link'), ' against that person. They are '
+        + 'emailed the new one and the old one stops working immediately.'),
 
       h('h3', 'Chasing, and giving up'),
-      p('Anybody outstanding is chased every few days, and the firm is told. Links expire — thirty '
-        + 'days by default — and an expired request is reported rather than quietly forgotten, so '
-        + 'somebody can send a fresh one to a client who probably meant to sign.'),
+      p('Anybody who has not opened it, or has opened it and not signed, is emailed again every '
+        + 'few days — the same link, so the first email they were sent still works — and told how '
+        + 'long it has been waiting. Nobody in the firm has to remember to chase.'),
+      p('Links expire — thirty days by default — and an expired request is reported rather than '
+        + 'quietly forgotten, so somebody can send a fresh one to a client who probably meant to '
+        + 'sign. When the last person signs, every signer gets a receipt and the firm is told.'),
+      note('If nobody has set email up, none of that happens.',
+        'Nothing is sent and nothing pretends to have been. The links are still on screen, and you '
+        + 'send them yourself. Practice setup → Email is where that is turned on.'),
 
       h('h3', 'The certificate'),
       p('Every request has one: who was asked, when each of them opened it, from what network '
@@ -463,6 +473,29 @@ export const CO_SECTIONS = [
       h('h3', 'Working days and timings'),
       p('Which days count, the default deadline, how far ahead a reminder goes, and how late '
         + 'something must be before it escalates. All four are on the same card.'),
+      h('h3', 'Email'),
+      p('The card marked ', h('b', 'Email'), ' is what turns automatic messages on: signing '
+        + 'invitations, the chasers that go to a client who has not opened theirs, routing and '
+        + 'escalation notices, and receipts when a document is finished.'),
+      ul(
+        h('span', h('b', 'From address. '), 'Must be on a domain your mail provider has verified. '
+          + 'An unverified domain means every message bounces or lands in spam, which looks '
+          + 'exactly like a client ignoring you.'),
+        h('span', h('b', 'Sender name. '), 'What a client sees in their inbox.'),
+        h('span', h('b', 'Reply-to. '), 'Where a reply lands — usually the office address somebody '
+          + 'actually reads, which is rarely the address the system sends from.'),
+        h('span', h('b', 'Site address. '), 'Every link in every message is built from it. Wrong '
+          + 'here and the emails go out with links that go nowhere.'),
+        h('span', h('b', 'Two switches. '), 'Clients and signers, and the firm’s own people. '
+          + 'Separate on purpose: a practice can have clients chased automatically without '
+          + 'filling its staff’s inboxes.'),
+      ),
+      p('Then press ', h('b', 'Send a test to myself'), '. It goes to your own address and nowhere '
+        + 'else, and if something is missing it says which thing rather than reporting success and '
+        + 'sending nothing.'),
+      note('Your own people need email addresses on their accounts.',
+        'Users & data is where those live. Somebody without one still sees everything on screen '
+        + 'and still gets the bell; they simply get no email.'),
       h('h3', 'Run the sweep now'),
       p('Proves reminders and escalation work without waiting until tomorrow. Everything the sweep '
         + 'does is safe to repeat, so pressing it twice is the same as pressing it once.'),
@@ -494,6 +527,18 @@ export const CO_SECTIONS = [
       p('Check ', h('b', 'Practice setup'), ' → the sweep is switched on, and the routes actually '
         + 'have deadlines. A route asking only for information is never chased — nothing was asked '
         + 'of them, so nothing is late.'),
+      h('h3', 'No emails are arriving'),
+      p('Open ', h('b', 'Practice setup'), ' → Email. The banner at the top says whether a mail '
+        + 'provider key has been set on this deployment at all; without one nothing is sent and '
+        + 'nothing pretends to have been. If it is set, press ', h('b', 'Send a test to myself'),
+      ' — it names what is wrong. If the test arrives but a client says theirs did not, look at '
+        + 'the recipient list on the letter: it records the failure and the reason against that '
+        + 'person, and the full log is under Users & data.'),
+      h('h3', 'A client says their link no longer works'),
+      p('Either the request was withdrawn or it expired — the page they land on says which — or '
+        + 'somebody pressed ', h('b', 'New link'), ' for them, which kills the old one on purpose. '
+        + 'A reminder never does that: it repeats the same link, so the first email they were sent '
+        + 'keeps working.'),
       h('h3', 'Somebody is drowning and nobody knew'),
       p('Productivity → open now and late now, by person and by department. That is what the page '
         + 'is for.'),

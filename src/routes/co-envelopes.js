@@ -21,8 +21,9 @@ import {
   OVERSIGHT, coSettings, currentDigest, loadLetter, nextRef, nowStamp,
   recordEvent, safeParse,
 } from '../lib/correspondence.js';
-import { decryptBytes } from '../lib/co-crypto.js';
+import { decryptBytes, openSecret, sealSecret } from '../lib/co-crypto.js';
 import { notify } from '../lib/notify.js';
+import { emailHolders, sendSignedReceipt, sendSigningInvitation } from '../lib/co-email.js';
 
 // ---------------------------------------------------------------------------
 // Inside the firm
@@ -44,6 +45,7 @@ export async function listEnvelopes(ctx, letterId) {
     `SELECT r.id, r.envelope_id, r.seq, r.role, r.name, r.email, r.title, r.status,
             r.invited_at, r.first_viewed_at, r.completed_at, r.decline_reason,
             r.signed_name, r.method, r.signature_image, r.ip, r.reminded_at,
+            r.invite_sent_at, r.last_email_error,
             r.access_code_hash IS NOT NULL AS has_access_code
        FROM co_envelope_recipients r
       WHERE r.envelope_id IN (SELECT id FROM co_envelopes WHERE letter_id = ?)
@@ -143,14 +145,18 @@ export async function createEnvelope(ctx, letterId) {
   // Hashed up front rather than inside the batch: `db.batch` wants statements,
   // and a map with an `await` in it hands it promises instead.
   const tokenHashes = await Promise.all(recipients.map((r) => hashToken(r.token)));
+  // A second, encrypted copy of the link, so a reminder three days on can carry
+  // the same one the first email did. See `sealSecret` for what that trades.
+  const sealedTokens = await Promise.all(recipients.map((r) => sealSecret(env, r.token)));
 
   await db.batch(recipients.map((person, i) => db.prepare(
     `INSERT INTO co_envelope_recipients
-       (envelope_id, seq, role, name, email, title, party_id, token_hash, access_code_hash, status)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'pending')`,
+       (envelope_id, seq, role, name, email, title, party_id, token_hash, token_sealed,
+        access_code_hash, status)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'pending')`,
   ).bind(
     envelope.id, person.seq, person.role, person.name, person.email, person.title,
-    person.partyId, tokenHashes[i], person.accessCodeHash,
+    person.partyId, tokenHashes[i], sealedTokens[i], person.accessCodeHash,
   )));
 
   const saved = await db.prepare(
@@ -164,6 +170,10 @@ export async function createEnvelope(ctx, letterId) {
     "UPDATE co_envelope_recipients SET status = 'invited', invited_at = ? WHERE id = ?",
   ).bind(now, r.id)));
 
+  // Post the invitations. Done here rather than left to the sweep because an
+  // engagement letter that goes out "within the hour" is one nobody chases.
+  const posted = await inviteByEmail(db, env, envelope, letter, invited);
+
   await recordEnvelopeEvent(db, envelope.id, {
     actor: session.user.name,
     action: 'envelope.sent',
@@ -171,6 +181,7 @@ export async function createEnvelope(ctx, letterId) {
       routing,
       recipients: recipients.length,
       invited: invited.map((r) => r.name),
+      emailed: posted.sent,
       expiresAt,
     },
     ip: ctx.request.headers.get('CF-Connecting-IP'),
@@ -192,13 +203,15 @@ export async function createEnvelope(ctx, letterId) {
     actor: session.user.name,
   });
 
-  // The one moment the tokens exist outside the recipient's own inbox.
   const invitedIds = new Set(invited.map((r) => r.id));
   const bySeq = new Map((saved.results ?? []).map((r) => [r.seq, r]));
 
   return json({
     ok: true,
     envelope: { ...envelope, status: 'sent' },
+    // What email did, so the screen can say "two sent, one has no address"
+    // rather than leaving somebody to wonder.
+    email: posted,
     links: recipients.map((person) => ({
       name: person.name,
       email: person.email,
@@ -212,6 +225,47 @@ export async function createEnvelope(ctx, letterId) {
       path: `/sign?t=${person.token}`,
     })),
   }, { status: 201 });
+}
+
+/**
+ * Post the link to everybody whose turn it is.
+ *
+ * Reads each recipient's sealed token back rather than being handed one, so the
+ * same function serves the first invitation, the next person's turn, and the
+ * chaser three days later — three places that must not drift apart in what they
+ * actually send.
+ *
+ * A recipient whose sealed token will not open — sealed under a `DOC_SECRET`
+ * that has since been rotated — is reported rather than skipped silently. There
+ * is a real answer for that case and it is "reissue the link".
+ */
+export async function inviteByEmail(db, env, envelope, letter, recipients, options = {}) {
+  const result = { sent: 0, noAddress: 0, failed: 0, needsReissue: 0 };
+
+  for (const recipient of recipients) {
+    if (recipient.role === 'viewer' && options.chasing) continue;
+    if (!recipient.email) { result.noAddress += 1; continue; }
+
+    const token = await openSecret(env, recipient.token_sealed);
+    if (!token) {
+      result.needsReissue += 1;
+      await db.prepare(
+        'UPDATE co_envelope_recipients SET last_email_error = ? WHERE id = ?',
+      ).bind('The stored link could not be read. Press “New link” to send a fresh one.', recipient.id)
+        .run().catch(() => {});
+      continue;
+    }
+
+    const outcome = await sendSigningInvitation(db, env, {
+      envelope, recipient, letterRef: letter.ref, token, ...options,
+    });
+    if (outcome.sent) result.sent += 1;
+    else if (outcome.reason && outcome.reason !== 'email not configured' && outcome.reason !== 'switched off') {
+      result.failed += 1;
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -241,23 +295,37 @@ export async function reissueLink(ctx, recipientId) {
   await db.prepare(
     `UPDATE co_envelope_recipients
         SET token_hash = ?1,
-            access_code_hash = COALESCE(?2, access_code_hash),
+            token_sealed = ?2,
+            access_code_hash = COALESCE(?3, access_code_hash),
             status = CASE WHEN status = 'pending' THEN 'pending' ELSE 'invited' END,
-            invited_at = COALESCE(invited_at, ?3),
-            reminded_at = NULL
-      WHERE id = ?4`,
-  ).bind(await hashToken(token), await hashAccessCode(env, accessCode), nowStamp(), recipient.id).run();
+            invited_at = COALESCE(invited_at, ?4),
+            reminded_at = NULL,
+            last_email_error = NULL
+      WHERE id = ?5`,
+  ).bind(
+    await hashToken(token),
+    await sealSecret(env, token),
+    await hashAccessCode(env, accessCode),
+    nowStamp(),
+    recipient.id,
+  ).run();
+
+  const letter = found.letter;
+  const posted = await sendSigningInvitation(db, env, {
+    envelope, recipient: { ...recipient, email: recipient.email }, letterRef: letter.ref, token,
+  });
 
   await recordEnvelopeEvent(db, envelope.id, {
     recipientId: recipient.id,
     actor: session.user.name,
     action: 'link.reissued',
-    detail: { to: recipient.name, previousInvalidated: true },
+    detail: { to: recipient.name, previousInvalidated: true, emailed: Boolean(posted.sent) },
     ip: ctx.request.headers.get('CF-Connecting-IP'),
   });
 
   return json({
     ok: true,
+    emailed: Boolean(posted.sent),
     link: {
       name: recipient.name,
       email: recipient.email,
@@ -628,6 +696,14 @@ export async function submitSignature(ctx) {
   const outcome = envelopeOutcome(rows);
   if (outcome) {
     await closeEnvelope(db, env, envelope, letter, outcome);
+
+    // Everybody who signed gets their own copy of what they signed and when.
+    // It is the only record they hold, and asking a client to keep the
+    // invitation email instead is asking them to lose it.
+    for (const person of rows.filter((r) => r.status === 'signed')) {
+      await sendSignedReceipt(db, env, { envelope, recipient: person, letterRef: letter.ref });
+    }
+
     await notify(db, {
       kind: 'co_envelope',
       level: 'info',
@@ -636,12 +712,29 @@ export async function submitSignature(ctx) {
       link: `#/co-letter?id=${letter.id}`,
       audience: 'co_register',
     });
+    await emailHolders(db, env, {
+      kind: 'co_envelope_done',
+      permission: 'co_register',
+      subject: `Fully signed: ${letter.ref}`,
+      heading: `${envelope.ref} is fully signed`,
+      lead: `“${letter.subject}” has been signed by everybody it was sent to. `
+        + 'The document is now sealed.',
+      link: `/#/co-letter?id=${letter.id}`,
+      linkLabel: 'Open the letter',
+    });
   } else {
     const next = activeRecipients(envelope, rows).filter((r) => r.status === 'pending');
     if (next.length) {
       await db.batch(next.map((r) => db.prepare(
         "UPDATE co_envelope_recipients SET status = 'invited', invited_at = ? WHERE id = ?",
       ).bind(at, r.id)));
+
+      // Their turn has come, so now they are told. Re-read rather than reusing
+      // the rows above, which still say `pending`.
+      const reread = await db.prepare(
+        `SELECT * FROM co_envelope_recipients WHERE envelope_id = ? AND id IN (${next.map(() => '?').join(',')})`,
+      ).bind(envelope.id, ...next.map((r) => r.id)).all();
+      await inviteByEmail(db, env, envelope, letter, reread.results ?? []);
 
       await recordEnvelopeEvent(db, envelope.id, {
         actor: 'Signing',
@@ -724,6 +817,16 @@ export async function declineSignature(ctx) {
     body: reason,
     link: `#/co-letter?id=${letter.id}`,
     audience: 'co_register',
+  });
+  // The one envelope outcome that always wants somebody's attention today.
+  await emailHolders(db, env, {
+    kind: 'co_envelope_declined',
+    permission: 'co_register',
+    subject: `Declined: ${letter.ref}`,
+    heading: `${recipient.name} declined to sign ${envelope.ref}`,
+    lead: `“${letter.subject}” — ${reason}`,
+    link: `/#/co-letter?id=${letter.id}`,
+    linkLabel: 'Open the letter',
   });
 
   return json({ ok: true, reason });

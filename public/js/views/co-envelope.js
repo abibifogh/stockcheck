@@ -102,6 +102,15 @@ function envelopeBlock(envelope, letter, reload, may) {
             r.email ?? 'no address',
             r.has_access_code ? ' · access code required' : '',
           ),
+          // "Invited" and "actually told" are different states, and the gap
+          // between them is where a signature quietly fails to happen.
+          r.last_email_error
+            ? h('div', h('small', { style: { color: 'var(--bad)' } }, `Email failed: ${r.last_email_error}`))
+            : r.invite_sent_at
+              ? h('div', h('small.muted', `emailed ${fmtWhen(r.invite_sent_at)}`))
+              : (r.status === 'invited' && r.email
+                ? h('div', h('small', { style: { color: 'var(--warn)' } }, 'not emailed — send them the link yourself'))
+                : null),
         ),
       },
       { key: 'seq', label: '#', align: 'right' },

@@ -95,6 +95,40 @@ const FINAL_CO_TABLES = {
   signature_method TEXT
 );`,
 
+  // 0015 creates it and 0016 adds the three email columns.
+  co_envelope_recipients: `CREATE TABLE IF NOT EXISTS co_envelope_recipients (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  envelope_id      INTEGER NOT NULL REFERENCES co_envelopes (id) ON DELETE CASCADE,
+  seq              INTEGER NOT NULL DEFAULT 1,
+  role             TEXT    NOT NULL DEFAULT 'signer',
+  name             TEXT    NOT NULL,
+  email            TEXT,
+  title            TEXT,
+  party_id         INTEGER REFERENCES co_parties (id) ON DELETE SET NULL,
+  token_hash       TEXT    NOT NULL UNIQUE,
+  access_code_hash TEXT,
+  status           TEXT    NOT NULL DEFAULT 'pending',
+  invited_at       TEXT,
+  first_viewed_at  TEXT,
+  completed_at     TEXT,
+  decline_reason   TEXT,
+  reminded_at      TEXT,
+  signed_name      TEXT,
+  method           TEXT,
+  signature_image  TEXT,
+  content_hash     TEXT,
+  seal             TEXT,
+  ip               TEXT,
+  user_agent       TEXT,
+  consented_at     TEXT,
+  token_sealed     TEXT,
+  invite_sent_at   TEXT,
+  last_email_error TEXT,
+  UNIQUE (envelope_id, seq, name)
+);
+CREATE INDEX IF NOT EXISTS idx_co_recipients_envelope ON co_envelope_recipients (envelope_id, seq);
+CREATE INDEX IF NOT EXISTS idx_co_recipients_status   ON co_envelope_recipients (status);`,
+
   co_signatures: `CREATE TABLE IF NOT EXISTS co_signatures (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   letter_id    INTEGER NOT NULL REFERENCES co_letters (id) ON DELETE CASCADE,
@@ -127,6 +161,7 @@ const FOLDED_IN = [
   /^ALTER TABLE app_notices ADD COLUMN audience\b.*$/gm,
   /^ALTER TABLE co_staff ADD COLUMN \w+.*$/gm,
   /^ALTER TABLE co_signatures ADD COLUMN \w+.*$/gm,
+  /^ALTER TABLE co_envelope_recipients ADD COLUMN \w+.*$/gm,
 ];
 
 /** Comments are stripped: the D1 console rejects a paste it reads as only those. */
@@ -264,6 +299,7 @@ const OTHER_STORES = new Set([
   // The accounting practice. A hostel has no correspondence register.
   '0014_correspondence.sql',
   '0015_envelopes.sql',
+  '0016_signing_email.sql',
 ]);
 
 // The whole database a housekeeping-only site needs.
@@ -347,6 +383,7 @@ writeFileSync('seed/housekeeping-upgrade-notice-audience.sql',
 // part-way along — `CREATE TABLE IF NOT EXISTS co_staff` would leave the old
 // table alone and the new columns would never arrive. This one is the
 // migration verbatim, ALTERs and all, and is run once.
-writeFileSync('seed/correspondence-upgrade-envelopes.sql', `${statementsOf('0015_envelopes.sql')}\n`);
+writeFileSync('seed/correspondence-upgrade-envelopes.sql',
+  `${statementsOf('0015_envelopes.sql')}\n${statementsOf('0016_signing_email.sql')}\n`);
 
 console.log('wrote the seed/ schema files');

@@ -265,12 +265,41 @@ act in — and each person gets a link that is theirs alone.
 | **Three things you can ask** | *Signs* — the request is not finished without them. *Approves* — their agreement is recorded, no signature placed. *Copy only* — sent for information, and nothing ever waits on them. |
 | **In order, or all at once** | Sequential is right for a countersigned agreement: the second person cannot sign until the first has. Their link still opens, so they can read what is coming. Parallel is right for four directors in four countries signing one resolution. |
 | **Sending freezes the document** | Its text and attachments cannot change while a request is out, and every signature is sealed against the digest taken at the moment of sending. That is what makes four signatures collected over three weeks signatures on *one* document. |
-| **Links are shown once** | Only their fingerprints are stored, so nothing in the system can show a link again — a copy of the database is not a working set of signatures. A link that goes astray is reissued, which kills the old one on the spot. |
+| **Emailed, and shown on screen** | Each recipient is emailed their own link the moment the request is sent. The links also appear in the browser with a copy button, so a firm that has not set email up — or a recipient with no address — is not stuck. |
+| **A link that goes astray is reissued** | Which kills the old one on the spot. What is stored is a fingerprint for lookup plus a copy sealed with a key held in the Worker and not in the database, so that a reminder can repeat the link the first email carried instead of breaking it. A database export on its own is not a working set of signatures; an export together with the key would be, and the deployment guide says so rather than leaving you to find out. |
 | **Access codes** | Optional per recipient, given to them by some other route. A forwarded email is then not on its own enough to sign. Asked for before the subject line is shown, because "Settlement of the disputed assessment" tells the wrong reader plenty. |
 | **Declining** | Requires a reason, ends the request for everybody, and tells the firm immediately. A refusal with no reason leaves nobody able to act. |
-| **Chasing and expiry** | Outstanding recipients are chased every few days. Links expire — thirty days by default — and an expired request is reported rather than quietly forgotten. |
+| **Chasing without anybody remembering** | Anyone who has not opened, or has opened and not signed, is emailed again on the reminder interval — the same link, so the first email keeps working — with the message saying how long it has been waiting. Links expire, thirty days by default, and an expired request is reported rather than quietly forgotten. |
+| **When a send fails, somebody is told** | An unverified domain or a mistyped address is written against that recipient on the letter, in red, and into the email log. A recipient with no address at all is marked *not emailed — send them the link yourself* rather than being silently dropped. |
+| **Receipts** | When the last person signs, every signer is emailed a receipt with the sealed document's fingerprint, and the firm is told. |
 | **The certificate** | Who was asked, when each of them opened it, from what address and on what browser, what they signed with, and the fingerprint of the exact document. Printable, because the day anybody wants it is the day somebody has asked for evidence. |
 | **Withdrawing** | Kills every outstanding link at once, and anybody who opens one is shown the reason — better than a link that silently stops working. |
+
+### Email that goes out on its own
+
+Mail goes over an HTTP API — [Resend](https://resend.com) — because a Worker
+cannot open an SMTP socket. Set `RESEND_API_KEY` as a Worker secret, verify the
+sending domain, and fill in the **Email** card under *Practice setup*: the from
+address, the sender name a client sees, a reply-to that a person actually reads,
+and the site address every link is built from. There is a **Send a test to
+myself** button that names what is missing rather than reporting success and
+sending nothing.
+
+After that, without anybody remembering to: signature requests reach each
+recipient as their turn comes round; anyone who has not opened or not signed is
+chased on the reminder interval; signers get a receipt when the last signature
+lands; a letter routed to a named person, an overdue deadline, a declined or
+expired request, and a newly assigned action point all reach the right inbox.
+
+Two switches, deliberately separate — *clients and signers* and *the firm's own
+people* — so a practice can have clients chased automatically without filling
+its staff's inboxes. A route to a **pool** emails nobody: one route should not
+mail an entire department. It still shows on the queue and rings the bell.
+
+Configure none of it and nothing breaks. Nothing is sent, nothing is recorded as
+having failed, the in-app bell works as it always did, and every signing link is
+still on screen with a copy button. What the system will not do is claim to have
+sent something it did not.
 
 ### Engagements, action points and meetings
 

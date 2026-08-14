@@ -35,7 +35,7 @@ built from this repository, and their databases are entirely separate.
 You need:
 
 - Node.js 22 and npm, locally.
-- A Cloudflare account (the free plan is enough to start; see §10).
+- A Cloudflare account (the free plan is enough to start; see §11).
 - A GitHub account with this repository.
 - Your domain. If it is at Wix, read §6 before you do anything to it.
 
@@ -96,14 +96,16 @@ npx wrangler secret put RESEND_API_KEY  -c wrangler.correspondence.toml   # opti
   Changing it signs everybody out, which is exactly what you want if a laptop
   is lost.
 - **`DOC_SECRET`** — the key behind every document seal, every signature, every
-  signing-link access code and every attachment's encryption. **Set it once and
-  never change it.** Rotating it invalidates every existing signature and makes
+  signing-link access code, the sealed copy of each signing token that lets a
+  reminder repeat a working link, and every attachment's encryption. **Set it
+  once and never change it.** Rotating it invalidates every existing signature and makes
   every stored file undecryptable. It is deliberately a separate variable from
   `SESSION_SECRET` so that rotating the session key — a routine thing — cannot
   take the documents with it.
 - **`MANAGER_PIN`** — the break-glass way back in if the last administrator
   locks themselves out.
 - **`RESEND_API_KEY`** — only if you want email as well as the in-app bell.
+  Without it nothing is sent and nothing pretends to have been. See §7.
 
 Generate them with something you trust:
 
@@ -245,7 +247,84 @@ three days.
 
 ---
 
-## 7. Deploying from GitHub
+## 7. Turning email on
+
+Without this the system works and says nothing has been sent. With it, a client
+who is asked to sign gets the invitation in their inbox, gets chased if they do
+not open it, and the firm hears back when they do.
+
+A Worker cannot open an SMTP socket, so mail goes over an HTTP API. The provider
+is [Resend](https://resend.com) — free for the first 3,000 messages a month,
+which is more than a small practice sends.
+
+**1. Verify the sending domain.** In Resend, add the same domain the register
+runs on and add the `TXT`, `DKIM` and `MX` records it gives you to Cloudflare
+DNS. Verification takes minutes. Do not skip it: an unverified domain means
+every message either bounces or lands in spam, and a client who never sees the
+invitation is indistinguishable from a client who is ignoring you.
+
+**2. Give the Worker the key.**
+
+```sh
+npx wrangler secret put RESEND_API_KEY -c wrangler.correspondence.toml
+```
+
+**3. Fill in the Email card.** **Practice setup → Email**:
+
+| Field | What it does |
+| --- | --- |
+| **From address** | Must be on the verified domain. `practice@yourfirm.com`, or the named form `Yourfirm & Co <practice@yourfirm.com>` |
+| **Sender name** | What the client sees in their inbox. Defaults to the firm name |
+| **Reply-to** | Where a client's reply lands — usually the office address a person actually reads, which is rarely the sending address |
+| **Site address** | `https://cms.yourfirm.com`. Every link in every message is built from this. Get it wrong and the emails go out with links that go nowhere |
+| **Email clients and signers** | Signing invitations, reminders, completion receipts |
+| **Email staff** | Routing, escalations, task assignments, envelope outcomes |
+
+The two switches are separate on purpose. A firm that wants clients chased
+automatically but does not want its own people's inboxes filled can have exactly
+that.
+
+**4. Press "Send a test to myself".** It goes to your own address and nowhere
+else. If something is missing it says which thing, rather than reporting success
+and quietly sending nothing.
+
+### What goes out on its own
+
+| When | To whom |
+| --- | --- |
+| A signature request is sent | Each recipient whose turn it is, with their own link |
+| The person ahead of them signs | The next recipient, as their turn opens |
+| A recipient has not opened or not signed | The same recipient, on the reminder interval set under **Practice setup**, from the hourly sweep |
+| Everyone has signed | Every signer gets a receipt; the firm is told |
+| Somebody declines | Whoever can see the letter |
+| A request expires | The same |
+| A letter is routed to a named person | That person |
+| A deadline passes | The person it was with, their department head, and their delegate if they are away |
+| A task is assigned | The assignee |
+
+Reminders repeat the **same** link the first email carried, so a client who goes
+back to the original message still finds a working link. That is a deliberate
+choice with a cost, and it is stated plainly in §9.
+
+A letter routed to a *pool* rather than a named person emails nobody — otherwise
+one route would mail an entire department. It still appears on the pool's queue
+and rings the in-app bell.
+
+### When it does not send
+
+Nothing here fails loudly at the client's expense:
+
+- **No key, or email switched off** — nothing is sent, nothing is recorded as
+  failed, and the signing links are still shown on screen with a copy button.
+- **A recipient with no address** — the request is still created; the screen
+  says *not emailed — send them the link yourself*.
+- **The provider refuses it** (unverified domain, bad address, quota) — the
+  reason is written against that recipient in red on the letter, and into the
+  email log under **Users & data**. Somebody sees it before the client does.
+
+---
+
+## 8. Deploying from GitHub
 
 Two ways. Pick one.
 
@@ -272,7 +351,7 @@ The schema goes on **before** the code, so new code never meets an old database.
 
 ---
 
-## 8. Locking it down
+## 9. Locking it down
 
 A correspondence register holds client tax affairs and audit findings. It is
 worth spending twenty minutes on this.
@@ -293,6 +372,16 @@ worth spending twenty minutes on this.
   every signing request into a support call. Add a bypass policy for those two
   paths and leave everything else behind the login. The token in the link is the
   gate there, and the WAF rate limit below is what protects it.
+- **Signing links are recoverable from the database *plus* `DOC_SECRET`.** So
+  that a reminder can repeat the same link the first email carried, each
+  recipient's token is stored sealed with AES-GCM under a key derived from
+  `DOC_SECRET` — which lives in the Worker, not in D1. A database export on its
+  own therefore does not yield working signing links; an export *together with*
+  the secret does. Before signature requests existed this was recoverable from
+  neither. If you would rather not accept that, the alternative is a fresh link
+  on every reminder, which kills the link in the client's first email — and in
+  practice that is worse. Keep `DOC_SECRET` and any database backup in
+  different places, which §10 asks of you anyway.
 - **Rate-limit the signing endpoints too.** A second rule: more than 30 requests
   to `/api/co/sign/*` from one IP in a minute → challenge. The Worker throttles
   in-process as well, but an isolate is short-lived and Cloudflare's counter
@@ -307,7 +396,7 @@ worth spending twenty minutes on this.
 
 ---
 
-## 9. Backups
+## 10. Backups
 
 D1 keeps point-in-time recovery for the last 30 days on paid plans. That is
 useful and it is not a backup, because it lives in the same account as the thing
@@ -330,7 +419,7 @@ apart, and keep both.
 
 ---
 
-## 10. What the platform will and will not do
+## 11. What the platform will and will not do
 
 Worth knowing before you find out the hard way.
 
@@ -340,8 +429,9 @@ Worth knowing before you find out the hard way.
 | Worker CPU per request | 10 ms free, up to 5 min paid | Everything here is a handful of indexed SQL queries. The one heavy operation is encrypting an upload, which is why files are capped at 25 MB |
 | Request memory | 128 MB | The reason for the 25 MB file cap: the Worker holds the plaintext and the ciphertext at once |
 | Cron granularity | 1 minute | The sweep runs hourly. Deadlines here are measured in hours, so this is not a constraint |
-| Signing links | — | Delivered by whatever you use for email. They appear once in the browser when a request is sent, with a copy button and a "open in email" link, so a firm with no email set up at all can still get an engagement letter signed |
+| Signing links | — | Emailed to each recipient once email is configured (§7). They also appear in the browser when a request is sent, with a copy button, so a firm with no email set up at all can still get an engagement letter signed |
 | No SMTP from a Worker | — | Email goes over an HTTP API (Resend). The in-app bell works without any of it, which matters because email needs an account, a verified domain and a key |
+| Provider free tier | 3,000 emails/month, 100/day | A practice sending a few hundred signature requests a month is well inside it. Paid tiers start at $20/month |
 | D1 has no long transactions | — | Reference numbers come from a counter row updated with `UPDATE … RETURNING`, which is a single statement. That is what stops two letters getting the same number |
 | Free plan Workers | 100k requests/day | A thirty-person practice will not reach it. The Workers Paid plan is $5/month and raises everything |
 | R2 storage | $0.015/GB/month, no egress fees | 10 GB of scanned letters is about 15 cents a month |
@@ -352,12 +442,13 @@ users. The domain stays whatever Wix charges.
 
 ---
 
-## 11. Day one
+## 12. Day one
 
-1. **Users & data** — create an account for everybody. Roles: *Registry clerk*
-   logs the post, *Professional staff* act on what is sent to them, *Manager*
-   runs engagements and approves, *Partner* sees restricted files and can verify
-   the audit trail.
+1. **Users & data** — create an account for everybody, **with their email
+   address** — that address is where routing, escalations and receipts go.
+   Roles: *Registry clerk* logs the post, *Professional staff* act on what is
+   sent to them, *Manager* runs engagements and approves, *Partner* sees
+   restricted files and can verify the audit trail.
 2. **Practice setup → People** — put each person in a department, set what
    appears under their signature, and set a head for each department. The head
    is who overdue work escalates to; a department with no head escalates to
@@ -369,9 +460,12 @@ users. The domain stays whatever Wix charges.
    category is registered.
 5. **Clients** — add the client list. Import is by hand; a practice of a hundred
    clients is an afternoon, once.
-6. **Practice setup → Run the sweep now** — proves reminders and escalation
+6. **Practice setup → Email** — the from address, the site address, and **Send a
+   test to myself**. Do this before the first signature request goes out, not
+   after (§7).
+7. **Practice setup → Run the sweep now** — proves reminders and escalation
    work without waiting until tomorrow.
-7. **My desk → My signature** — every person draws or uploads theirs once.
+8. **My desk → My signature** — every person draws or uploads theirs once.
    After that, signing anything is one tap.
 
 Then register the first letter. Everything else follows from there.
@@ -383,9 +477,12 @@ Then register the first letter. Everything else follows from there.
 3. **Send for signature** → the client's name and email, and yours if the letter
    is countersigned. Leave the order as *one after another* so the client signs
    before the firm does.
-4. The links appear once. Copy the client's, or press **Open in email**.
+4. Press send. The client is emailed their link straight away; the letter shows
+   *emailed* against their name. The links are also on screen if you would
+   rather pass one on yourself, or if email is not configured.
 5. Watch it on the letter: sent, opened, signed. When the last person signs, the
-   document seals itself and the register says so.
+   document seals itself, both parties get a receipt, and the register says so.
 
-If it is still unsigned after a few days the firm is told, without anybody
-having to remember to look.
+If it is still unopened or unsigned after a few days the client is chased
+automatically — same link, so the first email still works — and the firm is told
+if the chaser cannot be delivered. Nobody has to remember to look.

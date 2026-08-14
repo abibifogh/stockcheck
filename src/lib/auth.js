@@ -336,7 +336,7 @@ export async function getSession(request, env, db) {
   let user = null;
   try {
     user = await db.prepare(
-      'SELECT id, name, role, permissions, active FROM users WHERE id = ?',
+      'SELECT id, name, email, role, permissions, active FROM users WHERE id = ?',
     ).bind(payload.uid).first();
   } catch (err) {
     if (!isMissingTable(err)) throw err;

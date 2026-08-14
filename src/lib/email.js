@@ -159,14 +159,16 @@ function escapeAttr(value) {
   return escapeHtml(value).replace(/`/g, '&#96;');
 }
 
-export async function sendEmail({ apiKey, from, to, subject, html }) {
+export async function sendEmail({ apiKey, from, to, subject, html, reply_to: replyTo }) {
   const response = await fetch(RESEND_ENDPOINT, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ from, to, subject, html }),
+    // `reply_to` only when there is one. Sending the key with a null value is
+    // the sort of thing a provider accepts today and rejects next quarter.
+    body: JSON.stringify({ from, to, subject, html, ...(replyTo ? { reply_to: replyTo } : {}) }),
   });
 
   const text = await response.text();

@@ -467,10 +467,11 @@ CREATE TABLE IF NOT EXISTS co_envelope_recipients (
   ip               TEXT,
   user_agent       TEXT,
   consented_at     TEXT,
+  token_sealed     TEXT,
+  invite_sent_at   TEXT,
+  last_email_error TEXT,
   UNIQUE (envelope_id, seq, name)
 );
-CREATE INDEX IF NOT EXISTS idx_co_recipients_envelope ON co_envelope_recipients (envelope_id, seq);
-CREATE INDEX IF NOT EXISTS idx_co_recipients_status   ON co_envelope_recipients (status);
 CREATE TABLE IF NOT EXISTS co_envelope_events (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   envelope_id  INTEGER NOT NULL REFERENCES co_envelopes (id) ON DELETE CASCADE,
@@ -491,8 +492,15 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
    || 'legal equivalent of your handwritten signature, and that you have read '
    || 'and understood the document above. A record of this signature — the time, '
    || 'your network address and the browser used — is kept with the document.');
+INSERT OR IGNORE INTO settings (key, value) VALUES
+  ('co_email_recipients', '1'),
+  ('co_email_staff', '1'),
+  ('co_email_sender_name', ''),
+  ('co_email_reply_to', '');
 CREATE INDEX IF NOT EXISTS idx_app_notices_at ON app_notices (id DESC);
 CREATE INDEX IF NOT EXISTS idx_users_active ON users (active);
 CREATE INDEX IF NOT EXISTS idx_users_email  ON users (email);
+CREATE INDEX IF NOT EXISTS idx_co_recipients_envelope ON co_envelope_recipients (envelope_id, seq);
+CREATE INDEX IF NOT EXISTS idx_co_recipients_status   ON co_envelope_recipients (status);
 CREATE INDEX IF NOT EXISTS idx_co_signatures_letter ON co_signatures (letter_id);
 INSERT OR IGNORE INTO settings (key, value) VALUES ('allow_recovery_pin', '1');

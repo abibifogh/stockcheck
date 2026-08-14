@@ -203,3 +203,70 @@ export function newStorageKey(scope, id, filename) {
     .slice(-60) || 'file';
   return `${scope}/${id}/${random}-${safe}`;
 }
+
+// ---------------------------------------------------------------------------
+// Small secrets kept where they can be read back
+// ---------------------------------------------------------------------------
+
+/**
+ * Encrypt a short string so it can be recovered later.
+ *
+ * There is exactly one thing this is for: the signing link in an unfinished
+ * request. A reminder three days on has to carry the *same* link the first
+ * email did — a client who goes back to the original message and finds it dead
+ * is a client who telephones instead of signing.
+ *
+ * The trade this makes, stated plainly: a signing link is recoverable from the
+ * database **plus `DOC_SECRET`**, where before it was recoverable from neither.
+ * That is the same protection attachments already have, and the same reason the
+ * setup guide says to keep `DOC_SECRET` somewhere the database backups are not.
+ * Lookup never touches this — that still goes through the hash — so a stolen
+ * database on its own is still not a set of working links.
+ */
+export async function sealSecret(env, value) {
+  if (value == null || value === '') return null;
+  const key = await secretKey(env);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const cipher = new Uint8Array(await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv }, key, encoder.encode(String(value)),
+  ));
+  const out = new Uint8Array(iv.length + cipher.length);
+  out.set(iv, 0);
+  out.set(cipher, iv.length);
+  return b64url(out);
+}
+
+/** The other half. Returns null for anything that will not open. */
+export async function openSecret(env, sealed) {
+  if (!sealed) return null;
+  try {
+    const bytes = unb64url(sealed);
+    if (bytes.length < 13) return null;
+    const key = await secretKey(env);
+    const plain = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: bytes.slice(0, 12) }, key, bytes.slice(12),
+    );
+    return new TextDecoder().decode(plain);
+  } catch {
+    // A value sealed under a different DOC_SECRET, or a truncated one. Null
+    // rather than a throw: the caller's job is to say "reissue the link", not
+    // to fall over.
+    return null;
+  }
+}
+
+async function secretKey(env) {
+  const material = await keyedDigest(env, 'co-sealed-secret', 'v1');
+  const raw = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) raw[i] = parseInt(material.slice(i * 2, i * 2 + 2), 16);
+  return crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+}
+
+function unb64url(text) {
+  const padded = String(text).replace(/-/g, '+').replace(/_/g, '/')
+    + '==='.slice((String(text).length + 3) % 4);
+  const binary = atob(padded);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+  return out;
+}

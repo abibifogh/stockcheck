@@ -15,6 +15,7 @@ import {
 } from '../lib/correspondence.js';
 import { nextOccurrence } from '../lib/co-workflow.js';
 import { notify } from '../lib/notify.js';
+import { emailPeople } from '../lib/co-email.js';
 
 // ---------------------------------------------------------------------------
 // Clients and other parties
@@ -304,7 +305,7 @@ export async function listTasks(ctx) {
 }
 
 export async function createTask(ctx) {
-  const { db, session } = ctx;
+  const { db, env, session } = ctx;
   const body = await readJson(ctx.request);
 
   const assigneeUserId = body.assigneeUserId ? int(body.assigneeUserId, 'Assignee') : null;
@@ -343,6 +344,18 @@ export async function createTask(ctx) {
       link: '#/co-tasks',
       audience: 'co_tasks',
       actor: session.user.name,
+    });
+    await emailPeople(db, env, {
+      kind: 'co_task',
+      userIds: [assigneeUserId],
+      subject: `Action point: ${row.title}`,
+      heading: 'Something has been assigned to you',
+      lead: `${row.title}`
+        + (row.detail ? ` — ${row.detail}` : '')
+        + (row.due_at ? ` Due ${String(row.due_at).slice(0, 10)}.` : '')
+        + ` Raised by ${session.user.name}.`,
+      link: '/#/co-tasks',
+      linkLabel: 'Open your action points',
     });
   }
 
