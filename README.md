@@ -201,9 +201,12 @@ of everything it sends and receives, and the work that hangs off it. Its own
 Worker, its own database, its own hostname. The hotel screens are not hidden
 there behind a permission — they are absent, and their API answers 404.
 
-Deployed with `npm run deploy:correspondence`. Setting it up, including
-connecting a domain bought through Wix, is
-[docs/correspondence-deployment.md](docs/correspondence-deployment.md).
+Deployed with `npm run deploy:correspondence`. Two documents:
+[docs/correspondence-go-live.md](docs/correspondence-go-live.md) is the runbook —
+the steps in the order they have to happen, with a way of proving each one
+worked before you move on. [docs/correspondence-deployment.md](docs/correspondence-deployment.md)
+is the reference behind it: what runs where, connecting a domain bought through
+Wix, turning email on, and what the platform will and will not do.
 
 ### The register
 

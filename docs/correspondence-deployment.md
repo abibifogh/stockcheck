@@ -9,6 +9,12 @@ This guide takes a fresh Cloudflare account to a working system on your own
 domain, including the part most people get stuck on — connecting a domain bought
 through Wix.
 
+> **Taking it live for a real firm?** Read
+> [correspondence-go-live.md](correspondence-go-live.md) alongside this. That one
+> is the runbook — the same work in the order it has to happen, with the waits
+> marked, a way of proving each step before moving on, and a checklist to print.
+> This one is the reference it points back to.
+
 ---
 
 ## 1. What runs where
