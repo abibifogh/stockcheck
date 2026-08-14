@@ -89,9 +89,14 @@ export function renderLogin(onSuccess) {
 
   const pinPane = h('div', display, error, keypad,
     h('p.muted', { style: { fontSize: '.75rem', marginTop: '1rem' } },
+      // Whoever is reading this is on exactly one of the three sites, and a
+      // firm's first screen telling its audit seniors about cooks is the sort
+      // of small wrongness that makes people doubt the rest of it.
       BRAND.app === 'housekeeping'
         ? 'Housekeepers and managers sign in with their own PIN.'
-        : 'Cooks and managers sign in with their own PIN.'));
+        : BRAND.app === 'correspondence'
+          ? 'Everyone in the firm signs in with their own PIN.'
+          : 'Cooks and managers sign in with their own PIN.'));
 
   const passwordPane = h('div.hidden',
     h('label.field', { style: { textAlign: 'left' } }, h('span', 'Email address'), email),

@@ -10,6 +10,10 @@ reference: what runs where, why the domain works the way it does, what the
 platform will and will not do. This file is the sequence. Where the reference
 explains something properly, this one points at it rather than saying it worse.
 
+> **Not technical?** Then this is the wrong file. Read
+> [correspondence-setup-plain-english.md](correspondence-setup-plain-english.md)
+> instead — same job, no command line, every click written out.
+
 **Total hands-on time: about four hours.** Spread over two weeks, because two of
 the waits — DNS propagation and mail-domain verification — are not yours to
 hurry.

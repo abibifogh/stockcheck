@@ -201,7 +201,10 @@ of everything it sends and receives, and the work that hangs off it. Its own
 Worker, its own database, its own hostname. The hotel screens are not hidden
 there behind a permission — they are absent, and their API answers 404.
 
-Deployed with `npm run deploy:correspondence`. Two documents:
+Deployed with `npm run deploy:correspondence`. Three documents:
+[docs/correspondence-setup-plain-english.md](docs/correspondence-setup-plain-english.md)
+is for whoever at the firm is actually setting it up — every step, in plain
+words, done entirely by clicking in a browser with no command line at all.
 [docs/correspondence-go-live.md](docs/correspondence-go-live.md) is the runbook —
 the steps in the order they have to happen, with a way of proving each one
 worked before you move on. [docs/correspondence-deployment.md](docs/correspondence-deployment.md)
