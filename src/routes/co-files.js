@@ -17,6 +17,7 @@
 import { badRequest, forbidden, json, notFound } from '../lib/http.js';
 import { decryptBytes, encryptBytes, newStorageKey, sha256 } from '../lib/co-crypto.js';
 import { OVERSIGHT, canSeeLetter, loadLetter, recordEvent } from '../lib/correspondence.js';
+import { assertNoOpenEnvelope } from '../lib/envelopes.js';
 
 // R2 has no practical limit here; the Worker's memory does. 25 MB is a
 // comfortable scanned-PDF ceiling that leaves room to encrypt a copy.
@@ -85,6 +86,9 @@ export async function uploadAttachment(ctx) {
         + 'Register a follow-up letter and attach it there.',
       );
     }
+    // The attachments are part of what an envelope froze, so they cannot move
+    // while it is out either.
+    await assertNoOpenEnvelope(db, letter);
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());

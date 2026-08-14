@@ -245,10 +245,32 @@ and its own outcome.
 |---|---|
 | **Restricted files** | Three levels: normal, confidential, restricted. A restricted letter is **absent** from everybody else's register — not greyed out, not "you may not see this". A row saying a file exists is itself the disclosure, for exactly the letters that get marked restricted. Opening one directly answers 404, the same answer as a letter that does not exist. Only a partner can mark something restricted. |
 | **Tamper-evident trail** | Every action against a letter is one row, chained by keyed hash: each entry commits to the one before it. A row edited or deleted in a database console breaks the chain, and *Verify this record* says whether the break is the entry itself or its ancestry, and where it starts. |
-| **Signatures** | Typed or drawn. Signing seals the subject, the text and every attachment as they stand, and the letter can no longer be edited — a follow-up is registered instead. The seal is a keyed digest held against `DOC_SECRET`, which lives in the Worker and not in the database, so a stolen copy of the database cannot mint one. |
+| **Signatures** | Four ways: the one you saved, drawn there and then, an uploaded photograph of your real signature, or your name typed. Signing seals the subject, the text and every attachment as they stand, and the letter can no longer be edited — a follow-up is registered instead. The seal is a keyed digest held against `DOC_SECRET`, which lives in the Worker and not in the database, so a stolen copy of the database cannot mint one. |
+| **A signature you keep** | Draw it once or upload a scan, and from then on signing is one tap. Held on the person, so replacing it changes what they sign with next time and changes nothing already signed. Everybody has one, not just partners. |
 | **Verification tells you two things separately** | *Is the seal genuine* and *has the document moved since it was signed* fail for different reasons and need different answers. Swapping the scanned page behind a signed letter changes nothing in the letters table and is caught anyway, because attachment fingerprints are folded into the digest. |
 | **Encrypted attachments** | Files are AES-GCM encrypted inside the Worker before they reach R2, with a key derived per object. The bucket holds ciphertext; one leaked object cannot open the rest. Downloads stream back through the Worker so the confidentiality check runs on every fetch. |
 | **Templates** | Engagement letters, management letters, confirmation requests, fee notes, filing reminders. Placeholders are filled from the client and the engagement; anything the system cannot fill is **left on the page** as `{{like_this}}`, because a blank is a letter that goes out with a hole in it. |
+
+### Getting people outside the firm to sign
+
+A client will not create an account in an accounting firm's correspondence
+system, and asking them to is how a signed engagement letter turns into a
+printed page, a wet signature and a photograph taken on a phone. So a document
+goes out in a **request** — one document, a list of people, and the order they
+act in — and each person gets a link that is theirs alone.
+
+| Feature | What it does |
+|---|---|
+| **No account, ever** | The recipient opens a link, reads the document and its attachments, agrees to sign electronically, and signs. There is nothing to install, no password, and no way from that page to anything else in the system. |
+| **Three things you can ask** | *Signs* — the request is not finished without them. *Approves* — their agreement is recorded, no signature placed. *Copy only* — sent for information, and nothing ever waits on them. |
+| **In order, or all at once** | Sequential is right for a countersigned agreement: the second person cannot sign until the first has. Their link still opens, so they can read what is coming. Parallel is right for four directors in four countries signing one resolution. |
+| **Sending freezes the document** | Its text and attachments cannot change while a request is out, and every signature is sealed against the digest taken at the moment of sending. That is what makes four signatures collected over three weeks signatures on *one* document. |
+| **Links are shown once** | Only their fingerprints are stored, so nothing in the system can show a link again — a copy of the database is not a working set of signatures. A link that goes astray is reissued, which kills the old one on the spot. |
+| **Access codes** | Optional per recipient, given to them by some other route. A forwarded email is then not on its own enough to sign. Asked for before the subject line is shown, because "Settlement of the disputed assessment" tells the wrong reader plenty. |
+| **Declining** | Requires a reason, ends the request for everybody, and tells the firm immediately. A refusal with no reason leaves nobody able to act. |
+| **Chasing and expiry** | Outstanding recipients are chased every few days. Links expire — thirty days by default — and an expired request is reported rather than quietly forgotten. |
+| **The certificate** | Who was asked, when each of them opened it, from what address and on what browser, what they signed with, and the fingerprint of the exact document. Printable, because the day anybody wants it is the day somebody has asked for evidence. |
+| **Withdrawing** | Kills every outstanding link at once, and anybody who opens one is shown the reason — better than a link that silently stops working. |
 
 ### Engagements, action points and meetings
 

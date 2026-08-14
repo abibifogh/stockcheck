@@ -435,8 +435,12 @@ export async function verifySignatures(db, env, letter) {
   const checked = [];
 
   for (const sig of signatures) {
+    // Who the seal names. Internally that is the account; from outside the firm
+    // it is the envelope recipient, because zero — the emergency account — is a
+    // real user id and an external signature must never be able to wear it.
+    const signer = sig.external ? `ext:${sig.recipient_id}` : (sig.user_id ?? 0);
     const expectedSeal = await keyedDigest(
-      env, 'co-seal', `${sig.content_hash}|${sig.user_id ?? 0}|${sig.name}|${sig.at}`,
+      env, 'co-seal', `${sig.content_hash}|${signer}|${sig.name}|${sig.at}`,
     );
     checked.push({
       id: sig.id,
@@ -444,6 +448,8 @@ export async function verifySignatures(db, env, letter) {
       title: sig.title,
       method: sig.method,
       at: sig.at,
+      external: Boolean(sig.external),
+      email: sig.email ?? null,
       // The seal is intact: nobody has forged or edited the signature row.
       sealValid: expectedSeal === sig.seal,
       // And the document has not moved since it was signed.

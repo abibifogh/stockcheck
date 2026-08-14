@@ -42,6 +42,7 @@ import { renderCoTasks } from './views/co-tasks.js';
 import { renderCoMeetings } from './views/co-meetings.js';
 import { renderCoDashboard, renderCoReports } from './views/co-dashboard.js';
 import { renderCoSetup } from './views/co-setup.js';
+import { renderSigningPage } from './views/co-sign.js';
 import { BRAND } from './brand.js';
 import { noticeBell } from './views/notices.js';
 
@@ -409,6 +410,25 @@ function toggleTheme() {
  * that the bakery has no account. Its token comes from the URL and goes no
  * further than the two endpoints that accept it.
  */
+/**
+ * A signing link: a page that exists outside the rest of the app.
+ *
+ * Answered before the sign-in gate, because the entire point is that the
+ * recipient has no account. Its token comes from the URL and goes no further
+ * than the four endpoints that accept it.
+ */
+function signingToken() {
+  if (location.pathname.replace(/\/+$/, '') === '/sign') {
+    return new URLSearchParams(location.search).get('t') ?? '';
+  }
+  // The hash form works too, so a link still opens on a host that cannot serve
+  // a clean path.
+  if (location.hash.startsWith('#/sign')) {
+    return new URLSearchParams(location.hash.split('?')[1] || '').get('t') ?? '';
+  }
+  return null;
+}
+
 function bakeryToken() {
   if (location.pathname.replace(/\/+$/, '') === '/bake') {
     return new URLSearchParams(location.search).get('t') ?? '';
@@ -423,6 +443,13 @@ function bakeryToken() {
 
 export async function render() {
   root.classList.remove('app-loading');
+
+  const signing = signingToken();
+  if (signing !== null) {
+    mount(root, h('div.card', h('div.skeleton', { style: { height: '140px' } })));
+    mount(root, await renderSigningPage(signing));
+    return;
+  }
 
   const token = bakeryToken();
   if (token !== null) {
@@ -521,9 +548,10 @@ window.addEventListener('online', syncPending);
   const savedTheme = localStorage.getItem('bf.theme');
   if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
 
-  // The bakery link answers itself. Asking the server who is signed in first
-  // would be a wasted round trip on a page that deliberately has nobody.
-  if (bakeryToken() !== null) {
+  // A bakery link and a signing link both answer themselves. Asking the server
+  // who is signed in first would be a wasted round trip on a page that
+  // deliberately has nobody.
+  if (bakeryToken() !== null || signingToken() !== null) {
     await render();
     return;
   }

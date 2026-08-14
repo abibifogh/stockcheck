@@ -29,6 +29,7 @@ import {
   BLOCKING_ACTIONS, OVERSIGHT, addWorkingHours, coSettings, delegateFor,
   hoursUntil, isoStamp, nowStamp, recordEvent,
 } from './correspondence.js';
+import { activeRecipients, closeEnvelope, recordEnvelopeEvent } from './envelopes.js';
 
 // ---------------------------------------------------------------------------
 // Starting and advancing a run
@@ -336,7 +337,13 @@ export async function runSweep(db, env, now = new Date()) {
   if (!settings.sweepEnabled) return { skipped: true };
 
   const result = {
-    reminded: 0, escalated: 0, tasksReminded: 0, meetingsReminded: 0, occurrencesCreated: 0,
+    reminded: 0,
+    escalated: 0,
+    tasksReminded: 0,
+    meetingsReminded: 0,
+    occurrencesCreated: 0,
+    envelopesChased: 0,
+    envelopesExpired: 0,
   };
 
   await remindRoutes(db, env, settings, now, result);
@@ -344,8 +351,102 @@ export async function runSweep(db, env, now = new Date()) {
   await remindTasks(db, env, settings, now, result);
   await remindMeetings(db, env, settings, now, result);
   await rollRecurringMeetings(db, env, now, result);
+  await chaseEnvelopes(db, env, now, result);
+  await expireEnvelopes(db, env, now, result);
 
   return result;
+}
+
+/**
+ * Chase whoever an envelope is currently waiting on.
+ *
+ * Chased per envelope rather than per recipient, and stamped on the envelope,
+ * so a document with four signers produces one reminder round every few days
+ * rather than four. Nobody is chased before their turn comes: a reminder about
+ * something you cannot yet act on teaches people to ignore reminders.
+ */
+async function chaseEnvelopes(db, env, now, result) {
+  const rows = await db.prepare(
+    `SELECT e.*, l.subject
+       FROM co_envelopes e JOIN co_letters l ON l.id = e.letter_id
+      WHERE e.status = 'sent' AND e.reminder_days > 0
+      LIMIT 100`,
+  ).all().catch(() => ({ results: [] }));
+
+  for (const envelope of rows.results ?? []) {
+    const since = envelope.last_reminded_at ?? envelope.sent_at;
+    const daysSince = since ? (now - new Date(since)) / 86_400_000 : 0;
+    if (daysSince < envelope.reminder_days) continue;
+
+    const recipients = await db.prepare(
+      'SELECT * FROM co_envelope_recipients WHERE envelope_id = ? ORDER BY seq',
+    ).bind(envelope.id).all();
+
+    const waiting = activeRecipients(envelope, recipients.results ?? [])
+      .filter((r) => r.role !== 'viewer' && r.status !== 'signed');
+    if (!waiting.length) continue;
+
+    await db.prepare('UPDATE co_envelopes SET last_reminded_at = ? WHERE id = ?')
+      .bind(nowStamp(), envelope.id).run();
+    await db.batch(waiting.map((r) => db.prepare(
+      'UPDATE co_envelope_recipients SET reminded_at = ? WHERE id = ?',
+    ).bind(nowStamp(), r.id)));
+
+    await recordEnvelopeEvent(db, envelope.id, {
+      actor: 'Reminders',
+      action: 'envelope.reminded',
+      detail: { to: waiting.map((r) => r.name), daysOutstanding: Math.round(daysSince) },
+    });
+
+    await notify(db, {
+      kind: 'co_envelope_chase',
+      level: 'warn',
+      title: `${envelope.ref} is still unsigned`,
+      body: `“${envelope.subject}” has been with ${waiting.map((r) => r.name).join(', ')} for `
+        + `${Math.round(daysSince)} day${Math.round(daysSince) === 1 ? '' : 's'}.`,
+      link: `#/co-letter?id=${envelope.letter_id}`,
+      audience: 'co_register',
+    });
+    result.envelopesChased += 1;
+  }
+}
+
+/**
+ * Close envelopes whose links have run out.
+ *
+ * A link that never expires is a link somebody finds in an inbox in five years
+ * and uses. Expiring one is not a failure to be hidden: the firm is told, so it
+ * can send a fresh one to somebody who probably meant to sign it.
+ */
+async function expireEnvelopes(db, env, now, result) {
+  const rows = await db.prepare(
+    `SELECT e.*, l.subject FROM co_envelopes e JOIN co_letters l ON l.id = e.letter_id
+      WHERE e.status = 'sent' AND e.expires_at IS NOT NULL AND e.expires_at < ?
+      LIMIT 100`,
+  ).bind(isoStamp(now)).all().catch(() => ({ results: [] }));
+
+  for (const envelope of rows.results ?? []) {
+    const letter = await db.prepare('SELECT * FROM co_letters WHERE id = ?')
+      .bind(envelope.letter_id).first();
+    if (!letter) continue;
+
+    await closeEnvelope(db, env, envelope, letter, 'expired', 'The signing period ran out.');
+    await recordEnvelopeEvent(db, envelope.id, {
+      actor: 'Reminders',
+      action: 'envelope.expired',
+      detail: { expiresAt: envelope.expires_at },
+    });
+
+    await notify(db, {
+      kind: 'co_envelope',
+      level: 'warn',
+      title: `${envelope.ref} expired unsigned`,
+      body: `“${envelope.subject}” was not signed before its links ran out. Send a fresh one if it is still wanted.`,
+      link: `#/co-letter?id=${envelope.letter_id}`,
+      audience: 'co_register',
+    });
+    result.envelopesExpired += 1;
+  }
 }
 
 async function remindRoutes(db, env, settings, now, result) {

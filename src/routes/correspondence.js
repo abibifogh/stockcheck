@@ -20,6 +20,7 @@ import {
   addressLabel, advanceWorkflow, announceRoute, autoWorkflowFor, nextSeq, startWorkflow,
 } from '../lib/co-workflow.js';
 import { sealFor } from '../lib/co-crypto.js';
+import { SIGNATURE_METHODS, assertNoOpenEnvelope } from '../lib/envelopes.js';
 import { notify } from '../lib/notify.js';
 
 // ---------------------------------------------------------------------------
@@ -385,6 +386,9 @@ export async function updateLetter(ctx, id) {
   const { db, env, session } = ctx;
   const letter = await loadLetter(db, Number(id), session);
   assertEditable(letter, session);
+  // A document whose text can change while it sits in somebody's inbox waiting
+  // to be signed is a document nobody should sign.
+  await assertNoOpenEnvelope(db, letter);
 
   const body = await readJson(ctx.request);
   const fields = [];
@@ -918,10 +922,17 @@ export async function signLetter(ctx, id) {
 
   const name = str(body.name, 'Name', { required: true, max: 200 });
   const method = str(body.method, 'Method', { max: 20, fallback: 'typed' });
-  if (!['typed', 'drawn'].includes(method)) throw badRequest('Unknown way of signing');
+  if (!SIGNATURE_METHODS.includes(method)) throw badRequest('Unknown way of signing');
 
-  const image = method === 'drawn' ? str(body.image, 'Signature', { max: 200_000 }) : null;
-  if (method === 'drawn' && !image) throw badRequest('The drawn signature did not reach the server');
+  // Drawn on a trackpad or uploaded as a photograph of a real signature — the
+  // two are the same thing to everything downstream, and both are an image.
+  const image = method === 'typed' ? null : str(body.image, 'Signature', { max: 400_000 });
+  if (method !== 'typed' && !image) {
+    throw badRequest('The signature image did not reach the server. Try again, or type your name instead.');
+  }
+  if (image && !/^data:image\/(png|jpeg|webp);base64,/.test(image)) {
+    throw badRequest('That signature is not an image the system can store.');
+  }
 
   // Typing your own name is the assertion. Requiring it to match the account
   // means a signature cannot be applied on somebody else's behalf by accident.

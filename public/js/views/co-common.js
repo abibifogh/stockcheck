@@ -266,3 +266,233 @@ export function caseOptions(cases, { blank = '— not linked —' } = {}) {
     value: c.id, label: `${c.ref} · ${c.title}`,
   }))];
 }
+
+// ------------------------------------------------------------- signatures --
+
+/**
+ * The signature control, used in three places: a partner signing internally, a
+ * client signing from a link, and somebody saving the signature they will sign
+ * with from now on.
+ *
+ * Four ways to produce one, offered in the order people actually want them:
+ *
+ *   Saved     what they set up once and now reuse. Absent when there is none.
+ *   Draw      a finger on a phone, a trackpad on a laptop.
+ *   Upload    a photograph or a scan of a real signature.
+ *   Type      a name in a script face.
+ *
+ * None of them is more secure than another, and the control does not pretend
+ * otherwise. The security is the seal — computed from who placed it and a
+ * secret held on the server — and a drawn squiggle adds nothing to it. What it
+ * adds is that people will actually use the system, and a signing process
+ * people refuse to use is not secure either.
+ */
+export function signaturePad({
+  saved = null, defaultName = '', offerSave = false, width = 460,
+} = {}) {
+  const name = h('input', {
+    value: defaultName,
+    maxlength: 200,
+    placeholder: 'Your name as it should appear',
+  });
+
+  // ------------------------------------------------------------ drawing --
+  const canvas = h('canvas', {
+    width: 900,
+    height: 280,
+    style: {
+      border: '1px dashed var(--border)', borderRadius: 'var(--radius-sm)',
+      width: '100%', maxWidth: `${width}px`, aspectRatio: '900 / 280',
+      touchAction: 'none', background: '#ffffff', cursor: 'crosshair',
+    },
+  });
+  const context = canvas.getContext('2d');
+  context.lineWidth = 4;
+  context.lineCap = 'round';
+  context.lineJoin = 'round';
+  context.strokeStyle = '#101418';
+
+  let drawing = false;
+  let drawn = false;
+  const at = (event) => {
+    const box = canvas.getBoundingClientRect();
+    return [
+      (event.clientX - box.left) * (canvas.width / box.width),
+      (event.clientY - box.top) * (canvas.height / box.height),
+    ];
+  };
+  canvas.addEventListener('pointerdown', (event) => {
+    drawing = true;
+    drawn = true;
+    canvas.setPointerCapture(event.pointerId);
+    context.beginPath();
+    context.moveTo(...at(event));
+  });
+  canvas.addEventListener('pointermove', (event) => {
+    if (!drawing) return;
+    context.lineTo(...at(event));
+    context.stroke();
+  });
+  canvas.addEventListener('pointerup', () => { drawing = false; });
+  canvas.addEventListener('pointerleave', () => { drawing = false; });
+
+  const clearDrawing = () => {
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    drawn = false;
+  };
+
+  // ------------------------------------------------------------ uploading --
+  let uploaded = null;
+  const preview = h('img', {
+    alt: '',
+    style: {
+      display: 'none', maxHeight: '110px', maxWidth: '100%',
+      background: '#fff', padding: '.4rem', borderRadius: 'var(--radius-sm)',
+      border: '1px solid var(--border)',
+    },
+  });
+  const uploadError = h('div.form-error', { style: { display: 'none' } });
+  const file = h('input', {
+    type: 'file',
+    accept: 'image/png,image/jpeg,image/webp',
+    onchange: async (event) => {
+      const chosen = event.target.files?.[0];
+      uploadError.style.display = 'none';
+      if (!chosen) return;
+      // 2 MB is a generous photograph of a signature and a mean scan of a page.
+      // The point of the limit is to catch somebody uploading the whole
+      // contract by mistake, which they will.
+      if (chosen.size > 2 * 1024 * 1024) {
+        uploadError.textContent = 'That image is over 2 MB. A photograph of a signature should be well under it.';
+        uploadError.style.display = '';
+        event.target.value = '';
+        return;
+      }
+      try {
+        uploaded = await readAsDataUrl(chosen);
+        preview.src = uploaded;
+        preview.style.display = '';
+      } catch {
+        uploadError.textContent = 'That file could not be read as an image.';
+        uploadError.style.display = '';
+      }
+    },
+  });
+
+  // ---------------------------------------------------------------- panes --
+  const panes = {
+    saved: h('div',
+      saved?.image
+        ? h('img', {
+          src: saved.image,
+          alt: 'Your saved signature',
+          style: {
+            maxHeight: '110px', maxWidth: '100%', background: '#fff',
+            padding: '.4rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
+          },
+        })
+        : h('p.muted', 'You have not saved a signature yet.'),
+    ),
+    draw: h('div',
+      canvas,
+      h('div.btn-row', { style: { marginTop: '.4rem' } },
+        h('button.btn-sm', { onclick: clearDrawing }, 'Clear'),
+        h('span.muted', { style: { fontSize: '.8rem' } }, 'Use a finger, a stylus or the trackpad'),
+      ),
+    ),
+    upload: h('div', file, uploadError, preview,
+      h('p.muted', { style: { fontSize: '.8rem' } },
+        'A photograph or scan of your signature. PNG, JPEG or WebP, under 2 MB. '
+        + 'A white background looks best against the document.')),
+    typed: h('div',
+      h('p.muted', { style: { fontSize: '.85rem' } },
+        'Your name is recorded as typed, in a script face. This is a signature in law in most '
+        + 'places, and it is the option that always works on any device.')),
+  };
+
+  const available = [
+    ...(saved?.image ? [['saved', 'My saved signature']] : []),
+    ['draw', 'Draw it'],
+    ['upload', 'Upload an image'],
+    ['typed', 'Type it'],
+  ];
+
+  let mode = available[0][0];
+  const showPane = () => {
+    for (const [key, pane] of Object.entries(panes)) {
+      pane.style.display = key === mode ? '' : 'none';
+    }
+  };
+
+  const tabs = h('div.seg',
+    ...available.map(([key, label]) => {
+      const button = h('button', {
+        class: key === mode ? 'active' : '',
+        onclick: () => {
+          mode = key;
+          [...tabs.children].forEach((c) => c.classList.toggle('active', c === button));
+          showPane();
+        },
+      }, label);
+      return button;
+    }),
+  );
+  showPane();
+
+  const save = h('input', { type: 'checkbox' });
+  const saveRow = offerSave
+    ? h('label.inline-check', save,
+      h('span', saved?.image ? 'Replace my saved signature with this one' : 'Save this as my signature'))
+    : null;
+
+  const element = h('div',
+    field('Name', name),
+    field('Signature', h('div', tabs, h('div', { style: { marginTop: '.6rem' } }, ...Object.values(panes)))),
+    saveRow,
+  );
+
+  return {
+    element,
+    nameInput: name,
+
+    /**
+     * What was actually produced, or an error a person can act on.
+     *
+     * Throws rather than returning null so every caller reports the same thing
+     * in the same place — the dialog's own error line, never a toast behind a
+     * modal where nobody reads it.
+     */
+    value() {
+      const typedName = name.value.trim();
+      if (!typedName) throw new Error('Type your name — that is the assertion being recorded');
+
+      if (mode === 'typed') return { method: 'typed', image: null, name: typedName };
+      if (mode === 'saved') {
+        if (!saved?.image) throw new Error('There is no saved signature to use');
+        return { method: saved.method || 'drawn', image: saved.image, name: typedName };
+      }
+      if (mode === 'upload') {
+        if (!uploaded) throw new Error('Choose an image of your signature, or switch to typing it');
+        return { method: 'uploaded', image: uploaded, name: typedName };
+      }
+      if (!drawn) throw new Error('Draw your signature in the box, or switch to typing it');
+      return { method: 'drawn', image: canvas.toDataURL('image/png'), name: typedName };
+    },
+
+    /** Whether the person asked for this to become their saved signature. */
+    wantsSave() {
+      // A saved signature has to be an image. "Save my typed name" would store
+      // nothing that could be shown next time.
+      return Boolean(offerSave && save.checked && mode !== 'typed' && mode !== 'saved');
+    },
+  };
+}
+
+function readAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('unreadable'));
+    reader.readAsDataURL(file);
+  });
+}

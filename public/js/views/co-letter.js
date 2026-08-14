@@ -5,8 +5,9 @@ import { card, table } from './components.js';
 import {
   ACTION_LABEL, STATUS_LABEL, TYPE_LABEL, act, co, confidentialityPill,
   dialogActions, dueCell, field, fmtDate, fmtWhen, inHours, modal,
-  personOptions, priorityPill, select, statusPill, toStamp,
+  personOptions, priorityPill, select, signaturePad, statusPill, toStamp,
 } from './co-common.js';
+import { envelopesCard } from './co-envelope.js';
 import { openCompose } from './co-compose.js';
 
 /**
@@ -20,7 +21,11 @@ export async function renderCoLetter(params) {
   const id = Number(params.id);
   if (!id) return h('div.card.empty', h('h3', 'No letter chosen'), h('p', 'Open one from the register.'));
 
-  const [data, boot] = await Promise.all([api.coLetter(id), co()]);
+  const [data, boot, envelopes] = await Promise.all([
+    api.coLetter(id),
+    co(),
+    api.coEnvelopes(id).catch(() => ({ envelopes: [] })),
+  ]);
   const letter = data.letter;
   const host = h('div');
   const reload = async () => mount(host, await renderCoLetter(params));
@@ -93,6 +98,7 @@ export async function renderCoLetter(params) {
         : h('p.muted', 'No text recorded — the letter itself is probably an attachment below.')),
 
     attachmentsCard(letter, data, reload, may),
+    envelopesCard(letter, envelopes.envelopes ?? [], reload, may),
     signaturesCard(letter, data, reload, may),
 
     data.links.length
@@ -298,12 +304,27 @@ function signaturesCard(letter, data, reload, may) {
             key: 'name',
             label: 'Signed by',
             format: (name, r) => h('div',
-              h('div', h('b', name)),
+              h('div', h('b', name),
+                r.external ? h('span.pill.info', { style: { marginLeft: '.4rem' } }, 'outside the firm') : null),
               r.title ? h('small.muted', r.title) : null,
-              r.image ? h('div', h('img', { src: r.image, alt: '', style: { maxHeight: '48px', marginTop: '.3rem' } })) : null,
+              r.external && r.email ? h('div', h('small.muted', r.email)) : null,
+              r.image
+                ? h('div', h('img', {
+                  src: r.image,
+                  alt: '',
+                  style: {
+                    maxHeight: '48px', marginTop: '.3rem', background: '#fff',
+                    padding: '2px', borderRadius: '4px',
+                  },
+                }))
+                : null,
             ),
           },
-          { key: 'method', label: 'How', format: (v) => (v === 'drawn' ? 'Drawn' : 'Typed') },
+          {
+            key: 'method',
+            label: 'How',
+            format: (v) => ({ drawn: 'Drawn', uploaded: 'Uploaded', typed: 'Typed' }[v] ?? v),
+          },
           { key: 'at', label: 'When', format: (v) => fmtWhen(v) },
           {
             key: 'sealValid',
@@ -519,78 +540,29 @@ function openEdit(letter, boot, reload) {
 }
 
 /**
- * Signing.
+ * Signing, from inside the firm.
  *
- * Two ways, and both are the same assertion: a typed name, or one drawn with a
- * finger on a phone. The drawn one is not more secure — the security is the
- * seal, computed from the account that placed it and a secret in the server —
- * but it is what a partner expects to see on a letter, and a system people
- * refuse to use is not secure either.
+ * Four ways to produce a signature — saved, drawn, uploaded, typed — and none
+ * of them is more secure than another. The security is the seal, computed from
+ * the account that placed it and a secret held on the server. What the choice
+ * buys is that people will actually use it, and a signing step people route
+ * around is not a control.
  */
-function openSign(letter, reload) {
-  const name = h('input', { placeholder: 'Your name as it should appear', maxlength: 200 });
-  const title = h('input', { placeholder: 'e.g. FCCA, Partner', maxlength: 120 });
+async function openSign(letter, reload) {
+  const saved = await api.coMySignature().catch(() => ({}));
 
-  const canvas = h('canvas', {
-    width: 480,
-    height: 150,
-    style: {
-      border: '1px dashed var(--border)', borderRadius: 'var(--radius-sm)',
-      width: '100%', maxWidth: '480px', touchAction: 'none', background: '#fff',
-    },
+  const pad = signaturePad({
+    saved: saved?.image ? { image: saved.image, method: saved.method } : null,
+    defaultName: saved?.signatureName ?? '',
+    offerSave: true,
   });
-  const context = canvas.getContext('2d');
-  context.lineWidth = 2.4;
-  context.lineCap = 'round';
-  context.strokeStyle = '#101418';
-  let drawing = false;
-  let drawn = false;
-
-  const at = (event) => {
-    const box = canvas.getBoundingClientRect();
-    return [
-      (event.clientX - box.left) * (canvas.width / box.width),
-      (event.clientY - box.top) * (canvas.height / box.height),
-    ];
-  };
-  canvas.addEventListener('pointerdown', (e) => {
-    drawing = true; drawn = true;
-    canvas.setPointerCapture(e.pointerId);
-    context.beginPath();
-    context.moveTo(...at(e));
+  const title = h('input', {
+    value: saved?.title ?? '',
+    maxlength: 120,
+    placeholder: 'e.g. FCCA, Partner',
   });
-  canvas.addEventListener('pointermove', (e) => {
-    if (!drawing) return;
-    context.lineTo(...at(e));
-    context.stroke();
-  });
-  canvas.addEventListener('pointerup', () => { drawing = false; });
 
-  let method = 'typed';
-  const drawnBlock = h('div', { style: { display: 'none' } },
-    canvas,
-    h('div.btn-row', { style: { marginTop: '.4rem' } },
-      h('button.btn-sm', {
-        onclick: () => { context.clearRect(0, 0, canvas.width, canvas.height); drawn = false; },
-      }, 'Clear'),
-    ),
-  );
-
-  const methodSeg = h('div.seg',
-    ...[['typed', 'Type it'], ['drawn', 'Draw it']].map(([value, label]) => {
-      const button = h('button', {
-        class: value === 'typed' ? 'active' : '',
-        onclick: () => {
-          method = value;
-          [...methodSeg.children].forEach((c) => c.classList.toggle('active', c === button));
-          drawnBlock.style.display = value === 'drawn' ? '' : 'none';
-        },
-      }, label);
-      return button;
-    }),
-  );
-
-  const dialog = modal(`Sign ${letter.ref}`, {},
+  const dialog = modal(`Sign ${letter.ref}`, { width: '640px' },
     h('p.muted', { style: { fontSize: '.85rem', marginTop: '-.4rem' } }, letter.subject),
     h('div.alert.warn',
       h('span.alert-icon', '⚠️'),
@@ -600,27 +572,32 @@ function openSign(letter, reload) {
           'The subject, the text and every attached file are fixed at this moment. '
           + 'Nobody — including you — can edit them afterwards. Register a follow-up letter instead.'),
       )),
-    field('How', methodSeg),
-    field('Name', name),
+    pad.element,
     field('Title', title),
-    drawnBlock,
   );
 
   dialog.append(dialogActions(dialog, 'Sign and seal', async () => {
-    if (!name.value.trim()) throw new Error('Type your name — that is the assertion being recorded');
-    if (method === 'drawn' && !drawn) throw new Error('Draw your signature in the box, or switch to typing it');
+    const signature = pad.value();
 
     await api.coSign(letter.id, {
-      name: name.value.trim(),
+      name: signature.name,
       title: title.value.trim() || undefined,
-      method,
-      image: method === 'drawn' ? canvas.toDataURL('image/png') : undefined,
+      method: signature.method,
+      image: signature.image ?? undefined,
     });
+
+    // Saved after the signature rather than before: if signing is refused, the
+    // person has not silently had their stored signature replaced as well.
+    if (pad.wantsSave()) {
+      await api.coSaveMySignature({ method: signature.method, image: signature.image })
+        .catch(() => toast('Signed, but the signature could not be saved for next time', 'bad'));
+    }
+
     toast('Signed and sealed', 'good');
     await reload();
   }));
 
-  setTimeout(() => name.focus(), 0);
+  setTimeout(() => pad.nameInput.focus(), 0);
 }
 
 /**

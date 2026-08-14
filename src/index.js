@@ -24,6 +24,7 @@ import * as co from './routes/correspondence.js';
 import * as coWork from './routes/co-work.js';
 import * as coReports from './routes/co-reports.js';
 import * as coSetup from './routes/co-setup.js';
+import * as envelopes from './routes/co-envelopes.js';
 import { runSweep } from './lib/co-workflow.js';
 import { openDueTasks } from './lib/stocktakes.js';
 import { todayIn } from './util/dates.js';
@@ -274,6 +275,24 @@ const ROUTES = [
   ['POST', '/api/co/routes/:id/cancel', 'co_route', co.cancelRoute],
 
   ['POST', '/api/co/letters/:id/sign', 'co_approve', co.signLetter],
+
+  // Envelopes: a document sent out for signature to people with no account.
+  // The four public endpoints below carry no permission at all — the token in
+  // the body is the whole gate, which is the point of them.
+  ['GET', '/api/co/letters/:id/envelopes', ['co_register', 'co_route', 'co_reports'], envelopes.listEnvelopes],
+  ['POST', '/api/co/letters/:id/envelopes', 'co_approve', envelopes.createEnvelope],
+  ['POST', '/api/co/envelopes/:id/void', 'co_approve', envelopes.voidEnvelope],
+  ['GET', '/api/co/envelopes/:id/certificate', ['co_register', 'co_reports'], envelopes.certificate],
+  ['POST', '/api/co/envelope-recipients/:id/reissue', 'co_approve', envelopes.reissueLink],
+
+  ['POST', '/api/co/sign/open', 'public', envelopes.openForSigning],
+  ['POST', '/api/co/sign/file', 'public', envelopes.signingFile],
+  ['POST', '/api/co/sign/submit', 'public', envelopes.submitSignature],
+  ['POST', '/api/co/sign/decline', 'public', envelopes.declineSignature],
+
+  // Your own signature: yours, so open to anybody signed in.
+  ['GET', '/api/co/my-signature', null, envelopes.mySignature],
+  ['PUT', '/api/co/my-signature', null, envelopes.saveMySignature],
   ['GET', '/api/co/letters/:id/verify', ['co_oversight', 'co_reports'], co.verifyLetter],
 
   ['POST', '/api/co/attachments', 'co_register', co.uploadAttachment],

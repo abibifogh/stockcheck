@@ -13,6 +13,7 @@ on:
       - 'public/**'
       - 'seed/correspondence-*.sql'
       - 'migrations/0014_correspondence.sql'
+      - 'migrations/0015_envelopes.sql'
       - 'wrangler.correspondence.toml'
       - '.github/workflows/correspondence.yml'
   pull_request:
@@ -20,6 +21,15 @@ on:
     inputs:
       starter:
         description: Also load the starter templates and workflows
+        type: boolean
+        default: false
+      upgrade:
+        description: >
+          Add signature requests to a database built before they existed.
+          Run once. The schema file below builds the destination and skips
+          whatever already exists, which is exactly wrong for a database
+          part-way along — it would leave the old tables alone and the new
+          columns would never arrive.
         type: boolean
         default: false
 
@@ -115,6 +125,20 @@ jobs:
             --config wrangler.correspondence.toml
             --file=./seed/correspondence-starter.sql
 
+      # Only when somebody asks for it, and only once. Adding a column twice
+      # is an error, which is why this is a button rather than part of every
+      # deploy.
+      - name: Add the signature-request tables to an older database
+        if: steps.creds.outputs.ready == 'true' && inputs.upgrade
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >
+            d1 execute correspondence --remote
+            --config wrangler.correspondence.toml
+            --file=./seed/correspondence-upgrade-envelopes.sql
+
       - name: Deploy the Worker
         if: steps.creds.outputs.ready == 'true'
         uses: cloudflare/wrangler-action@v3
@@ -139,4 +163,5 @@ jobs:
                               (SELECT COUNT(*) FROM co_cases) AS engagements,
                               (SELECT COUNT(*) FROM co_workflows) AS workflows,
                               (SELECT COUNT(*) FROM co_templates) AS templates,
+                              (SELECT COUNT(*) FROM co_envelopes) AS signature_requests,
                               (SELECT COUNT(*) FROM users WHERE active = 1) AS people"

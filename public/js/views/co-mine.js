@@ -2,6 +2,7 @@ import { api } from '../api.js';
 import { navigate } from '../app.js';
 import { h, mount, toast } from '../util.js';
 import { card, table } from './components.js';
+import { mySignatureCard } from './co-envelope.js';
 import {
   ACTION_LABEL, TYPE_LABEL, act, co, dialogActions, dueCell, field,
   modal, personOptions, priorityPill, select,
@@ -22,7 +23,11 @@ import {
  *   action points   tasks assigned to me, from meetings or raised by hand
  */
 export async function renderCoMine() {
-  const [data, boot] = await Promise.all([api.coMine(), co()]);
+  const [data, boot, signature] = await Promise.all([
+    api.coMine(),
+    co(),
+    api.coMySignature().catch(() => ({})),
+  ]);
   const host = h('div');
   const reload = async () => mount(host, await renderCoMine());
 
@@ -79,6 +84,10 @@ export async function renderCoMine() {
         },
       ], data.tasks)
       : h('div.empty', h('p', 'No action points assigned to you.'))),
+
+    // Yours rather than the firm's, and nobody would ever go looking for it
+    // under Practice setup.
+    mySignatureCard(signature, reload),
   );
 
   return host;

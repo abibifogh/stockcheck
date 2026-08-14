@@ -208,12 +208,97 @@ export const CO_SECTIONS = [
         'Nobody — including you — can edit them afterwards. A follow-up letter is registered instead.',
         'No further files can be attached, because the attachments are part of what was signed.',
       ),
-      p('You can type your name or draw it. Neither is more secure than the other: the security is '
-        + 'the seal, which is computed from the account that placed it and a secret held on the '
-        + 'server rather than in the database. Drawing it is offered because it is what a partner '
-        + 'expects to see on a letter, and a system people refuse to use is not secure either.'),
+      p('Four ways to produce a signature: the one you saved, drawn there and then, an uploaded '
+        + 'image of your real signature, or your name typed. None is more secure than another — '
+        + 'the security is the seal, computed from the account that placed it and a secret held '
+        + 'on the server rather than in the database. The choice exists because a system people '
+        + 'refuse to use is not secure either.'),
+      p('To get somebody ', h('b', 'outside'), ' the firm to sign, see “Getting a client to sign” '
+        + 'below. They need no account.'),
       note('Before you sign, read what you are sealing.', 'Signing is the one action here with no '
         + 'undo. If the text is wrong, fix it first — afterwards the only route is a fresh letter.', true),
+    ),
+  },
+
+  // ----------------------------------------------------- outside the firm --
+  {
+    id: 'co-envelopes',
+    title: 'Getting a client to sign',
+    permission: 'co_approve',
+    lead: 'A link, no account, and a record of everything that happened.',
+    render: () => h('div',
+      p('A client is not going to create an account in your correspondence system, and asking '
+        + 'them to is how a signed engagement letter turns into a printed page, a wet signature '
+        + 'and a photograph taken on a phone.'),
+      p('So: open the letter and press ', h('b', 'Send for signature'), '. Each person gets a '
+        + 'link that is theirs alone. They open it, read the document and its attachments, agree '
+        + 'to sign electronically, and sign. That is the whole thing they have to do.'),
+
+      h('h3', 'Who you are asking'),
+      ul(
+        h('span', h('b', 'Signs. '), 'Puts their signature on it. The request is not finished '
+          + 'without them.'),
+        h('span', h('b', 'Approves. '), 'Their agreement is recorded, but no signature is placed. '
+          + 'A finance director who authorises but does not execute.'),
+        h('span', h('b', 'Copy only. '), 'They get it for information and are asked for nothing. '
+          + 'Nothing ever waits on them.'),
+      ),
+
+      h('h3', 'In order, or all at once'),
+      p(h('b', 'One after another'), ' is right for a countersigned agreement: the second person '
+        + 'is not invited until the first has finished, and cannot sign early. Their link still '
+        + 'opens, so they can read what is coming.'),
+      p(h('b', 'Everybody at the same time'), ' is right for four directors in four countries '
+        + 'signing the same resolution.'),
+
+      h('h3', 'Sending freezes the document'),
+      p('Its text and its attachments cannot change while the request is out. That is what makes '
+        + 'four signatures collected over three weeks signatures on one document rather than on '
+        + 'four. If the wrong version went out, withdraw the request, fix it and send a new one.'),
+
+      h('h3', 'Access codes'),
+      p('Optional, and worth it for anything sensitive. Give the code to the recipient by some '
+        + 'other route — a telephone call, the covering letter. A forwarded email is then not on '
+        + 'its own enough to sign.'),
+
+      h('h3', 'The links'),
+      note('They are shown once.', 'Only their fingerprints are stored, so nothing in the system '
+        + 'can show you a link again. That is the point: a copy of the database is not a working '
+        + 'set of signatures. If one goes astray, press ', true),
+      p(h('b', 'New link'), ' against that person. The old one stops working immediately.'),
+
+      h('h3', 'Chasing, and giving up'),
+      p('Anybody outstanding is chased every few days, and the firm is told. Links expire — thirty '
+        + 'days by default — and an expired request is reported rather than quietly forgotten, so '
+        + 'somebody can send a fresh one to a client who probably meant to sign.'),
+
+      h('h3', 'The certificate'),
+      p('Every request has one: who was asked, when each of them opened it, from what network '
+        + 'address and on what browser, what they signed with, and the fingerprint of the exact '
+        + 'document. Printable, because the day anybody wants it is the day somebody outside the '
+        + 'firm has asked for evidence.'),
+    ),
+  },
+
+  // ---------------------------------------------------------- my signature --
+  {
+    id: 'co-my-signature',
+    title: 'Your own signature',
+    lead: 'Set it up once. After that, signing is one tap.',
+    render: () => h('div'
+      ,
+      p('On ', h('b', 'My desk'), ' there is a card called My signature. Draw it with a finger or '
+        + 'a trackpad, or upload a photograph or scan of your real one. From then on it is offered '
+        + 'first every time you sign something.'),
+      ul(
+        'Replacing it changes what you sign with next time and changes nothing you have already signed.',
+        'Removing it changes nothing you have already signed either.',
+        'A typed name cannot be saved — there would be no image to show you next time.',
+      ),
+      note('None of the four ways is more secure than the others.',
+        'The security is the seal, computed from the account that placed it and a secret held on '
+        + 'the server. Drawing a squiggle adds nothing to that. What it adds is that people will '
+        + 'actually use the system, and a signing step people route around is not a control.'),
     ),
   },
 

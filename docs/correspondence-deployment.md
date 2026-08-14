@@ -95,12 +95,12 @@ npx wrangler secret put RESEND_API_KEY  -c wrangler.correspondence.toml   # opti
 - **`SESSION_SECRET`** — a long random string. It signs the session cookie.
   Changing it signs everybody out, which is exactly what you want if a laptop
   is lost.
-- **`DOC_SECRET`** — the key behind every document seal, every signature and
-  every attachment's encryption. **Set it once and never change it.** Rotating
-  it invalidates every existing signature and makes every stored file
-  undecryptable. It is deliberately a separate variable from `SESSION_SECRET`
-  so that rotating the session key — a routine thing — cannot take the
-  documents with it.
+- **`DOC_SECRET`** — the key behind every document seal, every signature, every
+  signing-link access code and every attachment's encryption. **Set it once and
+  never change it.** Rotating it invalidates every existing signature and makes
+  every stored file undecryptable. It is deliberately a separate variable from
+  `SESSION_SECRET` so that rotating the session key — a routine thing — cannot
+  take the documents with it.
 - **`MANAGER_PIN`** — the break-glass way back in if the last administrator
   locks themselves out.
 - **`RESEND_API_KEY`** — only if you want email as well as the in-app bell.
@@ -287,6 +287,16 @@ worth spending twenty minutes on this.
 - **Restricted correspondence.** Anything genuinely sensitive should be marked
   restricted at registration. It is then absent from everybody else's register
   rather than locked — a row saying a file exists is itself the disclosure.
+- **Signing links and Access.** If you put the whole hostname behind Cloudflare
+  Access, **exclude `/sign` and `/api/co/sign/*`**. Those are the pages a client
+  uses, and they have no account to sign in with — Access in front of them turns
+  every signing request into a support call. Add a bypass policy for those two
+  paths and leave everything else behind the login. The token in the link is the
+  gate there, and the WAF rate limit below is what protects it.
+- **Rate-limit the signing endpoints too.** A second rule: more than 30 requests
+  to `/api/co/sign/*` from one IP in a minute → challenge. The Worker throttles
+  in-process as well, but an isolate is short-lived and Cloudflare's counter
+  is not.
 - **Retention.** Set the years on each category. **Practice setup → Categories**
   says what must be kept and for how long; nothing is ever deleted
   automatically, and the retention screen lists what is now past its period so a
@@ -330,6 +340,7 @@ Worth knowing before you find out the hard way.
 | Worker CPU per request | 10 ms free, up to 5 min paid | Everything here is a handful of indexed SQL queries. The one heavy operation is encrypting an upload, which is why files are capped at 25 MB |
 | Request memory | 128 MB | The reason for the 25 MB file cap: the Worker holds the plaintext and the ciphertext at once |
 | Cron granularity | 1 minute | The sweep runs hourly. Deadlines here are measured in hours, so this is not a constraint |
+| Signing links | — | Delivered by whatever you use for email. They appear once in the browser when a request is sent, with a copy button and a "open in email" link, so a firm with no email set up at all can still get an engagement letter signed |
 | No SMTP from a Worker | — | Email goes over an HTTP API (Resend). The in-app bell works without any of it, which matters because email needs an account, a verified domain and a key |
 | D1 has no long transactions | — | Reference numbers come from a counter row updated with `UPDATE … RETURNING`, which is a single statement. That is what stops two letters getting the same number |
 | Free plan Workers | 100k requests/day | A thirty-person practice will not reach it. The Workers Paid plan is $5/month and raises everything |
@@ -360,5 +371,21 @@ users. The domain stays whatever Wix charges.
    clients is an afternoon, once.
 6. **Practice setup → Run the sweep now** — proves reminders and escalation
    work without waiting until tomorrow.
+7. **My desk → My signature** — every person draws or uploads theirs once.
+   After that, signing anything is one tap.
 
 Then register the first letter. Everything else follows from there.
+
+### Sending your first engagement letter out to be signed
+
+1. Register it as outgoing, starting from the **Engagement letter** template.
+2. Fill in the bracketed sections and check the client's name.
+3. **Send for signature** → the client's name and email, and yours if the letter
+   is countersigned. Leave the order as *one after another* so the client signs
+   before the firm does.
+4. The links appear once. Copy the client's, or press **Open in email**.
+5. Watch it on the letter: sent, opened, signed. When the last person signs, the
+   document seals itself and the register says so.
+
+If it is still unsigned after a few days the firm is told, without anybody
+having to remember to look.

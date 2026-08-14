@@ -76,13 +76,58 @@ CREATE INDEX IF NOT EXISTS idx_app_notices_at ON app_notices (id DESC);`,
 };
 
 /**
+ * The two correspondence tables 0015 adds columns to.
+ *
+ * Same reasoning as the block above: a fresh database wants the finished shape
+ * in one statement, because an ALTER cannot be pasted twice and these files are
+ * written to be. Only the practice seed uses these — the hotel never creates
+ * either table.
+ */
+const FINAL_CO_TABLES = {
+  co_staff: `CREATE TABLE IF NOT EXISTS co_staff (
+  user_id          INTEGER PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+  department_id    INTEGER REFERENCES co_departments (id) ON DELETE SET NULL,
+  title            TEXT,
+  signature_name   TEXT,
+  away_until       TEXT,
+  delegate_user_id INTEGER REFERENCES users (id) ON DELETE SET NULL,
+  signature_image  TEXT,
+  signature_method TEXT
+);`,
+
+  co_signatures: `CREATE TABLE IF NOT EXISTS co_signatures (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  letter_id    INTEGER NOT NULL REFERENCES co_letters (id) ON DELETE CASCADE,
+  route_id     INTEGER REFERENCES co_routes (id) ON DELETE SET NULL,
+  user_id      INTEGER REFERENCES users (id) ON DELETE SET NULL,
+  name         TEXT    NOT NULL,
+  title        TEXT,
+  method       TEXT    NOT NULL DEFAULT 'typed',
+  image        TEXT,
+  content_hash TEXT    NOT NULL,
+  seal         TEXT    NOT NULL,
+  at           TEXT    NOT NULL DEFAULT (datetime('now')),
+  ip           TEXT,
+  envelope_id  INTEGER,
+  recipient_id INTEGER,
+  email        TEXT,
+  external     INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_co_signatures_letter ON co_signatures (letter_id);`,
+};
+
+/**
  * The columns FINAL_TABLES already includes.
  *
  * Their ALTERs have to come out, or pasting the file a second time stops on
  * "duplicate column name" — which is exactly the failure these files exist to
  * avoid.
  */
-const FOLDED_IN = [/^ALTER TABLE app_notices ADD COLUMN audience\b.*$/gm];
+const FOLDED_IN = [
+  /^ALTER TABLE app_notices ADD COLUMN audience\b.*$/gm,
+  /^ALTER TABLE co_staff ADD COLUMN \w+.*$/gm,
+  /^ALTER TABLE co_signatures ADD COLUMN \w+.*$/gm,
+];
 
 /** Comments are stripped: the D1 console rejects a paste it reads as only those. */
 function statementsOf(file) {
@@ -218,6 +263,7 @@ const OTHER_STORES = new Set([
   '0012_breakfast_count_approval.sql',
   // The accounting practice. A hostel has no correspondence register.
   '0014_correspondence.sql',
+  '0015_envelopes.sql',
 ]);
 
 // The whole database a housekeeping-only site needs.
@@ -261,7 +307,7 @@ build(
   'seed/correspondence-database.sql',
   {
     drop: HOTEL_TABLES,
-    extraFinal: FINAL_USERS,
+    extraFinal: { ...FINAL_USERS, ...FINAL_CO_TABLES },
     // 0003 is skipped above, so the one setting it adds has to come from here.
     // Without it a fresh practice database has no way back in if the last
     // administrator locks themselves out.
@@ -292,5 +338,15 @@ writeFileSync('seed/housekeeping-upgrade-notices.sql', `${statementsOf('0009_not
 // ALTER into it would take that away.
 writeFileSync('seed/housekeeping-upgrade-notice-audience.sql',
   `${statementsOf('0013_notice_audience.sql')}\n`);
+
+// Envelopes, for a practice database that already has everything else.
+//
+// Its own file rather than an addition to the schema above, and for the same
+// reason the bed-check rounds upgrade is: that file builds the destination and
+// skips whatever already exists, which is exactly wrong for a database
+// part-way along — `CREATE TABLE IF NOT EXISTS co_staff` would leave the old
+// table alone and the new columns would never arrive. This one is the
+// migration verbatim, ALTERs and all, and is run once.
+writeFileSync('seed/correspondence-upgrade-envelopes.sql', `${statementsOf('0015_envelopes.sql')}\n`);
 
 console.log('wrote the seed/ schema files');

@@ -349,6 +349,28 @@ export const api = {
   coDeleteWorkflow: (id) => request(`/api/co/setup/workflows/${id}`, { method: 'DELETE' }),
   coSaveStaff: (userId, body) => request(`/api/co/setup/staff/${userId}`, { method: 'PUT', body }),
   coSweepNow: () => request('/api/co/setup/sweep', { method: 'POST', body: {} }),
+
+  // ------------------------------------------------------------- envelopes --
+  coEnvelopes: (letterId) => request(`/api/co/letters/${letterId}/envelopes`),
+  coSendEnvelope: (letterId, body) =>
+    request(`/api/co/letters/${letterId}/envelopes`, { method: 'POST', body }),
+  coVoidEnvelope: (id, reason) =>
+    request(`/api/co/envelopes/${id}/void`, { method: 'POST', body: { reason } }),
+  coCertificate: (id) => request(`/api/co/envelopes/${id}/certificate`),
+  coReissueLink: (recipientId, body = {}) =>
+    request(`/api/co/envelope-recipients/${recipientId}/reissue`, { method: 'POST', body }),
+
+  coMySignature: () => request('/api/co/my-signature'),
+  coSaveMySignature: (body) => request('/api/co/my-signature', { method: 'PUT', body }),
+
+  // The four a recipient uses. No session: the token in the body is the gate,
+  // and it travels in a body rather than a URL so it stays out of server logs,
+  // browser history and whatever sits in between.
+  coSignOpen: (token, accessCode) =>
+    request('/api/co/sign/open', { method: 'POST', body: { token, accessCode } }),
+  coSignSubmit: (body) => request('/api/co/sign/submit', { method: 'POST', body }),
+  coSignDecline: (body) => request('/api/co/sign/decline', { method: 'POST', body }),
+  coSignFile: (body) => request('/api/co/sign/file', { method: 'POST', body }),
 };
 
 /** Query string from an object, dropping anything empty. */
