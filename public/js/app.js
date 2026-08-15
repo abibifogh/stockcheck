@@ -22,12 +22,6 @@ import { renderMxSetup } from './views/mx-setup.js';
 import { renderMxArea } from './views/mx-area.js';
 import { renderMxCompare } from './views/mx-compare.js';
 import { renderBakeryLink, renderProduction } from './views/bakery.js';
-import { renderShopSell } from './views/shop-sell.js';
-import { renderShopOverview, renderShopReport, renderShopCompare } from './views/shop-reports.js';
-import { renderShopSales } from './views/shop-sales.js';
-import { renderShopStock } from './views/shop-stock.js';
-import { renderShopPurchases } from './views/shop-purchases.js';
-import { renderShopSetup } from './views/shop-setup.js';
 import { renderHkCheck } from './views/hk-check.js';
 import { renderHkOverview, renderHkReport } from './views/hk-reports.js';
 import { renderHkRoom } from './views/hk-room.js';
@@ -84,18 +78,6 @@ const ROUTES = [
   { path: 'hk-setup', label: 'Setup', permission: 'hk_setup', render: renderHkSetup, group: 'Housekeeping' },
   { path: 'hk-room', label: 'Dorm room', permission: 'hk_reports', render: renderHkRoom, hidden: true },
 
-  // ------------------------------------------------------------- craft shop --
-  // The till comes first: it is the screen somebody stands at all day, and the
-  // only one an assistant can open at all.
-  { path: 'shop-sell', label: 'Till', permission: 'shop_sell', render: renderShopSell, group: 'Craft shop' },
-  { path: 'shop-sales', label: 'Sales', permission: 'shop_sell', render: renderShopSales, group: 'Craft shop' },
-  { path: 'shop-overview', label: 'Takings', permission: 'shop_reports', render: renderShopOverview, group: 'Craft shop' },
-  { path: 'shop-report', label: 'Report', permission: 'shop_reports', render: renderShopReport, group: 'Craft shop' },
-  { path: 'shop-compare', label: 'Compare', permission: 'shop_reports', render: renderShopCompare, group: 'Craft shop' },
-  { path: 'shop-stock', label: 'Stock', permission: 'shop_stock', render: renderShopStock, group: 'Craft shop' },
-  { path: 'shop-purchases', label: 'Bought', permission: 'shop_purchases', render: renderShopPurchases, group: 'Craft shop' },
-  { path: 'shop-setup', label: 'Setup', permission: 'shop_setup', render: renderShopSetup, group: 'Craft shop' },
-
   // Open to everyone: the person most likely to need it is the one with the
   // fewest permissions.
   { path: 'guide', label: 'Help', permission: null, render: renderGuide },
@@ -147,10 +129,8 @@ function defaultRoute() {
   const preferred = BRAND.app === 'housekeeping'
     ? ['hk-overview', 'hk-check', 'hk-roster', 'hk-setup', 'overview', 'entry',
       'mx-overview', 'mx-issue', 'stock', 'purchases', 'setup', 'admin', 'guide']
-    // The till before the shop's reports: an assistant who can do both is
-    // still standing at a counter.
     : ['overview', 'entry', 'hk-overview', 'hk-check', 'hk-roster', 'mx-overview',
-      'mx-issue', 'shop-sell', 'shop-overview', 'production',
+      'mx-issue', 'production',
       'stock', 'purchases', 'setup', 'admin', 'guide'];
 
   // The fallback matters as much as the list. Naming a specific route here
@@ -437,8 +417,6 @@ const ROLE_LABELS = {
   baker: 'Bakery',
   technician: 'Technician',
   maintenance_manager: 'Maintenance',
-  shop_assistant: 'Craft shop',
-  shop_manager: 'Shop manager',
   receptionist: 'Reception',
   housekeeper: 'Housekeeping',
   housekeeping_manager: 'Housekeeping manager',

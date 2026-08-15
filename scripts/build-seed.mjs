@@ -140,10 +140,12 @@ const OTHER_STORES = new Set([
   '0005_maintenance.sql',
   '0006_part_attributes.sql',
   '0007_count_approval.sql',
-  '0010_craft_shop.sql',
   '0011_bakery.sql',
   // Alters the kitchen's stock_counts, which this site never reads.
   '0012_breakfast_count_approval.sql',
+  // Clears away the craft shop. A housekeeping database never had it, so a
+  // fresh seed has nothing to drop and would only carry the statements about.
+  '0014_drop_craft_shop.sql',
 ]);
 
 // The whole database a housekeeping-only site needs.

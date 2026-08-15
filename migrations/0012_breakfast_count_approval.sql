@@ -1,6 +1,6 @@
 -- The kitchen's physical count can now correct the book, but only once an
--- administrator has accepted it — the same rule the parts store and the craft
--- shop already follow, and for the same reason: recounting a store is exactly
+-- administrator has accepted it — the same rule the parts store already
+-- follows, and for the same reason: recounting a store is exactly
 -- the moment a shortfall could be quietly written off, so whoever counts is
 -- never whoever decides.
 --
