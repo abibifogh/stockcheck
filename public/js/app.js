@@ -69,14 +69,14 @@ const ROUTES = [
   // ----------------------------------------------------------- housekeeping --
   // The bed check comes first in its section because it is the only screen a
   // housekeeper opens, and it is opened every single morning.
-  { path: 'hk-check', label: 'Bed check', permission: 'hk_check', render: renderHkCheck, group: 'Housekeeping' },
+  { path: 'hk-check', label: 'Bed check', permission: 'hk_check', render: renderHkCheck, group: 'Housekeeping', site: 'housekeeping' },
   // The roster on its own page, for the desk that sets who is expected where
   // without being handed the screen that renames and deletes dorms.
-  { path: 'hk-roster', label: 'Roster', permission: 'hk_roster', render: renderHkRoster, group: 'Housekeeping' },
-  { path: 'hk-overview', label: 'Dorms', permission: 'hk_reports', render: renderHkOverview, group: 'Housekeeping' },
-  { path: 'hk-report', label: 'Report', permission: 'hk_reports', render: renderHkReport, group: 'Housekeeping' },
-  { path: 'hk-setup', label: 'Setup', permission: 'hk_setup', render: renderHkSetup, group: 'Housekeeping' },
-  { path: 'hk-room', label: 'Dorm room', permission: 'hk_reports', render: renderHkRoom, hidden: true },
+  { path: 'hk-roster', label: 'Roster', permission: 'hk_roster', render: renderHkRoster, group: 'Housekeeping', site: 'housekeeping' },
+  { path: 'hk-overview', label: 'Dorms', permission: 'hk_reports', render: renderHkOverview, group: 'Housekeeping', site: 'housekeeping' },
+  { path: 'hk-report', label: 'Report', permission: 'hk_reports', render: renderHkReport, group: 'Housekeeping', site: 'housekeeping' },
+  { path: 'hk-setup', label: 'Setup', permission: 'hk_setup', render: renderHkSetup, group: 'Housekeeping', site: 'housekeeping' },
+  { path: 'hk-room', label: 'Dorm room', permission: 'hk_reports', render: renderHkRoom, hidden: true, site: 'housekeeping' },
 
   // Open to everyone: the person most likely to need it is the one with the
   // fewest permissions.
@@ -129,8 +129,7 @@ function defaultRoute() {
   const preferred = BRAND.app === 'housekeeping'
     ? ['hk-overview', 'hk-check', 'hk-roster', 'hk-setup', 'overview', 'entry',
       'mx-overview', 'mx-issue', 'stock', 'purchases', 'setup', 'admin', 'guide']
-    : ['overview', 'entry', 'hk-overview', 'hk-check', 'hk-roster', 'mx-overview',
-      'mx-issue', 'production',
+    : ['overview', 'entry', 'mx-overview', 'mx-issue', 'production',
       'stock', 'purchases', 'setup', 'admin', 'guide'];
 
   // The fallback matters as much as the list. Naming a specific route here

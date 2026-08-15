@@ -100,32 +100,46 @@ const ROLE_MAP = new Map(ROLES.map((r) => [r.key, r]));
 /**
  * What a given site is allowed to hand out.
  *
- * On a housekeeping-only deployment, offering somebody "Daily entry" or
- * "Maintenance purchases" would be offering them a screen that does not exist
- * there. So the People form is given the housekeeping permissions and the roles
- * built from them, and nothing else.
+ * Offering a hostel's administrator "Daily entry" would be offering them a
+ * screen that does not exist there — and offering a hotel's administrator "Bed
+ * check" is the same mistake pointing the other way. Each site's People form
+ * gets its own sections and the roles built from them, and nothing else.
  *
  * Administrator is kept everywhere: it is the role that can manage people, and
  * a site with no way to appoint one is a site nobody can look after.
  */
 const HOUSEKEEPING_KEYS = ['hk_check', 'hk_reports', 'hk_roster', 'hk_setup'];
 
+const isHousekeeping = (key) => HOUSEKEEPING_KEYS.includes(key);
+
+/** A role whose whole job is the bed check, and which belongs to that site. */
+const isHousekeepingRole = (role) => role.defaults.length > 0
+  && role.defaults.every(isHousekeeping);
+
 export function permissionsFor(site) {
-  if (site !== 'housekeeping') return PERMISSIONS;
-  return PERMISSIONS.filter((p) => HOUSEKEEPING_KEYS.includes(p.key));
+  return site === 'housekeeping'
+    ? PERMISSIONS.filter((p) => isHousekeeping(p.key))
+    : PERMISSIONS.filter((p) => !isHousekeeping(p.key));
 }
 
 export function rolesFor(site) {
-  if (site !== 'housekeeping') return ROLES;
+  if (site !== 'housekeeping') {
+    return ROLES
+      .filter((r) => !isHousekeepingRole(r))
+      // The administrator's defaults are every key, so the bed check has to come
+      // back out of them here as well — otherwise appointing one on the hotel
+      // site pre-ticks four boxes for a section that site does not have.
+      .map((role) => ({ ...role, defaults: role.defaults.filter((d) => !isHousekeeping(d)) }));
+  }
   return ROLES
-    .filter((r) => r.key === 'admin' || r.defaults.some((d) => HOUSEKEEPING_KEYS.includes(d)))
+    .filter((r) => r.key === 'admin' || r.defaults.some(isHousekeeping))
     .map((role) => ({
       ...role,
       // An administrator here administers this site, so their defaults are this
       // site's sections rather than every section in the codebase.
       defaults: role.key === 'admin'
         ? [...HOUSEKEEPING_KEYS, 'users']
-        : role.defaults.filter((d) => HOUSEKEEPING_KEYS.includes(d)),
+        : role.defaults.filter(isHousekeeping),
     }));
 }
 

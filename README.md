@@ -61,6 +61,11 @@ indistinguishable from "we forgot" and silently drags every average down.
 
 ### For housekeeping — the dorm bed check
 
+**Its own site, at `housekeeping.niceoperation.com`.** Not a section of the
+breakfast site: its own Worker, its own database, its own people. The breakfast
+site does not carry it — no menu, no guide chapter, no permissions to hand out,
+and its API answers 404 there. See [§6b](#6b-the-housekeeping-site-housekeepingniceoperationcom).
+
 A separate round, with its own screens, its own permissions and its own email.
 It answers one question the breakfast side cannot: **is every occupied bed in
 the dorms labelled, and is anything occupied that should not be?**

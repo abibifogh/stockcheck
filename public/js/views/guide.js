@@ -160,7 +160,15 @@ const HOUSEKEEPING_SECTIONS = new Set([
   'hk-check', 'hk-roster', 'hk-reports', 'hk-setup', 'account', 'people', 'problems',
 ]);
 
+/**
+ * The chapters that belong to the bed check itself, as opposed to the ones the
+ * housekeeping site merely keeps. Signing in and asking for help are everybody's;
+ * dorm rooms are not, and on the breakfast site they explain nothing reachable.
+ */
+const HOUSEKEEPING_ONLY = new Set(['hk-check', 'hk-roster', 'hk-reports', 'hk-setup']);
+
 function onThisSite(id) {
+  if (HOUSEKEEPING_ONLY.has(id)) return BRAND.app === 'housekeeping';
   return BRAND.app !== 'housekeeping' || HOUSEKEEPING_SECTIONS.has(id);
 }
 
@@ -170,14 +178,16 @@ function greeting() {
   if (can('mx_issue') && !can('entry')) return 'Issuing parts, and what the store holds';
   if (can('bakery') && !can('entry')) return 'Reporting what came out of the oven';
   // Somebody who only walks the dorms should not be greeted with a page about
-  // the kitchen.
-  if (can('hk_check') && !can('entry')) {
+  // the kitchen. Only on the site that has dorms: a stale hk_check left on a
+  // hotel account reaches nothing here, and greeting them as a housekeeper
+  // would describe a job this site cannot give them.
+  if (BRAND.app === 'housekeeping' && can('hk_check') && !can('entry')) {
     if (can('hk_reports')) return 'Walking the dorms, and reading what the checks tell you';
     return can('hk_roster')
       ? 'Checking the beds, and keeping the roster of who is expected in them'
       : 'Walking the dorms and checking the beds — that is all you need';
   }
-  if (can('hk_roster') && !can('hk_check') && !can('entry')) {
+  if (BRAND.app === 'housekeeping' && can('hk_roster') && !can('hk_check') && !can('entry')) {
     return 'Keeping the roster of who is expected in which bed';
   }
   return 'Recording the morning — that is all you need';

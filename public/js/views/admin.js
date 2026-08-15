@@ -893,7 +893,7 @@ function notificationsCard(data, reload) {
   return card('Email alerts', {
     note: BRAND.app === 'housekeeping'
       ? 'Sent the moment a bed check is submitted'
-      : 'Sent the moment a day sheet or a bed check is submitted',
+      : 'Sent the moment a day sheet is submitted',
     wide: true,
   },
     providerWarning,
@@ -911,7 +911,10 @@ function notificationsCard(data, reload) {
       ),
     ),
 
-    h('div', { style: { marginTop: '1.1rem' } },
+    // The bed check lives on the housekeeping site, so its recipients are set
+    // there. The stored values still travel through this form's save on either
+    // site, so opening this screen on the breakfast site cannot clear them.
+    BRAND.app !== 'housekeeping' ? null : h('div', { style: { marginTop: '1.1rem' } },
       h('div.stat-label', { style: { marginBottom: '.4rem' } }, 'The dorm bed check'),
       h('div.field-row', h('label.field', h('span', 'When to send'), hkEnabled)),
       h('div', { style: { marginTop: '.5rem' } },
