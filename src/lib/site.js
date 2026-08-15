@@ -1,12 +1,14 @@
 /**
  * Which site this Worker is running as.
  *
- * One codebase serves two deployments. The breakfast site carries everything —
- * the morning sheet, the parts store and the bed check — because the people who
- * run a hotel move between all three. The housekeeping site carries only the bed
- * check, because the people who run a hostel dorm have no use for the other two
- * and every extra menu item is one more thing to explain to somebody on their
- * first morning.
+ * One codebase serves two deployments, and each carries its own work and only
+ * its own. The breakfast site has the morning sheet and the parts store; the
+ * housekeeping site has the bed check. Neither carries the other.
+ *
+ * The bed check was briefly on both. It reads its own database on its own
+ * address, so a hotel manager opening the breakfast site was offered dorm rooms
+ * that were never going to have anything in them — a menu item that could only
+ * ever disappoint. A section belongs to one site now.
  *
  * Set by `APP_SITE` in the Worker's configuration rather than read from the
  * hostname: a preview address, a custom domain and a workers.dev URL all point
@@ -46,6 +48,17 @@ export const FULL_SITE_PATHS = [
 ];
 
 /**
+ * The bed check's API, which belongs to the housekeeping site.
+ *
+ * The mirror of the list above, and there for the same reason: the breakfast
+ * site has no dorms, so `/api/hk/rooms` there would answer about a database
+ * nobody fills in.
+ */
+export const HOUSEKEEPING_SITE_PATHS = [
+  '/api/hk',
+];
+
+/**
  * A prefix matches the path itself or anything below it, and nothing else.
  *
  * Matching on the bare characters would make `/api/import` swallow a future
@@ -53,6 +66,6 @@ export const FULL_SITE_PATHS = [
  * no reason anybody would ever guess.
  */
 export function servesPath(site, pathname) {
-  if (site !== 'housekeeping') return true;
-  return !FULL_SITE_PATHS.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+  const absent = site === 'housekeeping' ? FULL_SITE_PATHS : HOUSEKEEPING_SITE_PATHS;
+  return !absent.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }

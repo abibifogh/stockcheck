@@ -39,10 +39,27 @@ test('it does not serve the breakfast unit or the parts store', () => {
   }
 });
 
-test('the full site serves everything, including all of the above', () => {
-  for (const path of [...FULL_SITE_PATHS, '/api/hk/checks', '/api/users']) {
-    assert.equal(servesPath('full', path), true);
+test('the full site serves its own work and the things every site needs', () => {
+  for (const path of [...FULL_SITE_PATHS, '/api/users', '/api/bootstrap', '/api/audit']) {
+    assert.equal(servesPath('full', path), true, `${path} should be served`);
   }
+});
+
+test('it does not serve the bed check, which belongs to the other site', () => {
+  // The mirror of the case above. A hotel has no dorms, so answering here would
+  // be answering about a database nobody on this site fills in.
+  for (const path of [
+    '/api/hk', '/api/hk/bootstrap', '/api/hk/checks', '/api/hk/rooms/1/detail',
+    '/api/hk/roster', '/api/hk/export',
+  ]) {
+    assert.equal(servesPath('full', path), false, `${path} should be absent`);
+  }
+});
+
+test('the prefix test is no looser going the other way', () => {
+  // '/api/hksomething' is not '/api/hk', and must not be caught by it.
+  assert.equal(servesPath('full', '/api/hksomething'), true);
+  assert.equal(servesPath('full', '/api/hk-check'), true);
 });
 
 test('a path that merely starts with the same letters is not caught', () => {
@@ -54,11 +71,22 @@ test('a path that merely starts with the same letters is not caught', () => {
 
 // ------------------------------------------------------------- permissions --
 
+const HK_KEYS = ['hk_check', 'hk_reports', 'hk_roster', 'hk_setup'];
+
 test('the housekeeping site offers only housekeeping sections', () => {
-  const keys = permissionsFor('housekeeping').map((p) => p.key);
-  assert.deepEqual(keys, ['hk_check', 'hk_reports', 'hk_roster', 'hk_setup']);
-  // And the full site is untouched by any of this.
-  assert.equal(permissionsFor('full').length, PERMISSIONS.length);
+  assert.deepEqual(permissionsFor('housekeeping').map((p) => p.key), HK_KEYS);
+});
+
+test('and the full site offers everything except those', () => {
+  const keys = permissionsFor('full').map((p) => p.key);
+  assert.equal(keys.length, PERMISSIONS.length - HK_KEYS.length);
+  for (const key of HK_KEYS) {
+    assert.ok(!keys.includes(key), `${key} is the other site's, and must not be offered here`);
+  }
+  // The sections this site does run are all still there.
+  for (const key of ['entry', 'reports', 'stock', 'mx_issue', 'users']) {
+    assert.ok(keys.includes(key), `${key} belongs to this site`);
+  }
 });
 
 test('it offers only the roles built from those sections, plus administrator', () => {
@@ -77,7 +105,35 @@ test('it offers only the roles built from those sections, plus administrator', (
   assert.ok(admin.defaults.includes('users'), 'somebody has to be able to manage people');
 
   assert.deepEqual(rolesFor('housekeeping').find((r) => r.key === 'housekeeper').defaults, ['hk_check']);
-  assert.equal(rolesFor('full').length, ROLES.length);
+});
+
+test('the full site drops the roles whose whole job is the bed check', () => {
+  const roles = rolesFor('full');
+  const keys = roles.map((r) => r.key);
+
+  for (const key of ['receptionist', 'housekeeper', 'housekeeping_manager']) {
+    assert.ok(!keys.includes(key), `${key} belongs to the housekeeping site`);
+  }
+  assert.equal(keys.length, ROLES.length - 3);
+  for (const key of ['cook', 'manager', 'baker', 'technician', 'admin']) {
+    assert.ok(keys.includes(key), `${key} works here`);
+  }
+
+  // An administrator here administers a hotel, so the bed check comes out of
+  // their pre-ticked boxes too.
+  const admin = roles.find((r) => r.key === 'admin');
+  for (const key of HK_KEYS) assert.ok(!admin.defaults.includes(key));
+  assert.ok(admin.defaults.includes('users'), 'somebody has to be able to manage people');
+  assert.ok(admin.defaults.includes('entry'));
+});
+
+test('nothing offered on the full site names a section it does not have', () => {
+  const available = new Set(permissionsFor('full').map((p) => p.key));
+  for (const role of rolesFor('full')) {
+    for (const key of role.defaults) {
+      assert.ok(available.has(key), `${role.key} defaults to ${key}, which this site does not offer`);
+    }
+  }
 });
 
 test('nothing offered on the housekeeping site names a section it does not have', () => {
