@@ -4,7 +4,7 @@ import {
 import {
   dayOverview, dayReport, defaultSlotFor, expectedFor, exportRows, isSlot,
   loadDataset, overview as overviewReport, periodReport, roomDetail,
-  rosterNightsFor, slotClosedReason, slotOf, slotsForRole, visibleSlots,
+  rosterNightsFor, slotClosedReason, slotOf, visibleSlots,
 } from '../lib/housekeeping.js';
 import { notifyRoundSubmitted } from '../lib/email.js';
 import { createNotice, roundNotice } from '../lib/notices.js';
@@ -76,15 +76,16 @@ function canManageRounds(ctx) {
  * anybody walked the rooms. And reception's two rounds have hours, so a check
  * cannot be done at five in the morning and called the morning check.
  *
- * Both bend for a manager, and neither applies to catching up on a past day:
- * a round recorded late is worth far more than one never recorded at all.
+ * Both are about the shift somebody is on now, not the day being recorded:
+ * catching up on another shift's round is how one person's guess becomes
+ * another person's record. Both bend for a manager, who is the way anything in
+ * somebody else's round gets put right.
  */
-function assertCanRecord(ctx, { day, slot, timezone, today }) {
+function assertCanRecord(ctx, { slot, timezone }) {
   const reason = slotClosedReason(slot, {
     hour: hourIn(timezone),
     role: ctx.session.user.role,
     canManage: canManageRounds(ctx),
-    today: day === today,
   });
   if (reason) throw badRequest(reason);
 }
@@ -113,22 +114,19 @@ export async function bootstrap(ctx) {
   const today = todayIn(ds.timezone);
   const day = readDay(ctx.url.searchParams.get('day'), today);
 
-  // The round this person is on, and only that one. A receptionist has no
-  // business with the housekeeping round at any hour, and the one who comes in
-  // at three has none with the morning check either — it was another shift, and
-  // a tab holding somebody else's finished round is an invitation to "correct"
-  // work they did not do. Absent rather than greyed: there is nothing to
+  // The round this person is on, and only that one — on whichever day they are
+  // looking at. A receptionist has no business with the housekeeping round at
+  // any hour, and the one who comes in at three has none with the morning
+  // check either, today's or yesterday's: it was another shift, and a tab
+  // holding somebody else's finished round is an invitation to "correct" work
+  // they did not do. Absent rather than greyed, because there is nothing to
   // explain about a round that was never on offer.
   const canManage = canManageRounds(ctx);
   const mine = visibleSlots(ctx.session.user.role, {
     hour: hourIn(ds.timezone),
     canManage,
-    today: day === today,
   });
   const visible = new Set(mine.map((s) => s.key));
-  const mayRecord = new Set(
-    slotsForRole(ctx.session.user.role, { canManage }).map((s) => s.key),
-  );
 
   const asked = readSlot(ctx.url.searchParams.get('slot'), ds.timezone, ctx);
   // Asking for somebody else's round by hand lands on your own rather than on
@@ -169,7 +167,6 @@ export async function bootstrap(ctx) {
         hour: hourIn(ds.timezone),
         role: ctx.session.user.role,
         canManage,
-        today: day === today,
       }),
     })),
     propertyName: ds.propertyName,
@@ -201,10 +198,10 @@ export async function bootstrap(ctx) {
     })),
     // Recent rounds give the person doing the round a way back into yesterday
     // if they realise they answered something wrongly.
-    // Filtered by role rather than by the clock: yesterday afternoon's round is
-    // caught up on this morning, and it has to be reachable to be caught up on.
+    // The same boundary as the tabs: the afternoon desk gets back to its own
+    // earlier rounds, and to nobody else's.
     recent: [...ds.rounds]
-      .filter((r) => mayRecord.has(r.slot || 'morning'))
+      .filter((r) => visible.has(r.slot || 'morning'))
       .slice(-9)
       .reverse()
       .map((r) => ({
@@ -255,7 +252,7 @@ export async function saveChecks(ctx) {
   }
   // Whose round it is, and whether it is open. Checked before anything is read
   // or written, so a refused round leaves no trace of having been started.
-  assertCanRecord(ctx, { day, slot, timezone, today });
+  assertCanRecord(ctx, { slot, timezone });
 
   // Which night this round is judged against — last night for the morning,
   // tonight for the evening, both for the round in between.
@@ -369,7 +366,7 @@ export async function submitRound(ctx, day, slot) {
 
   const ds = await loadDataset(ctx.db);
   const report = dayReport(ds, day, slot);
-  assertCanRecord(ctx, { day, slot, timezone: ds.timezone, today: todayIn(ds.timezone) });
+  assertCanRecord(ctx, { slot, timezone: ds.timezone });
 
   const round = ds.roundByKey.get(`${day}|${slot}`);
   if (!round) throw badRequest('Nothing has been recorded for that check yet.');

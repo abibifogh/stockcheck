@@ -83,7 +83,14 @@ function context(body, db = fakeDb()) {
     db,
     env: {},
     url: new URL('https://example.test/api/hk/checks'),
-    session: { user: { name: 'Akosua', role: 'housekeeper' }, permissions: ['hk_check'] },
+    // These tests are about what gets written, not about whose shift it is, so
+    // the fixture carries a manager's permission and is exempt from the shift
+    // rules. The rules themselves are tested below with plain checkers, whose
+    // hour the suite cannot choose.
+    session: {
+      user: { name: 'Akosua', role: 'housekeeper' },
+      permissions: ['hk_check', 'hk_reports'],
+    },
     request: new Request('https://example.test/api/hk/checks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -352,16 +359,27 @@ test('reception’s rounds are refused outside their hours', async () => {
   assert.equal(ok.status, 200);
 });
 
-test('the hours do not stand between anybody and yesterday', async () => {
+test('the hours follow the shift, not the day being recorded', async () => {
+  // Catching up on another shift's round is how one person's guess becomes
+  // another person's record, so the afternoon desk cannot fill in yesterday's
+  // morning check any more than today's.
   const shut = hourHere() < 14 ? 'evening' : 'morning';
   const db = fakeDb();
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
 
-  const response = await saveChecks(asRole({
-    day: yesterday, slot: shut, checks: [{ bedId: 3, state: 'free' }],
-  }, { role: 'receptionist', permissions: ['hk_check'], db }));
+  await assert.rejects(
+    () => saveChecks(asRole({
+      day: yesterday, slot: shut, checks: [{ bedId: 3, state: 'free' }],
+    }, { role: 'receptionist', permissions: ['hk_check'], db })),
+    (err) => err instanceof HttpError && /can be recorded between/.test(err.message),
+  );
 
-  assert.equal(response.status, 200, 'a round recorded late beats one never recorded');
+  // Their own round on a past day is exactly what catching up means, though.
+  const open = shut === 'evening' ? 'morning' : 'evening';
+  const ok = await saveChecks(asRole({
+    day: yesterday, slot: open, checks: [{ bedId: 3, state: 'free' }],
+  }, { role: 'receptionist', permissions: ['hk_check'], db }));
+  assert.equal(ok.status, 200, 'a round recorded late beats one never recorded');
 });
 
 test('a manager is not held to either rule', async () => {

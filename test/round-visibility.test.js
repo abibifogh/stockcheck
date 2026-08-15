@@ -103,29 +103,30 @@ test('a manager is handed all three', async () => {
   assert.deepEqual(slotsIn(data), ['morning', 'housekeeping', 'evening']);
 });
 
-test('a past day gives reception both of their rounds back', async () => {
-  // Yesterday afternoon's round is caught up on this morning or not at all.
-  const { view } = setup();
+test('a past day is bounded the same way as today', async () => {
+  // Yesterday's morning check belongs to the morning shift. The afternoon desk
+  // opening an old day still sees only afternoon checks — a finished round with
+  // somebody else's name on it is not theirs to tidy up, whichever day it is on.
+  const { view, hour } = setup();
   const data = await view('receptionist', { query: '?day=2026-08-01' });
-  assert.deepEqual(slotsIn(data), ['morning', 'evening']);
-  assert.ok(!slotsIn(data).includes('housekeeping'), 'that one never becomes theirs');
+  assert.deepEqual(slotsIn(data), [hour < 14 ? 'morning' : 'evening']);
 });
 
-test('the earlier rounds at the foot of the screen are bounded by role, not by the hour', async () => {
-  // That list is how a past round is reached, so narrowing it to the round the
-  // clock is in would make yesterday afternoon unreachable this morning. It is
-  // bounded by whose rounds they are instead.
-  const { view } = setup();
+test('the earlier rounds at the foot of the screen keep the same boundary', async () => {
+  // That list is the way back into a past round, so it is bounded exactly as
+  // the tabs are: your own shift's rounds, and nobody else's.
+  const { view, hour } = setup();
+  const mine = hour < 14 ? 'morning' : 'evening';
 
   const desk = await view('receptionist');
-  assert.ok(!desk.recent.some((r) => r.slot === 'housekeeping'),
-    'never the housekeeping round');
-  assert.ok(desk.recent.some((r) => r.slot === 'morning'));
-  assert.ok(desk.recent.some((r) => r.slot === 'evening'), 'including the other shift’s, in the past');
+  assert.ok(desk.recent.every((r) => r.slot === mine),
+    'only the shift they are on, on every day it lists');
 
-  // A housekeeper may cover reception's rounds — those name nobody — so their
-  // history holds all three even though today shows only theirs.
   const housekeeper = await view('housekeeper');
-  assert.deepEqual(slotsIn(housekeeper), ['housekeeping'], 'today');
-  assert.ok(housekeeper.recent.some((r) => r.slot === 'morning'), 'the past');
+  assert.ok(housekeeper.recent.every((r) => r.slot === 'housekeeping'));
+
+  // A manager keeps the lot: they are the way anything in another shift's
+  // round gets put right.
+  const boss = await view('housekeeping_manager', { permissions: ['hk_check', 'hk_reports'] });
+  assert.equal(new Set(boss.recent.map((r) => r.slot)).size, 3);
 });

@@ -898,16 +898,16 @@ const SECTIONS = [
           h('p', 'Answer what you see now, not what somebody else saw earlier. If it has a tag now, '
             + 'say yes — that is how the system knows it was dealt with. Each check is a fresh look, '
             + 'and the reports compare them.')],
-        ['I am doing yesterday afternoon\u2019s check this morning.',
-          h('p', 'Use the earlier checks at the foot of the screen to pick the right day. A past '
-            + 'day shows both of reception\u2019s rounds, because the hours only apply to today — a '
-            + 'round caught up on later is never refused, and better recorded late than not at all. '
-            + 'It is filed against the round it belongs to, not the one you are standing in.')],
+        ['I did not get to finish yesterday\u2019s round.',
+          h('p', 'Use the earlier checks at the foot of the screen to pick the day. You will find '
+            + 'your own round there — the one your shift walks — and it is never refused for being '
+            + 'late. It is filed against the day it belongs to, not the one you are standing in.')],
         ['Where has the morning check gone?',
-          h('p', 'It belongs to the shift that walked it. After two o\u2019clock the screen shows '
-            + 'the afternoon check instead, and before two it shows the morning one. If something '
-            + 'in the other round is wrong, tell a housekeeping manager — they can see and record '
-            + 'all three at any hour.')],
+          h('p', 'It belongs to the morning shift, and that includes yesterday\u2019s and last '
+            + 'week\u2019s. After two o\u2019clock the screen shows the afternoon check on every '
+            + 'day you open; before two it shows the morning one. Nobody is meant to be tidying up '
+            + 'a round another shift walked — if something in one is wrong, tell a housekeeping '
+            + 'manager. They see and can record all three, at any hour, on any day.')],
         ['The signal dropped while I was in the basement.',
           h('p', 'Keep going. The screen says “not saved” and keeps trying on its own; as soon as '
             + 'there is signal again everything you tapped goes through.')],

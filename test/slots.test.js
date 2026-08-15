@@ -100,13 +100,14 @@ test('a manager is never locked out of the record', () => {
   }
 });
 
-test('the hours do not apply to catching up on yesterday', () => {
-  // A round recorded late is worth far more than one never recorded at all, and
-  // yesterday's morning check cannot be done between six and two today.
-  const late = { hour: 22, role: 'receptionist', canManage: false, today: false };
-  assert.equal(slotClosedReason('morning', late), null);
-  // Whose round it is does not expire, though.
-  assert.match(slotClosedReason('housekeeping', late), /recorded by housekeeping/);
+test('the hours follow the shift, not the day being recorded', () => {
+  // The afternoon desk cannot fill in yesterday's morning check either.
+  // Catching up on another shift's round is how one person's guess becomes
+  // another person's record — and the manager is the way it gets put right.
+  const late = { hour: 22, role: 'receptionist', canManage: false };
+  assert.match(slotClosedReason('morning', late), /between 06:00 and 14:00/);
+  assert.match(slotClosedReason('morning', late), /housekeeping manager/);
+  assert.equal(slotClosedReason('evening', late), null, 'their own round, any day');
 });
 
 test('every round says its own hours, and only the middle one names a shift', () => {
@@ -144,17 +145,11 @@ test('a manager sees all three whatever their role', () => {
   assert.equal(slotsForRole('admin').length, 3);
 });
 
-test('being shown a round and being able to fill it in are different questions', () => {
-  // Hours close a round for everybody in turn and it stays on screen — reception
-  // need to see that the morning check was done, and to read it. A round that is
-  // somebody else's shift is never theirs at any hour, so it goes entirely.
-  const shown = slotsForRole('receptionist').map((s) => s.key);
-  assert.ok(shown.includes('morning'));
-  assert.match(
-    slotClosedReason('morning', { hour: 20, role: 'receptionist', today: true }),
-    /between 06:00 and 14:00/,
-    'shown, but shut',
-  );
+test('what a role may ever record is wider than what it is shown', () => {
+  // Reception's two rounds name nobody, so either receptionist may record
+  // either one in principle. The clock is what narrows it to the one in hand.
+  assert.deepEqual(slotsForRole('receptionist').map((s) => s.key), ['morning', 'evening']);
+  assert.deepEqual(visibleSlots('receptionist', { hour: 20 }).map((s) => s.key), ['evening']);
 });
 
 // ------------------------------------------------- one tab, the one in hand --
@@ -175,17 +170,19 @@ test('a housekeeper sees theirs, whatever the hour', () => {
   }
 });
 
-test('a past day shows everything the role allows, so it can be caught up on', () => {
-  // Yesterday afternoon's round is filled in this morning or not at all.
-  assert.deepEqual(
-    visibleSlots('receptionist', { hour: 9, today: false }).map((s) => s.key),
-    ['morning', 'evening'],
-  );
-  // Still not the housekeeping round, though: that never becomes theirs.
-  assert.ok(!visibleSlots('receptionist', { hour: 9, today: false }).some((s) => s.key === 'housekeeping'));
+test('a past day is bounded the same way as today', () => {
+  // Yesterday's morning check belongs to the morning shift, whichever day it
+  // is being looked at. The afternoon desk never sees it — which is the point:
+  // a finished round with somebody else's name on it is not theirs to tidy.
+  assert.deepEqual(visibleSlots('receptionist', { hour: 15 }).map((s) => s.key), ['evening']);
+  assert.deepEqual(visibleSlots('receptionist', { hour: 9 }).map((s) => s.key), ['morning']);
 });
 
-test('a manager sees all three, today and any other day', () => {
+test('a manager sees all three, at any hour and on any day', () => {
   assert.equal(visibleSlots('receptionist', { hour: 9, canManage: true }).length, 3);
   assert.equal(visibleSlots('housekeeping_manager', { hour: 9, canManage: true }).length, 3);
+  // And is refused nothing, which is how another shift's round gets corrected.
+  for (const slot of ['morning', 'housekeeping', 'evening']) {
+    assert.equal(slotClosedReason(slot, { hour: 3, role: 'receptionist', canManage: true }), null);
+  }
 });

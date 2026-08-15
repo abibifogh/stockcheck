@@ -72,8 +72,14 @@ const read = async (response) => {
   return body;
 };
 
-/** Record a round, the way a phone does. */
-async function walk({ db, beds }, day, slot, states, permissions = ['hk_check']) {
+/**
+ * Record a round, the way a phone does.
+ *
+ * As a manager, because these tests choose which round to walk and the suite
+ * cannot choose what hour it runs at — the shift rules are tested in
+ * slots.test.js and housekeeping-routes.test.js.
+ */
+async function walk({ db, beds }, day, slot, states, permissions = ['hk_check', 'hk_reports']) {
   const request = new Request('https://x/api/hk/checks', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

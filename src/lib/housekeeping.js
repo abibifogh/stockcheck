@@ -57,10 +57,11 @@ const REPEAT_THRESHOLD = 2;
  * ends.
  *
  * `from` and `to` are the hours the round can be recorded in, and `roles` is
- * who may record it. Both are enforced, and both bend in the same two places:
- * a manager is correcting the record rather than walking a round, and catching
- * up on a past day is never refused, because a check recorded late is worth far
- * more than one never recorded at all.
+ * who may record it. Both are enforced, and both are about the shift somebody
+ * is on right now rather than the day they are looking at — the afternoon desk
+ * has no more business filling in yesterday's morning check than today's. A
+ * manager is exempt from both, and is how anything in another shift's round
+ * gets put right.
  */
 export const SLOTS = [
   {
@@ -164,16 +165,11 @@ export function defaultSlotFor(hour, role) {
 }
 
 /**
- * The rounds a person is shown at all.
+ * The rounds a role may ever record, before the clock is consulted.
  *
- * Not the same question as whether a round is open. Hours close a round for
- * everybody in turn, and it stays on screen — reception need to see that the
- * morning check was done, and to read it. But a round that is somebody else's
- * shift is never theirs at any hour, and a permanently greyed tab is just
- * clutter with a rebuke attached.
- *
- * A manager sees all three: they are looking after the property rather than
- * walking a round.
+ * Only the housekeeping round narrows anything here; reception's two are open
+ * to any role. `visibleSlots` is the one that decides what somebody is actually
+ * shown, and it is stricter.
  */
 export function slotsForRole(role, { canManage = false } = {}) {
   if (canManage) return SLOTS;
@@ -181,40 +177,50 @@ export function slotsForRole(role, { canManage = false } = {}) {
 }
 
 /**
- * The rounds on screen for today: one.
+ * The rounds on screen: one.
  *
  * Somebody walking a round needs the round they are on and nothing else. The
  * receptionist who comes in at three has no use for the morning check — it was
- * somebody else's shift, it is very likely already submitted, and a tab showing
- * a finished round with another person's name on it is an invitation to
- * "correct" work they did not do. So today shows the round the clock is in, and
- * for a housekeeper, theirs.
+ * another shift, it is very likely already submitted, and a tab showing a
+ * finished round with somebody else's name on it is an invitation to "correct"
+ * work they did not do.
  *
- * Past days are different: everything their role allows, because catching up on
- * yesterday afternoon at nine this morning is exactly what the earlier rounds
- * at the foot of the screen are for.
+ * The same holds for yesterday's morning check, and for last week's: the shift
+ * is decided by the clock now, not by the day being looked at. So the afternoon
+ * desk sees afternoon checks, whichever day they open, and a housekeeper sees
+ * housekeeping rounds.
  *
- * A manager sees all three either way. They are reading the property rather
- * than walking it.
+ * A manager sees all three. They are reading the property rather than walking
+ * it, and they are the way anything in another shift's round gets fixed.
  */
-export function visibleSlots(role, { hour, canManage = false, today = true } = {}) {
+export function visibleSlots(role, { hour, canManage = false } = {}) {
   const allowed = slotsForRole(role, { canManage });
-  if (canManage || !today) return allowed;
+  if (canManage) return allowed;
   const mine = defaultSlotFor(hour, role);
   return allowed.filter((s) => s.key === mine);
 }
 
-/** Why a round cannot be recorded, in words, or null when it can. */
-export function slotClosedReason(slot, { hour, role, canManage = false, today = true }) {
+/**
+ * Why a round cannot be recorded, in words, or null when it can.
+ *
+ * A round belongs to the shift that walks it, and the shift is decided by the
+ * clock now — not by the day being recorded. Somebody on the afternoon desk
+ * has no more business filling in yesterday's morning check than today's: it
+ * was another shift's round either way, and catching up on it is how one
+ * person's guess quietly becomes another person's record.
+ *
+ * A manager is exempt from both, because they are correcting the record rather
+ * than walking a round, and somebody has to be able to.
+ */
+export function slotClosedReason(slot, { hour, role, canManage = false }) {
   const s = slotOf(slot);
+  if (canManage) return null;
   if (!slotAllowsRole(slot, role)) {
     return `The ${s.label.toLowerCase()} is recorded by housekeeping.`;
   }
-  // Hours apply to today. Yesterday's round is caught up on whenever somebody
-  // gets to it — a check recorded late is worth far more than one never
-  // recorded at all — and a manager correcting something is never blocked.
-  if (!today || canManage || withinWindow(slot, hour)) return null;
-  return `The ${s.label.toLowerCase()} can be recorded between ${s.from} and ${s.to}.`;
+  if (withinWindow(slot, hour)) return null;
+  return `The ${s.label.toLowerCase()} can be recorded between ${s.from} and ${s.to}. `
+    + 'A housekeeping manager can record it outside those hours.';
 }
 
 export async function loadDataset(db) {

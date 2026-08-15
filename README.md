@@ -71,14 +71,17 @@ the dorms labelled, and is anything occupied that should not be?**
   housekeepers: nobody else can record it, at any hour, because a round
   reception filled in says nothing about whether anybody walked the rooms.
   Each is submitted and emailed on its own, by the people who did it.
-- **Somebody walking a round sees only that round.** Housekeepers get theirs
-  whatever the hour; reception get the morning check before two and the
-  afternoon one after it. The other shifts' rounds are absent rather than
-  greyed out — a tab holding somebody else's finished round is an invitation to
-  "correct" work they did not do. A past day shows both of reception's rounds,
-  so yesterday afternoon can be caught up on this morning: the hours apply to
-  today only. A housekeeping manager sees all three at any hour and is held to
-  neither rule, since they are reading the property rather than walking it.
+- **Somebody walking a round sees only that round, on every day they open.**
+  Housekeepers get theirs whatever the hour; reception get the morning check
+  before two and the afternoon one after it — and that holds for yesterday and
+  last week as much as for today, because a round belongs to the shift that
+  walks it. The others are absent rather than greyed out, in the response as
+  well as on screen: a tab holding somebody else's finished round is an
+  invitation to "correct" work you did not do, and catching up on another
+  shift's round is how one person's guess becomes another person's record.
+  Your own round is never refused for being late. A housekeeping manager sees
+  and can record all three at any hour on any day, and is the way anything in
+  another shift's round gets put right.
 - **Two questions per bed.** The person checking opens a room, taps **Free** or
   **Occupied** for each bed, and — only for an occupied bed — answers **does it
   have a name tag?** Any bed can carry a note. Nothing else is asked, and
