@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  SLOTS, defaultSlotFor, slotAllowsRole, slotClosedReason, slotForTime, withinWindow,
+  SLOTS, defaultSlotFor, slotAllowsRole, slotClosedReason, slotForTime, slotsForRole,
+  visibleSlots, withinWindow,
 } from '../src/lib/housekeeping.js';
 
 /**
@@ -121,4 +122,70 @@ test('every round says its own hours, and only the middle one names a shift', ()
   // The stored key stays `evening` however it is labelled: it is written on
   // every check ever recorded, and renaming it would be renaming the past.
   assert.equal(byKey.evening.label, 'Afternoon check');
+});
+
+// ------------------------------------------------------------ what is shown --
+
+test('a receptionist is not shown the housekeeping round at all', () => {
+  const keys = slotsForRole('receptionist').map((s) => s.key);
+  assert.deepEqual(keys, ['morning', 'evening']);
+});
+
+test('a housekeeper still sees reception’s rounds', () => {
+  // They cannot be stopped from reading what the other shift found, and on a
+  // small property they may well be the one covering it.
+  assert.deepEqual(slotsForRole('housekeeper').map((s) => s.key),
+    ['morning', 'housekeeping', 'evening']);
+});
+
+test('a manager sees all three whatever their role', () => {
+  assert.equal(slotsForRole('receptionist', { canManage: true }).length, 3);
+  assert.equal(slotsForRole('housekeeping_manager').length, 3);
+  assert.equal(slotsForRole('admin').length, 3);
+});
+
+test('being shown a round and being able to fill it in are different questions', () => {
+  // Hours close a round for everybody in turn and it stays on screen — reception
+  // need to see that the morning check was done, and to read it. A round that is
+  // somebody else's shift is never theirs at any hour, so it goes entirely.
+  const shown = slotsForRole('receptionist').map((s) => s.key);
+  assert.ok(shown.includes('morning'));
+  assert.match(
+    slotClosedReason('morning', { hour: 20, role: 'receptionist', today: true }),
+    /between 06:00 and 14:00/,
+    'shown, but shut',
+  );
+});
+
+// ------------------------------------------------- one tab, the one in hand --
+
+test('a receptionist sees only the round the clock is in', () => {
+  // The one who comes in at three has no use for the morning check: another
+  // shift walked it, it is very likely already submitted, and a tab holding
+  // somebody else's finished round invites "corrections" to work they did not do.
+  assert.deepEqual(visibleSlots('receptionist', { hour: 9 }).map((s) => s.key), ['morning']);
+  assert.deepEqual(visibleSlots('receptionist', { hour: 15 }).map((s) => s.key), ['evening']);
+  assert.deepEqual(visibleSlots('receptionist', { hour: 23 }).map((s) => s.key), ['evening']);
+});
+
+test('a housekeeper sees theirs, whatever the hour', () => {
+  for (const hour of [7, 13, 19]) {
+    assert.deepEqual(visibleSlots('housekeeper', { hour }).map((s) => s.key),
+      ['housekeeping'], `at ${hour}`);
+  }
+});
+
+test('a past day shows everything the role allows, so it can be caught up on', () => {
+  // Yesterday afternoon's round is filled in this morning or not at all.
+  assert.deepEqual(
+    visibleSlots('receptionist', { hour: 9, today: false }).map((s) => s.key),
+    ['morning', 'evening'],
+  );
+  // Still not the housekeeping round, though: that never becomes theirs.
+  assert.ok(!visibleSlots('receptionist', { hour: 9, today: false }).some((s) => s.key === 'housekeeping'));
+});
+
+test('a manager sees all three, today and any other day', () => {
+  assert.equal(visibleSlots('receptionist', { hour: 9, canManage: true }).length, 3);
+  assert.equal(visibleSlots('housekeeping_manager', { hour: 9, canManage: true }).length, 3);
 });

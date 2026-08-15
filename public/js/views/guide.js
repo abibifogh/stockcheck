@@ -857,13 +857,13 @@ const SECTIONS = [
         + 'runs from 6am to 2pm and the afternoon check from 2pm to midnight, both at reception. '
         + 'The housekeeping round in between is the housekeepers’ own — nobody else can fill it in, '
         + 'at any hour, because a round reception recorded says nothing about whether anybody '
-        + 'walked the rooms.'),
+        + 'walked the rooms. You only ever see the one you are on.'),
       steps(
-        h('span', h('strong', 'Check you are on the right one.'), ' The three checks are along the '
-          + 'top — Morning, Housekeeping, Afternoon. Yours is already selected: housekeepers open '
-          + 'on their own round whatever the hour, and reception on whichever of their two the '
-          + 'clock is in. A round you cannot fill in is faded, and says why. You can still open it '
-          + 'to read what the other shift found.'),
+        h('span', h('strong', 'There is only one round to be on.'), ' The screen shows the round '
+          + 'you are walking and nothing else: housekeepers get theirs whatever the hour, reception '
+          + 'get the morning check before two and the afternoon one after it. The other shifts’ '
+          + 'rounds are not there to be opened, tidied or corrected — a manager sees all three, and '
+          + 'that is who to tell if something in one of them is wrong.'),
         h('span', h('strong', 'Open the room you are standing in.'), ' Rooms are listed down the '
           + 'screen. The first one with beds still to answer for is already open; tap any other '
           + 'room’s name to open it.'),
@@ -899,15 +899,15 @@ const SECTIONS = [
             + 'say yes — that is how the system knows it was dealt with. Each check is a fresh look, '
             + 'and the reports compare them.')],
         ['I am doing yesterday afternoon\u2019s check this morning.',
-          h('p', 'Use the earlier checks at the foot of the screen to pick the right day and the '
-            + 'right one of the three. The hours only apply to today, so a round caught up on later '
-            + 'is never refused — better recorded late than not at all. It is filed against the '
-            + 'round it belongs to, not the one you are standing in.')],
-        ['It says I cannot fill this round in.',
-          h('p', 'Either it is the housekeeping round and you are not housekeeping, or it is '
-            + 'reception\u2019s round outside its hours — the morning check closes at 2pm and the '
-            + 'afternoon one opens then. The message says which. A housekeeping manager can record '
-            + 'any round at any time, so ask them if something genuinely has to go in late.')],
+          h('p', 'Use the earlier checks at the foot of the screen to pick the right day. A past '
+            + 'day shows both of reception\u2019s rounds, because the hours only apply to today — a '
+            + 'round caught up on later is never refused, and better recorded late than not at all. '
+            + 'It is filed against the round it belongs to, not the one you are standing in.')],
+        ['Where has the morning check gone?',
+          h('p', 'It belongs to the shift that walked it. After two o\u2019clock the screen shows '
+            + 'the afternoon check instead, and before two it shows the morning one. If something '
+            + 'in the other round is wrong, tell a housekeeping manager — they can see and record '
+            + 'all three at any hour.')],
         ['The signal dropped while I was in the basement.',
           h('p', 'Keep going. The screen says “not saved” and keeps trying on its own; as soon as '
             + 'there is signal again everything you tapped goes through.')],

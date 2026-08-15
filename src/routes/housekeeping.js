@@ -2,9 +2,9 @@ import {
   badRequest, csvResponse, json, notFound, num, readJson, rethrowConstraint, str,
 } from '../lib/http.js';
 import {
-  SLOTS, dayOverview, dayReport, defaultSlotFor, expectedFor, exportRows, isSlot,
+  dayOverview, dayReport, defaultSlotFor, expectedFor, exportRows, isSlot,
   loadDataset, overview as overviewReport, periodReport, roomDetail,
-  rosterNightsFor, slotClosedReason, slotOf,
+  rosterNightsFor, slotClosedReason, slotOf, slotsForRole, visibleSlots,
 } from '../lib/housekeeping.js';
 import { notifyRoundSubmitted } from '../lib/email.js';
 import { createNotice, roundNotice } from '../lib/notices.js';
@@ -112,7 +112,30 @@ export async function bootstrap(ctx) {
   const ds = await loadDataset(ctx.db);
   const today = todayIn(ds.timezone);
   const day = readDay(ctx.url.searchParams.get('day'), today);
-  const slot = readSlot(ctx.url.searchParams.get('slot'), ds.timezone, ctx);
+
+  // The round this person is on, and only that one. A receptionist has no
+  // business with the housekeeping round at any hour, and the one who comes in
+  // at three has none with the morning check either — it was another shift, and
+  // a tab holding somebody else's finished round is an invitation to "correct"
+  // work they did not do. Absent rather than greyed: there is nothing to
+  // explain about a round that was never on offer.
+  const canManage = canManageRounds(ctx);
+  const mine = visibleSlots(ctx.session.user.role, {
+    hour: hourIn(ds.timezone),
+    canManage,
+    today: day === today,
+  });
+  const visible = new Set(mine.map((s) => s.key));
+  const mayRecord = new Set(
+    slotsForRole(ctx.session.user.role, { canManage }).map((s) => s.key),
+  );
+
+  const asked = readSlot(ctx.url.searchParams.get('slot'), ds.timezone, ctx);
+  // Asking for somebody else's round by hand lands on your own rather than on
+  // an error: there is nothing to explain, because it was never on offer.
+  const slot = visible.has(asked)
+    ? asked
+    : defaultSlotFor(hourIn(ds.timezone), ctx.session.user.role);
 
   const report = dayReport(ds, day, slot);
   const overview = dayOverview(ds, day);
@@ -122,10 +145,10 @@ export async function bootstrap(ctx) {
     day,
     today,
     slot,
-    slots: SLOTS,
-    // The other two rounds, so the screen can show what has and has not been
-    // done today without a second request.
-    rounds: overview.rounds.map((r) => ({
+    slots: mine,
+    // The other rounds, so the screen can show what has and has not been done
+    // today without a second request.
+    rounds: overview.rounds.filter((r) => visible.has(r.slot)).map((r) => ({
       slot: r.slot,
       label: r.label,
       short: r.short,
@@ -145,7 +168,7 @@ export async function bootstrap(ctx) {
       closed: slotClosedReason(r.slot, {
         hour: hourIn(ds.timezone),
         role: ctx.session.user.role,
-        canManage: canManageRounds(ctx),
+        canManage,
         today: day === today,
       }),
     })),
@@ -178,13 +201,19 @@ export async function bootstrap(ctx) {
     })),
     // Recent rounds give the person doing the round a way back into yesterday
     // if they realise they answered something wrongly.
-    recent: [...ds.rounds].slice(-9).reverse().map((r) => ({
-      day: r.day,
-      slot: r.slot || 'morning',
-      slotLabel: slotOf(r.slot || 'morning').short,
-      submittedAt: r.submitted_at,
-      submittedBy: r.submitted_by,
-    })),
+    // Filtered by role rather than by the clock: yesterday afternoon's round is
+    // caught up on this morning, and it has to be reachable to be caught up on.
+    recent: [...ds.rounds]
+      .filter((r) => mayRecord.has(r.slot || 'morning'))
+      .slice(-9)
+      .reverse()
+      .map((r) => ({
+        day: r.day,
+        slot: r.slot || 'morning',
+        slotLabel: slotOf(r.slot || 'morning').short,
+        submittedAt: r.submitted_at,
+        submittedBy: r.submitted_by,
+      })),
   });
 }
 

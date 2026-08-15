@@ -163,6 +163,47 @@ export function defaultSlotFor(hour, role) {
   return slotForTime(hour);
 }
 
+/**
+ * The rounds a person is shown at all.
+ *
+ * Not the same question as whether a round is open. Hours close a round for
+ * everybody in turn, and it stays on screen — reception need to see that the
+ * morning check was done, and to read it. But a round that is somebody else's
+ * shift is never theirs at any hour, and a permanently greyed tab is just
+ * clutter with a rebuke attached.
+ *
+ * A manager sees all three: they are looking after the property rather than
+ * walking a round.
+ */
+export function slotsForRole(role, { canManage = false } = {}) {
+  if (canManage) return SLOTS;
+  return SLOTS.filter((s) => slotAllowsRole(s.key, role));
+}
+
+/**
+ * The rounds on screen for today: one.
+ *
+ * Somebody walking a round needs the round they are on and nothing else. The
+ * receptionist who comes in at three has no use for the morning check — it was
+ * somebody else's shift, it is very likely already submitted, and a tab showing
+ * a finished round with another person's name on it is an invitation to
+ * "correct" work they did not do. So today shows the round the clock is in, and
+ * for a housekeeper, theirs.
+ *
+ * Past days are different: everything their role allows, because catching up on
+ * yesterday afternoon at nine this morning is exactly what the earlier rounds
+ * at the foot of the screen are for.
+ *
+ * A manager sees all three either way. They are reading the property rather
+ * than walking it.
+ */
+export function visibleSlots(role, { hour, canManage = false, today = true } = {}) {
+  const allowed = slotsForRole(role, { canManage });
+  if (canManage || !today) return allowed;
+  const mine = defaultSlotFor(hour, role);
+  return allowed.filter((s) => s.key === mine);
+}
+
 /** Why a round cannot be recorded, in words, or null when it can. */
 export function slotClosedReason(slot, { hour, role, canManage = false, today = true }) {
   const s = slotOf(slot);
