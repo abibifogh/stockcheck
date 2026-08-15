@@ -3,9 +3,9 @@
 -- The bell started with one kind of event — a submitted bed check — which
 -- everybody signed in had a reason to see. It now also carries stock counts
 -- waiting for approval, scheduled counts falling due, and what the bakery
--- reported, and those do not belong to everybody: a craft shop assistant has
--- no use for "8 counted parts waiting", and a technician has none for the
--- kitchen's morning sheet.
+-- reported, and those do not belong to everybody: a housekeeper has no use for
+-- "8 counted parts waiting", and a technician has none for the kitchen's
+-- morning sheet.
 --
 -- So a notice can name the permission it is for. NULL means everybody, which
 -- is what every existing row is and what the bed check stays.

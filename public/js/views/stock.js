@@ -185,7 +185,7 @@ function allCard(rows, asOf, category, groupBy, groupValue) {
  * Whoever counts is never whoever decides. Recounting a store is exactly the
  * moment a shortfall could be quietly written off, so the two jobs are kept
  * apart: anybody with the stock screen can count and see the queue, and only an
- * administrator can accept one. The same rule as the parts store and the shop.
+ * administrator can accept one. The same rule as the parts store.
  */
 function countApprovalCard(pending, reload) {
   const counts = pending?.counts ?? [];

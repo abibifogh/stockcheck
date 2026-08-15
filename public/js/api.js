@@ -188,45 +188,6 @@ export const api = {
   createBakeryLink: (label) => request('/api/bakery/links', { method: 'POST', body: { label } }),
   revokeBakeryLink: (id) => request(`/api/bakery/links/${id}`, { method: 'DELETE' }),
 
-  // ----------------------------------------------------------- craft shop --
-  shopBootstrap: () => request('/api/shop/bootstrap'),
-  shopCreateSale: (body) => request('/api/shop/sales', { method: 'POST', body }),
-  shopSales: ({ day, limit, mine } = {}) => request(`/api/shop/sales?${new URLSearchParams({
-    ...(day ? { day } : {}), ...(limit ? { limit: String(limit) } : {}), ...(mine ? { mine: '1' } : {}),
-  })}`),
-  shopSale: (id) => request(`/api/shop/sales/${id}`),
-  shopVoidSale: (id, reason) => request(`/api/shop/sales/${id}/void`, { method: 'POST', body: { reason } }),
-  shopTill: (day) => request(`/api/shop/till${day ? `?day=${day}` : ''}`),
-
-  shopPurchases: (from, to) => request(`/api/shop/purchases?${new URLSearchParams({
-    ...(from ? { from } : {}), ...(to ? { to } : {}),
-  })}`),
-  shopLastCosts: () => request('/api/shop/purchases/last-costs'),
-  shopCreateDelivery: (body) => request('/api/shop/deliveries', { method: 'POST', body }),
-  shopDeletePurchase: (id) => request(`/api/shop/purchases/${id}`, { method: 'DELETE' }),
-
-  shopStock: (asOf) => request(`/api/shop/stock${asOf ? `?asOf=${asOf}` : ''}`),
-  shopSaveCounts: (body) => request('/api/shop/counts', { method: 'POST', body }),
-  shopPendingCounts: () => request('/api/shop/counts/pending'),
-  shopReviewCounts: (body) => request('/api/shop/counts/review', { method: 'POST', body }),
-
-  shopOverview: () => request('/api/shop/overview'),
-  shopReport: (from, to) => request(`/api/shop/report?${new URLSearchParams({
-    ...(from ? { from } : {}), ...(to ? { to } : {}),
-  })}`),
-  shopCompare: (a, b) => request(`/api/shop/compare?${new URLSearchParams({
-    aFrom: a.from, aTo: a.to, bFrom: b.from, bTo: b.to,
-  })}`),
-  shopExportUrl: (from, to) => `/api/shop/export?${new URLSearchParams({
-    ...(from ? { from } : {}), ...(to ? { to } : {}),
-  })}`,
-
-  shopCreateCategory: (body) => request('/api/shop/categories', { method: 'POST', body }),
-  shopCreateItem: (body) => request('/api/shop/items', { method: 'POST', body }),
-  shopUpdateItem: (id, body) => request(`/api/shop/items/${id}`, { method: 'PUT', body }),
-  shopRemoveItems: (ids) => request('/api/shop/items/remove', { method: 'POST', body: { ids } }),
-  shopUpdateSettings: (body) => request('/api/shop/settings', { method: 'PUT', body }),
-
   // ------------------------------------------------------ notifications --
   inbox: (limit) => request(`/api/inbox${limit ? `?limit=${limit}` : ''}`),
   markInboxRead: (ids) => request('/api/inbox/read', { method: 'POST', body: { ids: ids ?? null } }),

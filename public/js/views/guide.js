@@ -167,10 +167,6 @@ function onThisSite(id) {
 function greeting() {
   if (can('users')) return 'Everything, including setting the system up and looking after it';
   if (can('reports')) return 'Recording the morning, and reading what it tells you';
-  // Somebody who only works the till should not be greeted with a page about
-  // breakfast — the whole point of the guide adapting is that it says what
-  // your job is.
-  if (can('shop_sell') && !can('entry')) return 'Working the craft shop till';
   if (can('mx_issue') && !can('entry')) return 'Issuing parts, and what the store holds';
   if (can('bakery') && !can('entry')) return 'Reporting what came out of the oven';
   // Somebody who only walks the dorms should not be greeted with a page about
@@ -748,8 +744,7 @@ const SECTIONS = [
       warn('Whoever counts is never whoever decides.',
         'Recounting a store is exactly the moment a shortfall could be quietly written off, so the '
         + 'two jobs are kept apart. Anybody with the stock screen can record a count and see the '
-        + 'queue; only an administrator can accept one. The parts store and the craft shop work the '
-        + 'same way.'),
+        + 'queue; only an administrator can accept one. The parts store works the same way.'),
       note('An accepted count wins from its date onwards.',
         'Usage and deliveries after that date carry on from the counted figure. A delivery keyed in '
         + 'late, dated before the count, does not unsettle it — you counted what was actually there, '
@@ -1053,165 +1048,6 @@ const SECTIONS = [
   },
 
   {
-    id: 'shop-till',
-    title: 'Working the craft shop till',
-    permission: 'shop_sell',
-    lead: 'A customer is standing there. Everything on this screen is arranged around that.',
-    render: () => h('div',
-      steps(
-        h('span', h('strong', 'Tap what they are buying.'), ' It goes into the basket on the right — '
-          + 'at the bottom of the screen on a phone. Tap the same thing twice for two of them, or use '
-          + 'the − and + buttons.'),
-        h('span', h('strong', 'Choose cash or card.'), ' Those are the only two ways to pay.'),
-        h('span', h('strong', 'For cash, type what they hand over.'), ' The change appears '
-          + 'underneath in large green figures. The buttons beside the box are the notes people '
-          + 'usually hand over, so most sales need one tap rather than typing.'),
-        h('span', h('strong', 'Press Complete sale.'), ' A receipt appears with the change on it. '
-          + 'Print it if you want one; press Next customer and the till is clear.'),
-      ),
-      note('You do not have to type a cash amount.',
-        'Plenty of customers hand over the exact money. Leave the box empty and the sale still '
-        + 'goes through — the change line is there for when you need it, not as a hurdle.'),
-      note('A product with no price cannot be sold.',
-        'It appears greyed out saying “no price yet” rather than letting you tap it and fail with '
-        + 'a customer waiting. A manager sets the price under Craft shop → Setup.'),
-      note('The strip along the top is your drawer.',
-        'Cash today, card today, and the two added together. At the end of the day the cash figure '
-        + 'is what should be in the drawer — if it is not, the difference happened at this counter, '
-        + 'today, which is a far smaller thing to look into than a month gone missing.'),
-      warn('Nothing on this screen shows what anything cost the hotel.',
-        'You see what to charge, which is all the till needs. Cost prices and margins live behind '
-        + 'the reports, and a till screen gets read over shoulders.'),
-    ),
-  },
-
-  {
-    id: 'shop-sales',
-    title: 'The day’s sales, and putting one right',
-    permission: 'shop_sell',
-    lead: 'Every sale rung up, and what should be in the drawer against it.',
-    render: () => h('div',
-      h('p', 'The Sales screen lists every sale for a day: the time, what was in it, how it was '
-        + 'paid, the change given and who rang it up. Pick a different date at the top right to '
-        + 'look back.'),
-      points(
-        h('span', h('strong', 'Cash and card are separated'), ' because only one of the two can be '
-          + 'short. If the drawer does not match the cash figure, the difference happened here, on '
-          + 'this day.'),
-        h('span', h('strong', 'Receipt'), ' reprints any sale, in case somebody comes back with a '
-          + 'question about one.'),
-      ),
-      can('shop_reports')
-        ? h('div',
-          h('h3', { style: { marginTop: '1.1rem' } }, 'Voiding a sale'),
-          h('p', 'A sale rung up twice, or a customer who changed their mind: press Void, say why, '
-            + 'and it stops counting. The stock goes back on the shelf.'),
-          warn('Voiding is not deleting, and it never will be.',
-            'The sale stays on the list marked as voided, with your name and your reason against '
-            + 'it. A till a sale can quietly vanish from is a till that gets robbed — and the whole '
-            + 'value of stock control that starts at the counter is that the counter cannot be '
-            + 'edited afterwards.'),
-        )
-        : note('Putting a sale right needs a manager.',
-          'If you ring something up wrongly, tell whoever runs the shop. They can void it, which '
-          + 'takes it out of the takings and puts the stock back — and leaves a record of why.'),
-    ),
-  },
-
-  {
-    id: 'shop-money',
-    title: 'What the craft shop is making',
-    permission: 'shop_reports',
-    lead: 'Takings are half the story. The other half is what the stock cost you.',
-    render: () => h('div',
-      h('p', 'Every figure in the shop reports comes in a pair: what came in, and what the things '
-        + 'sold had cost. A takings number on its own is the one that lets a shop sell hard all '
-        + 'season and still lose money.'),
-      readings(
-        ['Takings', 'Everything customers paid, voided sales excluded.',
-          'Compare it with the period before — the report does that for you.'],
-        ['Margin', 'Takings less what the stock cost, in cash and as a percentage.',
-          'The percentage is the one to watch. A strong month at 15% is a lot of work for very '
-          + 'little; below 20% the report says so.'],
-        ['Average sale', 'Takings divided by the number of sales.',
-          'Rising takings with a flat average means more customers. Rising average means they are '
-          + 'buying the dearer pieces, which is usually the better news.'],
-        ['Cash and card', 'The same takings, split by how they were paid.',
-          'Reconcile the cash against the drawer daily. Card should match the machine.'],
-        ['Sitting still', 'Stock that has not sold at all in three months, valued at cost.',
-          'This is the usual problem in a craft shop, not running out. If it is more than about '
-          + 'two-fifths of the shelf, the report raises it.'],
-      ),
-      note('A price change never rewrites the past.',
-        'Every sale keeps the price it was actually rung up at. Putting the stole up from 400 to '
-        + '550 today leaves last month’s takings exactly as they were.'),
-      note('What something cost is worked out the same way as in the kitchen.',
-        'A weighted average across your deliveries. A piece sold on the 1st cost what it cost on '
-        + 'the 1st, whatever you paid for the next batch on the 5th.'),
-    ),
-  },
-
-  {
-    id: 'shop-setup',
-    title: 'Setting up the craft shop',
-    permission: 'shop_setup',
-    lead: 'Two numbers on every product: what it cost you, and what you charge.',
-    render: () => h('div',
-      points(
-        h('span', h('strong', 'Cost and price sit side by side,'), ' with the margin worked out '
-          + 'between them as you type. It turns red if the price is below the cost, which is the '
-          + 'mistake worth catching before anything sells.'),
-        h('span', h('strong', 'Restock level'), ' is where you want to be told to order more. Leave '
-          + 'it at zero for a one-off piece you will never see again.'),
-        h('span', h('strong', 'On the shelf now'), ' is what is there the day you start. Get it '
-          + 'roughly right and the stock figures are useful from the first week.'),
-        h('span', h('strong', 'Show on the till without searching'), ' puts it on the till’s front '
-          + 'page. Keep that to what actually sells regularly, or the screen stops being fast.'),
-        h('span', h('strong', 'Details'), ' are whatever tells two similar pieces apart — colour, '
-          + 'size, artist, material. They show under the name on the till and searching matches '
-          + 'them, so somebody can type “indigo” instead of scrolling.'),
-      ),
-      warn('A product with no price cannot be sold at all.',
-        'The till greys it out and the server refuses it. That is deliberate: a price of zero is '
-        + 'almost always a piece somebody never got round to pricing, and letting it through means '
-        + 'giving stock away at the counter.'),
-      note('Removing a product keeps its history.',
-        'Anything that has ever been sold is retired rather than deleted, so past months still add '
-        + 'up to what they actually took. Tick several and remove them together; it tells you how '
-        + 'many of each: “4 removed, 1 retired”.'),
-    ),
-  },
-
-  {
-    id: 'shop-people',
-    title: 'Staff for the craft shop only',
-    permission: 'users',
-    lead: 'Somebody hired to stand behind the till gets the till, and nothing else.',
-    render: () => h('div',
-      h('p', 'The craft shop has its own access keys, separate from the kitchen and the parts '
-        + 'store. Add the person under ', h('strong', 'Users & data'), ' and give them a role:'),
-      readings(
-        ['Shop assistant', 'The till and the day’s sales. Nothing else in the whole system.',
-          'This is the one for somebody who works the counter. They see selling prices, never what '
-          + 'anything cost you, and they cannot void a sale.'],
-        ['Shop manager', 'The till, the takings, the stock, the buying and the product list.',
-          'For whoever actually runs the shop. They can void a sale and set prices.'],
-      ),
-      note('Access is checked on the server, not just hidden from the menu.',
-        'An assistant who typed the address of the takings screen would still be refused. The menu '
-        + 'hiding it is a courtesy; the refusal is the rule.'),
-      note('You can mix and match.',
-        'The roles are a starting point. Tick individual sections on somebody’s account and they '
-        + 'get exactly those — a night porter who covers the shop but also records breakfast, for '
-        + 'instance.'),
-      warn('Counting the shop is still an administrator’s decision.',
-        'Anybody with the shop stock screen can count the shelf, but only somebody with Users & '
-        + 'data can accept the figures. Whoever counts is never whoever decides, in all three '
-        + 'stores, for the same reason.'),
-    ),
-  },
-
-  {
     id: 'bell',
     title: 'The bell, and what rings it',
     lead: 'Everything the system wants to tell you, in one place at the top of every screen.',
@@ -1223,8 +1059,8 @@ const SECTIONS = [
       points(
         h('span', h('strong', 'A breakfast sheet was submitted —'), ' who recorded it, how many '
           + 'guests, and how many items. Goes to everybody who can read reports.'),
-        h('span', h('strong', 'A stock count is waiting for approval —'), ' from the kitchen, the '
-          + 'parts store or the shop. Goes to administrators, because they are the only people who '
+        h('span', h('strong', 'A stock count is waiting for approval —'), ' from the kitchen or the '
+          + 'parts store. Goes to administrators, because they are the only people who '
           + 'can accept one.'),
         h('span', h('strong', 'A scheduled stock count has come round —'), ' goes to whoever was '
           + 'asked to do it, and to whoever runs the parts store.'),

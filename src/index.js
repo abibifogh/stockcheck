@@ -17,7 +17,6 @@ import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
 import * as mx from './routes/maintenance.js';
 import * as bakery from './routes/bakery.js';
-import * as shop from './routes/shop.js';
 import * as stocktakes from './routes/stocktakes.js';
 import * as hk from './routes/housekeeping.js';
 import { openDueTasks } from './lib/stocktakes.js';
@@ -187,39 +186,6 @@ const ROUTES = [
   ['DELETE', '/api/mx/stocktakes/:id', 'mx_setup', stocktakes.remove],
   ['POST', '/api/mx/stocktakes/:id/run', 'mx_setup', stocktakes.runNow],
   ['POST', '/api/mx/stocktake-tasks/:id/cancel', 'mx_setup', stocktakes.cancelTask],
-
-  // ------------------------------------------------------------- craft shop --
-  // The third store, and the only one that takes money. Its own permissions
-  // again, so somebody hired for the till gets the till and nothing else.
-  ['GET', '/api/shop/bootstrap', 'shop_sell', shop.bootstrap],
-
-  ['POST', '/api/shop/sales', 'shop_sell', shop.createSale],
-  ['GET', '/api/shop/sales', 'shop_sell', shop.listSales],
-  ['GET', '/api/shop/sales/:id', 'shop_sell', shop.getSale],
-  // Voiding is not deleting, and it is not the assistant's call.
-  ['POST', '/api/shop/sales/:id/void', 'shop_reports', shop.voidSale],
-  ['GET', '/api/shop/till', 'shop_sell', shop.tillReport],
-
-  ['GET', '/api/shop/purchases', 'shop_purchases', shop.listPurchases],
-  ['GET', '/api/shop/purchases/last-costs', 'shop_purchases', shop.lastCosts],
-  ['POST', '/api/shop/deliveries', 'shop_purchases', shop.createDelivery],
-  ['DELETE', '/api/shop/purchases/:id', 'shop_purchases', shop.deletePurchase],
-
-  ['GET', '/api/shop/stock', 'shop_stock', shop.stock],
-  ['POST', '/api/shop/counts', 'shop_stock', shop.saveCounts],
-  ['GET', '/api/shop/counts/pending', 'shop_stock', shop.pendingCounts],
-  ['POST', '/api/shop/counts/review', 'users', shop.reviewCounts],
-
-  ['GET', '/api/shop/overview', 'shop_reports', shop.overview],
-  ['GET', '/api/shop/report', 'shop_reports', shop.report],
-  ['GET', '/api/shop/compare', 'shop_reports', shop.compare],
-  ['GET', '/api/shop/export', 'shop_reports', shop.exportCsv],
-
-  ['POST', '/api/shop/categories', 'shop_setup', shop.createCategory],
-  ['POST', '/api/shop/items', 'shop_setup', shop.createItem],
-  ['PUT', '/api/shop/items/:id', 'shop_setup', shop.updateItem],
-  ['POST', '/api/shop/items/remove', 'shop_setup', shop.removeItems],
-  ['PUT', '/api/shop/settings', 'shop_setup', shop.updateSettings],
 
   // ----------------------------------------------------------- housekeeping --
   // The dorm bed check. `hk_check` reaches the round and nothing else, so a

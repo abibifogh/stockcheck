@@ -13,7 +13,7 @@ import { createNotice } from './notices.js';
  *
  * What is added here on top of the bell is the audience. A bed check concerns
  * everybody on shift; a count waiting for approval concerns administrators,
- * and a craft shop assistant has no use for it.
+ * and a housekeeper has no use for it.
  *
  * Nothing here throws. A notification is a courtesy on top of work that has
  * already succeeded; a failure to mention it must never undo the thing it was

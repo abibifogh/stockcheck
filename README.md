@@ -145,7 +145,9 @@ unresolved rather than quietly clearing itself.
 | **Bulk entry** | Download a spreadsheet template, fill in a backlog, upload it. Always previews before it writes. |
 | **Daily email** | A summary of each submitted day, with the analysis, to whichever addresses you choose. |
 | **Erase data** | Clear a trial run before going live, with a typed confirmation. Keeps people, settings and the ingredient list. |
-| **Approving counts** | A physical count in any of the three stores is a claim about the shelf; accepting it is what corrects the book. Whoever counts is never whoever decides. |
+| **Approving counts** | A physical count in either store is a claim about the shelf; accepting it is what corrects the book. Whoever counts is never whoever decides. |
+| **Email alerts** | A summary of each submitted day sheet, and of each submitted bed check, to whichever addresses you choose — two separate lists, one sender. |
+| **Erase a period** | Delete everything recorded between two dates, with a typed confirmation. The panel counts what falls inside the dates first — so many checks, so many beds answered for — and that count comes from the same columns the delete uses, so it cannot promise one thing and do another. Only activity goes: people, settings, the ingredient list and the dorm layout are never touched by a period. |
 
 ### For the bakery — a link, and nothing else
 
@@ -163,25 +165,6 @@ negative every week.
 
 There is also a `baker` role for somebody who would rather sign in, and
 managers hold the same permission for covering a shift.
-
-### For the craft shop — a till
-
-The third store, and the only one that takes money. Cash or card; nothing else
-is offered, because nothing else is accepted.
-
-| Feature | What it does |
-|---|---|
-| **Till** | Tap the goods, choose cash or card, type what the customer handed over and the change appears. A receipt follows the sale, printable from the browser. Prices come from the server, never from the browser. |
-| **Voiding** | A wrong sale is voided, never deleted — it stays on the list with who voided it and why, stops counting towards takings, and the stock goes back on the shelf. |
-| **Takings** | Revenue and margin together on every screen. Cash and card are separated, because only one of the two can be short at the end of a day. |
-| **Stock** | The same weighted-average ledger as the other two stores, plus what the shelf would fetch at today's prices. Dead stock gets as much room as shortages: in a craft shop that is where the money goes. |
-| **Staff** | `shop_assistant` opens the till and nothing else in the whole system — and never sees what anything cost the hotel. `shop_manager` runs the shop. |
-
-A product with no selling price cannot be sold: the till greys it out and the
-server refuses it. A price of zero is almost always something nobody got round
-to pricing, and letting it through means giving stock away at the counter.
-| **Email alerts** | A summary of each submitted day sheet, and of each submitted bed check, to whichever addresses you choose — two separate lists, one sender. |
-| **Erase a period** | Delete everything recorded between two dates, with a typed confirmation. The panel counts what falls inside the dates first — so many checks, so many beds answered for — and that count comes from the same columns the delete uses, so it cannot promise one thing and do another. Only activity goes: people, settings, the ingredient list and the dorm layout are never touched by a period. |
 
 ---
 
@@ -532,10 +515,9 @@ MANAGER_PIN=9999
 src/
   index.js            Worker entry: routing, auth endpoints
   lib/
-    ledger.js         Weighted-average costing and book stock, shared by all three stores
+    ledger.js         Weighted-average costing and book stock, shared by both stores
     analytics.js      Breakfast: daily / weekly / monthly / stock analysis
     maintenance.js    Parts store: cost by room and area
-    shop.js           Craft shop: takings, margin and what is not selling
     auth.js           PIN login, signed session cookies
     http.js           JSON responses, input validation
     housekeeping.js   The dorm bed check: findings, coverage, room-by-day
