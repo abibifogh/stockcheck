@@ -33,16 +33,6 @@ import { renderHkOverview, renderHkReport } from './views/hk-reports.js';
 import { renderHkRoom } from './views/hk-room.js';
 import { renderHkSetup } from './views/hk-setup.js';
 import { renderHkRoster } from './views/hk-roster.js';
-import { renderCoMine } from './views/co-mine.js';
-import { renderCoRegister } from './views/co-register.js';
-import { renderCoLetter } from './views/co-letter.js';
-import { renderCoClients } from './views/co-clients.js';
-import { renderCoCase, renderCoCases } from './views/co-cases.js';
-import { renderCoTasks } from './views/co-tasks.js';
-import { renderCoMeetings } from './views/co-meetings.js';
-import { renderCoDashboard, renderCoReports } from './views/co-dashboard.js';
-import { renderCoSetup } from './views/co-setup.js';
-import { renderSigningPage } from './views/co-sign.js';
 import { BRAND } from './brand.js';
 import { noticeBell } from './views/notices.js';
 
@@ -68,7 +58,7 @@ const ROUTES = [
   { path: 'stock', label: 'Stock', permission: 'stock', render: renderStock, group: 'Breakfast', site: 'full' },
   { path: 'purchases', label: 'Purchases', permission: 'purchases', render: renderPurchases, group: 'Breakfast', site: 'full' },
   { path: 'setup', label: 'Setup', permission: 'setup', render: renderSetup, group: 'Breakfast', site: 'full' },
-  { path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin, shared: true },
+  { path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin },
   // ------------------------------------------------------------ maintenance --
   // A second store with its own screens. Grouped in the menu so somebody who
   // works in both does not have to hunt for which "Stock" is which.
@@ -106,69 +96,27 @@ const ROUTES = [
   { path: 'shop-purchases', label: 'Bought', permission: 'shop_purchases', render: renderShopPurchases, group: 'Craft shop' },
   { path: 'shop-setup', label: 'Setup', permission: 'shop_setup', render: renderShopSetup, group: 'Craft shop' },
 
-  // -------------------------------------------------------- correspondence --
-  // My desk comes first because for most of the firm it is the only screen they
-  // ever open, and it is opened first thing every morning.
-  { path: 'co-mine', label: 'My desk', permission: null, render: renderCoMine, group: 'Correspondence', site: 'correspondence' },
-  { path: 'co-register', label: 'The register', permission: ['co_register', 'co_route', 'co_reports'], render: renderCoRegister, group: 'Correspondence', site: 'correspondence' },
-  { path: 'co-dashboard', label: 'Overview', permission: 'co_reports', render: renderCoDashboard, group: 'Correspondence', site: 'correspondence' },
-  { path: 'co-clients', label: 'Clients', permission: ['co_cases', 'co_register'], render: renderCoClients, group: 'Correspondence', site: 'correspondence' },
-  { path: 'co-cases', label: 'Engagements', permission: ['co_cases', 'co_reports'], render: renderCoCases, group: 'Correspondence', site: 'correspondence' },
-  { path: 'co-tasks', label: 'Action points', permission: null, render: renderCoTasks, group: 'Correspondence', site: 'correspondence' },
-  { path: 'co-meetings', label: 'Meetings', permission: 'co_meetings', render: renderCoMeetings, group: 'Correspondence', site: 'correspondence' },
-  { path: 'co-reports', label: 'Productivity', permission: 'co_reports', render: renderCoReports, group: 'Correspondence', site: 'correspondence' },
-  { path: 'co-setup', label: 'Practice setup', permission: 'co_setup', render: renderCoSetup, group: 'Correspondence', site: 'correspondence' },
-  // Reached from the register and the engagement list rather than the menu.
-  { path: 'co-letter', label: 'Letter', permission: ['co_register', 'co_route', 'co_reports'], render: renderCoLetter, hidden: true, site: 'correspondence' },
-  { path: 'co-case', label: 'Engagement', permission: ['co_cases', 'co_reports'], render: renderCoCase, hidden: true, site: 'correspondence' },
-
   // Open to everyone: the person most likely to need it is the one with the
   // fewest permissions.
-  { path: 'guide', label: 'Help', permission: null, render: renderGuide, shared: true },
+  { path: 'guide', label: 'Help', permission: null, render: renderGuide },
 ];
 
 const root = document.getElementById('app');
 
-/**
- * `null` is open to anyone signed in; a list means any one of them is enough.
- *
- * The list form matters for screens two different jobs reach by two different
- * routes — the register is opened by the clerk who fills it and by the partner
- * who reads it, and collapsing those into one permission would mean handing the
- * clerk the reports.
- */
 export function can(permission) {
-  if (!permission) return true;
-  const needed = Array.isArray(permission) ? permission : [permission];
-  if (!needed.length) return true;
-  return needed.some((p) => state.permissions.includes(p));
+  return !permission || state.permissions.includes(permission);
 }
 
 /**
  * Reachable at all on this site.
  *
- * A route marked `site: 'full'` belongs to the hotel — the breakfast unit, the
- * parts store, the shop — and a route marked `site: 'correspondence'` belongs
- * to the accounting practice. Neither deployment has the other's screens: not
- * hidden behind a permission, absent. The Worker refuses their API too, so this
- * is the menu agreeing with the server rather than offering a second opinion.
- *
- * A route with no `site` — the bed check, Users & data, Help — is everywhere,
- * except that the practice is a different business entirely and carries only
- * what every deployment needs.
+ * A route marked `site: 'full'` belongs to the breakfast unit or the parts
+ * store, and the housekeeping deployment does not have them — not hidden behind
+ * a permission, absent. The Worker refuses their API on that site too, so this
+ * is the menu agreeing with the server rather than a second opinion.
  */
 function onThisSite(route) {
-  // Marked `shared`: managing people, and Help. Every deployment needs both.
-  if (route.shared) return true;
-  // The practice carries its own screens and nothing else. Without this line an
-  // administrator — whose role defaults to every permission in the codebase —
-  // would be offered the bed check and the craft-shop till on an accounting
-  // firm's address.
-  if (BRAND.app === 'correspondence') return route.site === 'correspondence';
-  if (route.site === 'correspondence') return false;
-  // No site: the bed check, which both hotel deployments have.
-  if (!route.site) return true;
-  return route.site === BRAND.app || (route.site === 'full' && BRAND.app === 'breakfast');
+  return !route.site || route.site === BRAND.app || (route.site === 'full' && BRAND.app !== 'housekeeping');
 }
 
 function allowed(route) {
@@ -199,17 +147,11 @@ function defaultRoute() {
   const preferred = BRAND.app === 'housekeeping'
     ? ['hk-overview', 'hk-check', 'hk-roster', 'hk-setup', 'overview', 'entry',
       'mx-overview', 'mx-issue', 'stock', 'purchases', 'setup', 'admin', 'guide']
-    // On the practice: whatever is waiting on you, before any dashboard. Most
-    // of the firm has nothing to look at on an overview and one thing to do on
-    // My desk, and a partner is one click from the numbers either way.
-    : BRAND.app === 'correspondence'
-      ? ['co-mine', 'co-register', 'co-dashboard', 'co-tasks', 'co-cases',
-        'co-meetings', 'co-clients', 'co-setup', 'admin', 'guide']
-      // The till before the shop's reports: an assistant who can do both is
-      // still standing at a counter.
-      : ['overview', 'entry', 'hk-overview', 'hk-check', 'hk-roster', 'mx-overview',
-        'mx-issue', 'shop-sell', 'shop-overview', 'production',
-        'stock', 'purchases', 'setup', 'admin', 'guide'];
+    // The till before the shop's reports: an assistant who can do both is
+    // still standing at a counter.
+    : ['overview', 'entry', 'hk-overview', 'hk-check', 'hk-roster', 'mx-overview',
+      'mx-issue', 'shop-sell', 'shop-overview', 'production',
+      'stock', 'purchases', 'setup', 'admin', 'guide'];
 
   // The fallback matters as much as the list. Naming a specific route here
   // once sent anybody whose permissions were not on it — a baker, say — to a
@@ -410,25 +352,6 @@ function toggleTheme() {
  * that the bakery has no account. Its token comes from the URL and goes no
  * further than the two endpoints that accept it.
  */
-/**
- * A signing link: a page that exists outside the rest of the app.
- *
- * Answered before the sign-in gate, because the entire point is that the
- * recipient has no account. Its token comes from the URL and goes no further
- * than the four endpoints that accept it.
- */
-function signingToken() {
-  if (location.pathname.replace(/\/+$/, '') === '/sign') {
-    return new URLSearchParams(location.search).get('t') ?? '';
-  }
-  // The hash form works too, so a link still opens on a host that cannot serve
-  // a clean path.
-  if (location.hash.startsWith('#/sign')) {
-    return new URLSearchParams(location.hash.split('?')[1] || '').get('t') ?? '';
-  }
-  return null;
-}
-
 function bakeryToken() {
   if (location.pathname.replace(/\/+$/, '') === '/bake') {
     return new URLSearchParams(location.search).get('t') ?? '';
@@ -443,13 +366,6 @@ function bakeryToken() {
 
 export async function render() {
   root.classList.remove('app-loading');
-
-  const signing = signingToken();
-  if (signing !== null) {
-    mount(root, h('div.card', h('div.skeleton', { style: { height: '140px' } })));
-    mount(root, await renderSigningPage(signing));
-    return;
-  }
 
   const token = bakeryToken();
   if (token !== null) {
@@ -526,10 +442,6 @@ const ROLE_LABELS = {
   receptionist: 'Reception',
   housekeeper: 'Housekeeping',
   housekeeping_manager: 'Housekeeping manager',
-  registry_clerk: 'Registry',
-  practice_staff: 'Staff',
-  practice_manager: 'Manager',
-  partner: 'Partner',
   admin: 'Administrator',
 };
 function roleLabel(role) {
@@ -548,10 +460,9 @@ window.addEventListener('online', syncPending);
   const savedTheme = localStorage.getItem('bf.theme');
   if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
 
-  // A bakery link and a signing link both answer themselves. Asking the server
-  // who is signed in first would be a wasted round trip on a page that
-  // deliberately has nobody.
-  if (bakeryToken() !== null || signingToken() !== null) {
+  // The bakery link answers itself. Asking the server who is signed in first
+  // would be a wasted round trip on a page that deliberately has nobody.
+  if (bakeryToken() !== null) {
     await render();
     return;
   }

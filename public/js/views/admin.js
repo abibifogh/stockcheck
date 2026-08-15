@@ -10,17 +10,12 @@ export async function renderAdmin() {
   // Closed periods, bulk entry and the list of recorded days all belong to the
   // breakfast unit. On a housekeeping-only site they are not merely hidden —
   // the endpoints behind them are not served — so they are not asked for.
-  const full = BRAND.app === 'breakfast';
-  // The practice keeps only the parts of this screen that are about people.
-  // Erasing by date range is not one of them: an accounting file has a
-  // statutory keeping period, and its equivalent is the retention review under
-  // Productivity, which lists what is now past it and lets a person decide.
-  const practice = BRAND.app === 'correspondence';
+  const full = BRAND.app !== 'housekeeping';
 
   const [users, notifications, summary, locks, days] = await Promise.all([
     api.users(),
     api.notifications(),
-    practice ? Promise.resolve(null) : api.dataSummary(),
+    api.dataSummary(),
     full ? api.locks() : Promise.resolve({ locks: [] }),
     full ? api.recentDays(60) : Promise.resolve({ days: [] }),
   ]);
@@ -34,9 +29,7 @@ export async function renderAdmin() {
         h('h1', 'Users & data'),
         h('div.sub', full
           ? 'Who can sign in, what they can see, closed periods and bulk entry'
-          : practice
-            ? 'Who can sign in, what they can see, and who hears about what'
-            : 'Who can sign in, what they can see, and who hears about a round'),
+          : 'Who can sign in, what they can see, and who hears about a round'),
       ),
     ),
     usersCard(users, reload),
@@ -52,7 +45,7 @@ export async function renderAdmin() {
     // does not have. Showing the panel would be offering a switch that does
     // nothing.
     full ? pushCard(notifications, reload) : null,
-    practice ? null : eraseCard(summary, reload),
+    eraseCard(summary, reload),
   );
   return host;
 }
@@ -900,9 +893,7 @@ function notificationsCard(data, reload) {
   return card('Email alerts', {
     note: BRAND.app === 'housekeeping'
       ? 'Sent the moment a bed check is submitted'
-      : BRAND.app === 'correspondence'
-        ? 'Sent alongside the bell, for anybody who does not live in the app'
-        : 'Sent the moment a day sheet or a bed check is submitted',
+      : 'Sent the moment a day sheet or a bed check is submitted',
     wide: true,
   },
     providerWarning,
@@ -911,7 +902,7 @@ function notificationsCard(data, reload) {
       h('label.field', h('span', 'Site address (for the link in the email)'), siteUrl),
     ),
 
-    BRAND.app !== 'breakfast' ? null : h('div', { style: { marginTop: '.9rem' } },
+    BRAND.app === 'housekeeping' ? null : h('div', { style: { marginTop: '.9rem' } },
       h('div.stat-label', { style: { marginBottom: '.4rem' } }, 'The morning breakfast sheet'),
       h('div.field-row', h('label.field', h('span', 'When to send'), enabled)),
       h('div', { style: { marginTop: '.5rem' } },

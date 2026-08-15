@@ -20,12 +20,6 @@ import * as bakery from './routes/bakery.js';
 import * as shop from './routes/shop.js';
 import * as stocktakes from './routes/stocktakes.js';
 import * as hk from './routes/housekeeping.js';
-import * as co from './routes/correspondence.js';
-import * as coWork from './routes/co-work.js';
-import * as coReports from './routes/co-reports.js';
-import * as coSetup from './routes/co-setup.js';
-import * as envelopes from './routes/co-envelopes.js';
-import { runSweep } from './lib/co-workflow.js';
 import { openDueTasks } from './lib/stocktakes.js';
 import { todayIn } from './util/dates.js';
 import { PIN_TAKEN } from './routes/admin.js';
@@ -250,101 +244,6 @@ const ROUTES = [
   ['DELETE', '/api/hk/beds/:id', 'hk_setup', hk.deleteBed],
   ['POST', '/api/hk/roster', ['hk_roster', 'hk_setup'], hk.saveRoster],
   ['PUT', '/api/hk/settings', 'hk_setup', hk.updateSettings],
-
-  // -------------------------------------------------------- correspondence --
-  // The accounting practice's register. Its own permissions again, and the one
-  // set where the gate matters most: `co_oversight` is what separates a
-  // restricted client file from everybody else in the firm.
-  ['GET', '/api/co/bootstrap', null, co.bootstrap],
-
-  ['GET', '/api/co/letters', ['co_register', 'co_route', 'co_reports'], co.listLetters],
-  ['POST', '/api/co/letters', 'co_register', co.createLetter],
-  ['GET', '/api/co/letters/:id', ['co_register', 'co_route', 'co_reports'], co.getLetter],
-  ['PUT', '/api/co/letters/:id', 'co_register', co.updateLetter],
-  ['POST', '/api/co/letters/:id/status', 'co_register', co.setStatus],
-  ['POST', '/api/co/letters/:id/archive', 'co_register', co.archiveLetter],
-  ['POST', '/api/co/letters/:id/links', 'co_register', co.linkLetter],
-  ['GET', '/api/co/export', 'co_reports', co.exportRegister],
-
-  // Routing. Acting on what is in front of you is `co_route`; the two decisions
-  // that carry weight — approving and signing — need `co_approve` as well, and
-  // that is checked inside the handler where the ask is known.
-  ['GET', '/api/co/mine', null, co.myWork],
-  ['POST', '/api/co/letters/:id/routes', 'co_route', co.createRoute],
-  ['POST', '/api/co/routes/:id/act', 'co_route', co.actOnRoute],
-  ['POST', '/api/co/routes/:id/cancel', 'co_route', co.cancelRoute],
-
-  ['POST', '/api/co/letters/:id/sign', 'co_approve', co.signLetter],
-
-  // Envelopes: a document sent out for signature to people with no account.
-  // The four public endpoints below carry no permission at all — the token in
-  // the body is the whole gate, which is the point of them.
-  ['GET', '/api/co/letters/:id/envelopes', ['co_register', 'co_route', 'co_reports'], envelopes.listEnvelopes],
-  ['POST', '/api/co/letters/:id/envelopes', 'co_approve', envelopes.createEnvelope],
-  ['POST', '/api/co/envelopes/:id/void', 'co_approve', envelopes.voidEnvelope],
-  ['GET', '/api/co/envelopes/:id/certificate', ['co_register', 'co_reports'], envelopes.certificate],
-  ['POST', '/api/co/envelope-recipients/:id/reissue', 'co_approve', envelopes.reissueLink],
-
-  ['POST', '/api/co/sign/open', 'public', envelopes.openForSigning],
-  ['POST', '/api/co/sign/file', 'public', envelopes.signingFile],
-  ['POST', '/api/co/sign/submit', 'public', envelopes.submitSignature],
-  ['POST', '/api/co/sign/decline', 'public', envelopes.declineSignature],
-
-  // Your own signature: yours, so open to anybody signed in.
-  ['GET', '/api/co/my-signature', null, envelopes.mySignature],
-  ['PUT', '/api/co/my-signature', null, envelopes.saveMySignature],
-  ['GET', '/api/co/letters/:id/verify', ['co_oversight', 'co_reports'], co.verifyLetter],
-
-  ['POST', '/api/co/attachments', 'co_register', co.uploadAttachment],
-  ['GET', '/api/co/attachments/:id', null, co.downloadAttachment],
-  ['DELETE', '/api/co/attachments/:id', 'co_register', co.removeAttachment],
-
-  ['GET', '/api/co/templates', 'co_register', co.listTemplates],
-  ['GET', '/api/co/templates/:id/render', 'co_register', co.renderTemplate],
-
-  ['GET', '/api/co/parties', ['co_cases', 'co_register'], coWork.listParties],
-  ['POST', '/api/co/parties', 'co_cases', coWork.createParty],
-  ['PUT', '/api/co/parties/:id', 'co_cases', coWork.updateParty],
-
-  ['GET', '/api/co/cases', ['co_cases', 'co_reports'], coWork.listCases],
-  ['POST', '/api/co/cases', 'co_cases', coWork.createCase],
-  ['GET', '/api/co/cases/:id', ['co_cases', 'co_reports'], coWork.getCase],
-  ['PUT', '/api/co/cases/:id', 'co_cases', coWork.updateCase],
-  ['GET', '/api/co/cases-export', 'co_reports', coWork.exportCases],
-
-  ['GET', '/api/co/tasks', null, coWork.listTasks],
-  ['POST', '/api/co/tasks', 'co_tasks', coWork.createTask],
-  ['PUT', '/api/co/tasks/:id', null, coWork.updateTask],
-
-  ['GET', '/api/co/meetings', 'co_meetings', coWork.listMeetings],
-  ['POST', '/api/co/meetings', 'co_meetings', coWork.createMeeting],
-  ['GET', '/api/co/meetings/:id', 'co_meetings', coWork.getMeeting],
-  ['PUT', '/api/co/meetings/:id', 'co_meetings', coWork.updateMeeting],
-  ['POST', '/api/co/meetings/:id/minutes', 'co_meetings', coWork.recordMinutes],
-  ['POST', '/api/co/meetings/:id/attendance', 'co_meetings', coWork.markAttendance],
-
-  ['GET', '/api/co/reports/overview', 'co_reports', coReports.overview],
-  ['GET', '/api/co/reports/productivity', 'co_reports', coReports.productivity],
-  ['GET', '/api/co/reports/departments', 'co_reports', coReports.byDepartment],
-  ['GET', '/api/co/reports/activity', 'co_reports', coReports.activity],
-  ['GET', '/api/co/reports/retention', ['co_oversight', 'co_setup'], coReports.retention],
-  ['GET', '/api/co/reports/trail-export', ['co_oversight', 'co_reports'], coReports.exportTrail],
-
-  ['GET', '/api/co/setup', 'co_setup', coSetup.setup],
-  ['PUT', '/api/co/setup/settings', 'co_setup', coSetup.updateSettings],
-  ['POST', '/api/co/setup/departments', 'co_setup', coSetup.createDepartment],
-  ['PUT', '/api/co/setup/departments/:id', 'co_setup', coSetup.updateDepartment],
-  ['POST', '/api/co/setup/categories', 'co_setup', coSetup.createCategory],
-  ['PUT', '/api/co/setup/categories/:id', 'co_setup', coSetup.updateCategory],
-  ['POST', '/api/co/setup/templates', 'co_setup', coSetup.createTemplate],
-  ['PUT', '/api/co/setup/templates/:id', 'co_setup', coSetup.updateTemplate],
-  ['DELETE', '/api/co/setup/templates/:id', 'co_setup', coSetup.deleteTemplate],
-  ['POST', '/api/co/setup/workflows', 'co_setup', (ctx) => coSetup.saveWorkflow(ctx, null)],
-  ['PUT', '/api/co/setup/workflows/:id', 'co_setup', coSetup.saveWorkflow],
-  ['DELETE', '/api/co/setup/workflows/:id', 'co_setup', coSetup.deleteWorkflow],
-  ['PUT', '/api/co/setup/staff/:id', 'co_setup', coSetup.saveStaff],
-  ['POST', '/api/co/setup/sweep', 'co_setup', coSetup.sweepNow],
-  ['POST', '/api/co/setup/email-test', 'co_setup', coSetup.emailTest],
 ];
 
 function match(pattern, pathname) {
@@ -406,33 +305,16 @@ export default {
   },
 
   /**
-   * The tick, from a Cron Trigger.
+   * The daily tick, from a Cron Trigger.
    *
-   * Each site has its own work to do here and does only its own. On the hotel
-   * deployments that is noticing a scheduled stock count has come round; on the
-   * practice it is reminders, escalations and rolling recurring meetings
-   * forward.
-   *
-   * Everything either one does is idempotent, so a cron that fires twice — or a
-   * person pressing the button in Setup — cannot produce two tasks, two
-   * escalations or two rounds of email for the same thing.
+   * Its only job is to notice that a scheduled stock count has come round and
+   * tell the people asked to do it. Opening a task is idempotent, so a cron
+   * that fires twice — or a person opening the screen first — cannot produce
+   * two tasks or two rounds of email for the same count.
    */
   async scheduled(event, env, executionContext) {
     if (!env.DB) return;
-    const site = siteOf(env);
-
     const run = (async () => {
-      if (site === 'correspondence') {
-        const result = await runSweep(env.DB, env, new Date());
-        if (result.skipped) return;
-        console.log(
-          `Sweep: ${result.reminded} reminded, ${result.escalated} escalated, `
-          + `${result.tasksReminded} action points, ${result.meetingsReminded} meetings, `
-          + `${result.occurrencesCreated} occurrences created`,
-        );
-        return;
-      }
-
       const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'timezone'")
         .first()
         .catch(() => null);

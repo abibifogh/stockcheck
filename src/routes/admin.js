@@ -8,7 +8,6 @@ import {
 import { siteOf } from '../lib/site.js';
 import { listNotices, markSeen } from '../lib/notices.js';
 import { isEmail, notifyDaySubmitted, notifyRoundSubmitted, parseRecipients } from '../lib/email.js';
-import { notify } from '../lib/notify.js';
 import { isDay } from '../util/dates.js';
 
 const PIN_RE = /^\d{4,10}$/;
@@ -367,26 +366,6 @@ export async function updateNotifications(ctx) {
 
 /** Send the most recent email now, so the admin can prove it works. */
 export async function testNotification(ctx) {
-  // The practice has no day sheet and no bed check. What somebody setting it up
-  // wants proved is that the bell rings and, if email is configured, that a
-  // message leaves the building — so send exactly that and nothing dressed up
-  // as a real event.
-  if (siteOf(ctx.env) === 'correspondence') {
-    await notify(ctx.db, {
-      kind: 'co_test',
-      title: 'Test notification',
-      body: `Sent by ${ctx.session.user.name} from Users & data. `
-        + 'If you can read this, the bell works.',
-      link: '#/co-mine',
-      audience: null,
-      actor: ctx.session.user.name,
-    });
-
-    const sent = await ctx.db.prepare('SELECT * FROM email_log ORDER BY at DESC LIMIT 1')
-      .first().catch(() => null);
-    return json({ ok: true, result: sent });
-  }
-
   // On a housekeeping site there is no day sheet to send. The proof somebody
   // wants there is that a bed check reaches an inbox.
   if (siteOf(ctx.env) === 'housekeeping') {

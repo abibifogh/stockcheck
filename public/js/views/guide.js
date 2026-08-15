@@ -1,7 +1,6 @@
 import { can, state } from '../app.js';
 import { BRAND } from '../brand.js';
 import { h, mount } from '../util.js';
-import { CO_SECTIONS, coGreeting } from './co-guide.js';
 
 /**
  * The user guide, written for the people who actually use this: cooks with wet
@@ -12,12 +11,7 @@ import { CO_SECTIONS, coGreeting } from './co-guide.js';
  * nobody reads twice. Everything here is filtered by what you can actually do.
  */
 export async function renderGuide() {
-  // The practice is a different business, so it gets a different manual. Same
-  // shape — sections filtered by what the reader can actually do — and none of
-  // the same content: an audit senior opening Help should not be handed a
-  // guide to a breakfast unit.
-  const all = BRAND.app === 'correspondence' ? CO_SECTIONS : SECTIONS;
-  const sections = all.filter((s) => onThisSite(s.id) && (!s.permission || can(s.permission)));
+  const sections = SECTIONS.filter((s) => onThisSite(s.id) && (!s.permission || can(s.permission)));
 
   // Each contents entry is paired with its section, so the list can follow
   // the reader down the page.
@@ -166,17 +160,11 @@ const HOUSEKEEPING_SECTIONS = new Set([
   'hk-check', 'hk-roster', 'hk-reports', 'hk-setup', 'account', 'people', 'problems',
 ]);
 
-/**
- * `CO_SECTIONS` is already the practice's own list, so nothing there needs
- * filtering; this only trims the hotel guide down for a housekeeping-only site.
- */
 function onThisSite(id) {
-  if (BRAND.app === 'correspondence') return true;
   return BRAND.app !== 'housekeeping' || HOUSEKEEPING_SECTIONS.has(id);
 }
 
 function greeting() {
-  if (BRAND.app === 'correspondence') return coGreeting();
   if (can('users')) return 'Everything, including setting the system up and looking after it';
   if (can('reports')) return 'Recording the morning, and reading what it tells you';
   // Somebody who only works the till should not be greeted with a page about
