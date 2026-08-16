@@ -260,28 +260,27 @@ const SECTIONS = [
     id: 'bakery',
     title: 'Reporting what the bakery baked',
     permission: 'bakery',
-    lead: 'After every production cycle. It takes about fifteen seconds.',
+    lead: 'After the bake. It takes about fifteen seconds.',
     render: () => h('div',
       h('p', 'Bread you bake goes onto the breakfast shelf the moment you report it, and the '
-        + 'kitchen draws against it in the morning. Report it after every cycle and the figures '
-        + 'stay true; report it at the end of the week and they never do.'),
+        + 'kitchen draws against it in the morning. Report it on the day and the figures stay '
+        + 'true; report it at the end of the week and they never do.'),
       steps(
         h('span', h('strong', 'Open the link'), ' — bookmark it, it is the same one every time. '
           + 'There is no PIN and nothing to remember.'),
-        h('span', h('strong', 'Check the cycle.'), ' It guesses from the time of day, so most of '
-          + 'the time it is already right. Tap another if it is not.'),
         h('span', h('strong', 'Type how many came out'), ' beside each thing you baked. Leave '
           + 'anything you did not bake blank.'),
-        h('span', h('strong', 'Press Send this cycle.'), ' A green box appears saying what went '
+        h('span', h('strong', 'Press Send this report.'), ' A green box appears saying what went '
           + 'in. That box is your confirmation — if it is not there, it did not send.'),
       ),
-      note('You can send more than once a day.',
-        'That is the point. Morning, afternoon and night are three separate reports, and each '
-        + 'one adds to the shelf.'),
+      note('There is nothing to fill in but the numbers.',
+        'The date is today unless you change it, and the link already says which bakery it came '
+        + 'from — so the quantities are the only thing anybody types.'),
       note('“Already sent” is there so you never have to guess.',
-        'It lists what has gone in today. If the last cycle is on it, do not send it again — '
-        + 'sending twice puts bread on the shelf that never existed, and the kitchen will '
-        + 'find the shortfall a week later with no way to explain it.'),
+        'It lists what has gone in today. If your bake is on it, do not send it again — a second '
+        + 'report adds to the first rather than replacing it, which puts bread on the shelf that '
+        + 'never existed, and the kitchen will find the shortfall a week later with no way to '
+        + 'explain it.'),
       note('The link shows nothing about the hotel.',
         'No costs, no guest numbers, no other screen. It is a form that adds bread and does '
         + 'nothing else, which is why it is safe to keep on a phone in a bakery.'),
@@ -701,7 +700,7 @@ const SECTIONS = [
         + 'goes to the wrong person, revoke it and issue another — that takes ten seconds, and '
         + 'the production it already sent is untouched.'),
       note('Where it turns up.',
-        'On the Stock screen, under “Baked in our own bakery”: every cycle, who reported it, and '
+        'On the Stock screen, under “Baked in our own bakery”: every report, who sent it, and '
         + 'what it added to the shelf. A wrong figure can be removed there and stock goes back to '
         + 'what it was.'),
       note('It is not a purchase.',
@@ -1074,7 +1073,7 @@ const SECTIONS = [
           + 'can accept one.'),
         h('span', h('strong', 'A scheduled stock count has come round —'), ' goes to whoever was '
           + 'asked to do it, and to whoever runs the parts store.'),
-        h('span', h('strong', 'The bakery reported a production cycle —'), ' goes to whoever can '
+        h('span', h('strong', 'The bakery reported a bake —'), ' goes to whoever can '
           + 'see stock, since that is what it changes.'),
       ),
       note('Read is per person.', 'Clearing your bell clears yours. The manager next to you still '

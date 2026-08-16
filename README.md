@@ -16,9 +16,9 @@ Runs entirely on Cloudflare: a Worker serves both the app and the API, with a
 D1 (SQLite) database behind it. Deploys from GitHub on every push to `main`.
 
 The dorm bed check has its own address, **housekeeping.niceoperation.com**,
-served by a second Worker from this same code and the same database — separate
-deployments, so neither site can take the other down. See *The housekeeping
-site* under Setup.
+served by a second Worker from this same code but its own database — separate
+deployments, so neither site can take the other down, and it is not carried on
+the breakfast site at all. See *The housekeeping site* under Setup.
 
 ---
 
@@ -164,7 +164,7 @@ negative every week.
 | Feature | What it does |
 |---|---|
 | **A link** | An administrator issues one per bakery or per phone. It opens a single form listing only what you bake — no account, no PIN, nothing to remember. It shows no costs and reaches nothing else in the system. |
-| **Per cycle** | Several reports a day is the normal case. The cycle is guessed from the time and is one tap to change. "Already sent" shows what has gone in today, so a run never gets reported twice. |
+| **Nothing to fill in** | The date is today unless changed, and the link itself says which bakery sent it — so the quantities are all anybody types. "Already sent" shows what has gone in today, so a bake never gets reported twice. |
 | **Straight into stock** | Production enters the ledger exactly as a delivery does, valued at what a unit costs you to make. It is kept out of Purchases, which is money that actually went to suppliers. |
 | **Revocable** | Only a fingerprint of the token is stored, so a link cannot be looked up later. Lost one? Revoke and reissue; what it already sent is untouched. |
 
