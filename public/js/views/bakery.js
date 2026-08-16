@@ -7,38 +7,24 @@ import { card } from './components.js';
  *
  * Reached two ways and the same either way: through a link with no account
  * behind it, or by a signed-in baker. The link is the one that matters — a
- * report after every cycle only happens if reporting takes fifteen seconds and
+ * report after a bake only happens if reporting takes fifteen seconds and
  * needs nothing remembered.
  *
- * So: the day is already filled in, the cycle is one tap, and the quantities
- * are the only thing anybody types.
+ * So: the day is already filled in, and the quantities are the only thing
+ * anybody types. There is one bake to report, and whose link it is already
+ * says who is reporting, so neither is worth a question.
  */
-
-const CYCLES = ['Morning', 'Afternoon', 'Evening', 'Night'];
 
 /**
- * @param submit  ({ day, cycle, lines, note, baker }) => Promise
+ * @param submit  ({ day, lines, note }) => Promise
  * @param data    { today, items, recent, label, propertyName }
- * @param options { askName } — the link form asks who is reporting, because
- *                  nothing else knows; a signed-in baker is already named.
  */
-export function productionForm(data, submit, { askName = false } = {}) {
+export function productionForm(data, submit) {
   const host = h('div');
   const quantities = new Map();
 
-  let cycle = suggestCycle();
   const day = h('input', { type: 'date', value: data.today, max: data.today });
   const note = h('input', { type: 'text', placeholder: 'Anything worth noting (optional)', maxlength: 300 });
-  const baker = h('input', { type: 'text', placeholder: 'Your name (optional)', maxlength: 60 });
-
-  const cycleHost = h('div.mx-chips');
-  const drawCycles = () => {
-    mount(cycleHost, CYCLES.map((name) => h('button.mx-chip', {
-      class: cycle === name ? 'mx-chip on' : 'mx-chip',
-      onclick: () => { cycle = cycle === name ? null : name; drawCycles(); },
-    }, name)));
-  };
-  drawCycles();
 
   const rows = data.items.map((item) => {
     const box = h('input.bake-qty', {
@@ -75,12 +61,12 @@ export function productionForm(data, submit, { askName = false } = {}) {
 
   const summary = h('div.bake-summary');
   const button = h('button.btn-primary.bake-send', { disabled: true, onclick: send },
-    'Send this cycle');
+    'Send this report');
 
   const refresh = () => {
     const count = quantities.size;
     button.disabled = count === 0;
-    button.textContent = 'Send this cycle';
+    button.textContent = 'Send this report';
     mount(summary, count
       ? h('span', `${count} ${count === 1 ? 'item' : 'items'}: `,
         h('strong', rows.filter((r) => quantities.has(r.item.id))
@@ -97,9 +83,7 @@ export function productionForm(data, submit, { askName = false } = {}) {
     try {
       const result = await submit({
         day: day.value || data.today,
-        cycle,
         note: note.value.trim() || null,
-        baker: askName ? (baker.value.trim() || null) : null,
         lines: [...quantities.entries()].map(([ingredientId, qty]) => ({ ingredientId, qty })),
       });
 
@@ -119,13 +103,13 @@ export function productionForm(data, submit, { askName = false } = {}) {
   }
 
   // A confirmation that stays put. A toast disappears, and "did that go
-  // through?" is the whole reason a cycle gets reported twice.
+  // through?" is the whole reason a bake gets reported twice.
   const receipt = h('div');
   const done = (result) => {
     mount(receipt, h('div.alert.good',
       h('span.alert-icon', '✅'),
       h('div',
-        h('div.alert-title', `${result.cycle ? `${result.cycle} cycle` : 'Production'} recorded for ${fmtDay(result.day)}`),
+        h('div.alert-title', `Recorded for ${fmtDay(result.day)}`),
         h('div.alert-detail', `${result.summary}. It is on the breakfast shelf now — `
           + 'the kitchen will draw against it in the morning.'),
       ),
@@ -142,11 +126,6 @@ export function productionForm(data, submit, { askName = false } = {}) {
         ? h('div',
           h('div.field-row',
             h('label.field', h('span', 'Date'), day),
-            askName ? h('label.field', h('span', 'Who is reporting'), baker) : null,
-          ),
-          h('div', { style: { marginTop: '.7rem' } },
-            h('div.stat-label', { style: { marginBottom: '.4rem' } }, 'Which cycle'),
-            cycleHost,
           ),
           h('div.bake-list', { style: { marginTop: '1rem' } }, rows.map((r) => r.node)),
           h('label.field', { style: { marginTop: '.8rem' } }, h('span', 'Note'), note),
@@ -167,19 +146,12 @@ export function productionForm(data, submit, { askName = false } = {}) {
   return host;
 }
 
-/** Which cycle it probably is, so the commonest answer is already chosen. */
-function suggestCycle() {
-  const hour = new Date().getHours();
-  if (hour < 11) return 'Morning';
-  if (hour < 16) return 'Afternoon';
-  if (hour < 21) return 'Evening';
-  return 'Night';
-}
-
 function recentCard(recent) {
-  return card('Already sent', { note: 'So you can see whether the last cycle went in' },
+  return card('Already sent', { note: 'So you can see whether today’s report went in' },
     h('div.mx-recent', recent.slice(0, 20).map((r) => h('div.mx-recent-row',
       h('span.muted', String(r.at ?? '').slice(11, 16)),
+      // Reports sent back when the form asked which cycle still carry one, and
+      // still say so. Nothing new sets it.
       r.cycle ? h('span.pill', r.cycle) : null,
       h('strong', `${fmtNum(r.qty, 2)} ${r.unit}`),
       h('span', r.name),
@@ -228,7 +200,6 @@ export async function renderBakeryLink(token) {
       productionForm(
         data,
         (payload) => api.bakerySubmit({ token, ...payload }),
-        { askName: true },
       ),
       h('p.muted', { style: { fontSize: '.8rem', textAlign: 'center', marginTop: '1.2rem' } },
         'This link only sends what you have baked. It shows no costs and nothing else '
@@ -267,7 +238,7 @@ export async function renderProduction() {
     ),
     // Deliberately not re-rendering after a send. The confirmation is the
     // point, and replacing the page would take it away at the moment somebody
-    // is looking for it — which is how a cycle ends up reported twice.
+    // is looking for it — which is how a bake ends up reported twice.
     productionForm(data, (payload) => api.createProduction(payload)),
   );
 
