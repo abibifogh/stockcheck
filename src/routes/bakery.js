@@ -129,7 +129,7 @@ export async function open(ctx) {
   // What this link has already sent today, so a baker can see at a glance
   // whether the last cycle went in — the commonest question they will have.
   const recent = await ctx.db.prepare(
-    `SELECT p.day, p.at, p.cycle, p.qty, i.name, i.unit
+    `SELECT p.day, p.at, p.cycle, p.qty, p.destination, i.name, i.unit
        FROM production p JOIN ingredients i ON i.id = p.ingredient_id
       WHERE p.link_id = ? AND p.day >= ?
       ORDER BY p.id DESC LIMIT 30`,
@@ -142,7 +142,8 @@ export async function open(ctx) {
     today,
     items: items.map((i) => ({ id: i.id, name: i.name, unit: i.unit, step: Number(i.step) || 1 })),
     recent: (recent.results ?? []).map((r) => ({
-      day: r.day, at: r.at, cycle: r.cycle, name: r.name, unit: r.unit, qty: Number(r.qty),
+      day: r.day, at: r.at, cycle: r.cycle, name: r.name, unit: r.unit,
+      qty: Number(r.qty), destination: r.destination ?? 'breakfast',
     })),
   });
 }
@@ -227,14 +228,21 @@ async function record(ctx, { body, producedBy, linkId = null }) {
   if (!lines.length) throw badRequest('Enter how many of at least one thing came out.');
   if (lines.length > 50) throw badRequest('That is more lines than this form takes.');
 
+  // id -> { breakfast, bistro }. One oven, two destinations: what the kitchen
+  // can draw against in the morning, and what left for the bistro.
   const wanted = new Map();
   for (const line of lines) {
     const id = Number(line.ingredientId ?? line.itemId);
-    const qty = num(line.qty, 'Quantity', { min: 0, max: 1000000 });
     if (!Number.isFinite(id) || id <= 0) throw badRequest('An item was not recognised.');
-    // Zero is a real answer — "we baked none of that this cycle" — and simply
-    // has nothing to record.
-    if (qty > 0) wanted.set(id, (wanted.get(id) ?? 0) + qty);
+    const breakfast = num(line.qty, 'Quantity', { min: 0, max: 1000000 });
+    const bistro = num(line.bistroQty, 'Bistro quantity', { min: 0, max: 1000000 });
+    // Zero is a real answer — "we baked none of that" — and simply has nothing
+    // to record.
+    if (breakfast <= 0 && bistro <= 0) continue;
+    const row = wanted.get(id) ?? { breakfast: 0, bistro: 0 };
+    row.breakfast += breakfast;
+    row.bistro += bistro;
+    wanted.set(id, row);
   }
   if (!wanted.size) throw badRequest('Every quantity was zero. Nothing to record.');
 
@@ -252,26 +260,56 @@ async function record(ctx, { body, producedBy, linkId = null }) {
     throw badRequest('Something on this form is no longer on the bakery list. Reload and try again.');
   }
 
-  await ctx.db.batch([...wanted.entries()].map(([id, qty]) => ctx.db.prepare(
-    `INSERT INTO production (day, cycle, ingredient_id, qty, unit_cost, note, produced_by, link_id)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
-  ).bind(day, cycle, id, qty, Number(known.get(id).default_unit_cost) || 0, note, producedBy, linkId)));
+  const inserts = [];
+  for (const [id, qty] of wanted) {
+    for (const [destination, amount] of [['breakfast', qty.breakfast], ['bistro', qty.bistro]]) {
+      if (amount <= 0) continue;
+      inserts.push(ctx.db.prepare(
+        `INSERT INTO production (day, cycle, ingredient_id, qty, unit_cost, note, produced_by, link_id, destination)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
+      ).bind(
+        day, cycle, id, amount, Number(known.get(id).default_unit_cost) || 0,
+        note, producedBy, linkId, destination,
+      ));
+    }
+  }
+
+  // A second report for the same day replaces the first rather than adding to
+  // it. With one bake a day, a second send is somebody correcting a number or
+  // wondering whether the first went through — and adding would put bread on
+  // the shelf that never existed, which the kitchen finds a week later as a
+  // shortfall it cannot explain.
+  //
+  // Scoped to whoever is reporting, not to the day: two bakeries with their own
+  // links each replace their own report, and neither can wipe the other's.
+  const clear = linkId
+    ? ctx.db.prepare('DELETE FROM production WHERE day = ? AND link_id = ?').bind(day, linkId)
+    : ctx.db.prepare('DELETE FROM production WHERE day = ? AND link_id IS NULL').bind(day);
+
+  const written = await ctx.db.batch([clear, ...inserts]);
+  const replaced = Number(written?.[0]?.meta?.changes) || 0;
 
   await audit(ctx.db, producedBy ?? 'Bakery link', 'production.record', null, {
-    day, cycle, lines: wanted.size, viaLink: Boolean(linkId),
+    day, cycle, lines: wanted.size, viaLink: Boolean(linkId), replaced,
   });
 
-  const summary = [...wanted.entries()]
-    .map(([id, qty]) => `${qty} ${known.get(id).name}`)
+  const part = (pick) => [...wanted.entries()]
+    .filter(([, qty]) => qty[pick] > 0)
+    .map(([id, qty]) => `${qty[pick]} ${known.get(id).name}`)
     .join(', ');
+
+  const summary = part('breakfast') || 'nothing for breakfast';
+  const bistroSummary = part('bistro');
 
   if (settings.notify_production !== '0') {
     const task = announce(ctx.db, ctx.env, {
       kind: 'production',
       audience: 'stock',
       title: `Bakery: ${summary}`,
-      body: `${producedBy || 'The bakery'} reported ${cycle ? `the ${cycle} cycle` : 'a production run'}`
-        + ` on ${day}. It is on the breakfast shelf now.`,
+      body: `${producedBy || 'The bakery'} reported a bake on ${day}`
+        + `${replaced ? ', replacing what was sent earlier that day' : ''}.`
+        + ' It is on the breakfast shelf now.'
+        + (bistroSummary ? ` A further ${bistroSummary} went to the bistro, which breakfast does not carry.` : ''),
       link: '#/production',
       linkLabel: 'See the bakery log',
     });
@@ -284,8 +322,12 @@ async function record(ctx, { body, producedBy, linkId = null }) {
     day,
     cycle,
     recorded: wanted.size,
+    replaced,
     summary,
-    lines: [...wanted.entries()].map(([id, qty]) => ({ name: known.get(id).name, qty })),
+    bistroSummary: bistroSummary || null,
+    lines: [...wanted.entries()].map(([id, qty]) => ({
+      name: known.get(id).name, qty: qty.breakfast, bistroQty: qty.bistro,
+    })),
   }, { status: 201 });
 }
 
@@ -320,6 +362,7 @@ export async function log(ctx) {
     name: r.name,
     unit: r.unit,
     qty: Number(r.qty),
+    destination: r.destination ?? 'breakfast',
     unitCost: Number(r.unit_cost) || 0,
     value: Math.round(Number(r.qty) * (Number(r.unit_cost) || 0) * 100) / 100,
     note: r.note,

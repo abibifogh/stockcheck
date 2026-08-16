@@ -146,6 +146,10 @@ const OTHER_STORES = new Set([
   // Clears away the craft shop. A housekeeping database never had it, so a
   // fresh seed has nothing to drop and would only carry the statements about.
   '0014_drop_craft_shop.sql',
+  // Alters the bakery's production table, which belongs to 0011 above and is
+  // never built here. An ALTER against a table this seed does not create fails
+  // with "no such table" — and only once somebody runs the file.
+  '0015_bistro_production.sql',
 ]);
 
 // The whole database a housekeeping-only site needs.

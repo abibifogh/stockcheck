@@ -21,39 +21,59 @@ import { card } from './components.js';
  */
 export function productionForm(data, submit) {
   const host = h('div');
-  const quantities = new Map();
+  // One oven, two destinations. Breakfast's loaves reach the shelf and the
+  // morning sheet draws against them; the bistro's are recorded and go nowhere
+  // near breakfast's stock or its costs.
+  const forBreakfast = new Map();
+  const forBistro = new Map();
+  const totalFor = (id) => (forBreakfast.get(id) ?? 0) + (forBistro.get(id) ?? 0);
 
   const day = h('input', { type: 'date', value: data.today, max: data.today });
   const note = h('input', { type: 'text', placeholder: 'Anything worth noting (optional)', maxlength: 300 });
 
   const rows = data.items.map((item) => {
-    const box = h('input.bake-qty', {
-      type: 'number', min: '0', step: String(item.step || 1),
-      inputmode: 'decimal', placeholder: '0',
-      oninput: (e) => {
-        const value = Number(e.target.value);
-        if (e.target.value === '' || !Number.isFinite(value) || value <= 0) quantities.delete(item.id);
-        else quantities.set(item.id, value);
+    // The same stepper twice, told which basket it fills. Two near-identical
+    // copies of this would be two places to fix the next time it changes.
+    const stepper = (store) => {
+      const box = h('input.bake-qty', {
+        type: 'number', min: '0', step: String(item.step || 1),
+        inputmode: 'decimal', placeholder: '0',
+        oninput: (e) => {
+          const value = Number(e.target.value);
+          if (e.target.value === '' || !Number.isFinite(value) || value <= 0) store.delete(item.id);
+          else store.set(item.id, value);
+          refresh();
+        },
+      });
+
+      const step = (by) => () => {
+        const next = Math.max(0, Math.round(((Number(box.value) || 0) + by) * 1000) / 1000);
+        box.value = next ? String(next) : '';
+        if (next > 0) store.set(item.id, next); else store.delete(item.id);
         refresh();
-      },
-    });
+      };
 
-    const step = (by) => () => {
-      const next = Math.max(0, Math.round(((Number(box.value) || 0) + by) * 1000) / 1000);
-      box.value = next ? String(next) : '';
-      if (next > 0) quantities.set(item.id, next); else quantities.delete(item.id);
-      refresh();
-    };
-
-    return {
-      item,
-      box,
-      node: h('div.bake-row',
-        h('div.bake-name', h('strong', item.name), h('span.muted', ` (${item.unit})`)),
-        h('div.mx-step',
+      return {
+        box,
+        node: h('div.mx-step',
           h('button', { type: 'button', onclick: step(-(item.step || 1)) }, '−'),
           box,
           h('button', { type: 'button', onclick: step(item.step || 1) }, '+'),
+        ),
+      };
+    };
+
+    const breakfast = stepper(forBreakfast);
+    const bistro = stepper(forBistro);
+
+    return {
+      item,
+      boxes: [breakfast.box, bistro.box],
+      node: h('div.bake-row',
+        h('div.bake-name', h('strong', item.name), h('span.muted', ` (${item.unit})`)),
+        h('div.bake-dests',
+          h('label.bake-dest', h('span', 'Breakfast'), breakfast.node),
+          h('label.bake-dest', h('span', 'Bistro'), bistro.node),
         ),
       ),
     };
@@ -64,31 +84,50 @@ export function productionForm(data, submit) {
     'Send this report');
 
   const refresh = () => {
-    const count = quantities.size;
-    button.disabled = count === 0;
+    const touched = rows.filter((r) => totalFor(r.item.id) > 0);
+    button.disabled = touched.length === 0;
     button.textContent = 'Send this report';
-    mount(summary, count
-      ? h('span', `${count} ${count === 1 ? 'item' : 'items'}: `,
-        h('strong', rows.filter((r) => quantities.has(r.item.id))
-          .map((r) => `${fmtNum(quantities.get(r.item.id), 2)} ${r.item.name}`)
-          .join(', ')))
+
+    const list = (store) => rows
+      .filter((r) => (store.get(r.item.id) ?? 0) > 0)
+      .map((r) => `${fmtNum(store.get(r.item.id), 2)} ${r.item.name}`)
+      .join(', ');
+    const breakfastList = list(forBreakfast);
+    const bistroList = list(forBistro);
+
+    mount(summary, touched.length
+      ? h('div',
+        breakfastList
+          ? h('div', 'Breakfast: ', h('strong', breakfastList))
+          : h('div.muted', 'Nothing for breakfast.'),
+        bistroList
+          ? h('div', { style: { marginTop: '.2rem' } }, 'Bistro: ', h('strong', bistroList),
+            h('span.muted', ' — not counted in breakfast'))
+          : null,
+      )
       : h('span.muted', 'Enter how many came out of the oven.'));
   };
   refresh();
 
   async function send(event) {
-    if (!quantities.size) return;
+    const ids = new Set([...forBreakfast.keys(), ...forBistro.keys()]);
+    if (!ids.size) return;
     event.target.disabled = true;
     event.target.textContent = 'Sending…';
     try {
       const result = await submit({
         day: day.value || data.today,
         note: note.value.trim() || null,
-        lines: [...quantities.entries()].map(([ingredientId, qty]) => ({ ingredientId, qty })),
+        lines: [...ids].map((ingredientId) => ({
+          ingredientId,
+          qty: forBreakfast.get(ingredientId) ?? 0,
+          bistroQty: forBistro.get(ingredientId) ?? 0,
+        })),
       });
 
-      quantities.clear();
-      for (const row of rows) row.box.value = '';
+      forBreakfast.clear();
+      forBistro.clear();
+      for (const row of rows) for (const box of row.boxes) box.value = '';
       note.value = '';
       // refresh() puts the button back to its resting label as well as its
       // resting state, so the two can never disagree.
@@ -109,9 +148,14 @@ export function productionForm(data, submit) {
     mount(receipt, h('div.alert.good',
       h('span.alert-icon', '✅'),
       h('div',
-        h('div.alert-title', `Recorded for ${fmtDay(result.day)}`),
+        h('div.alert-title', `Recorded for ${fmtDay(result.day)}`
+          + (result.replaced ? ' — this replaced the earlier report' : '')),
         h('div.alert-detail', `${result.summary}. It is on the breakfast shelf now — `
           + 'the kitchen will draw against it in the morning.'),
+        result.bistroSummary
+          ? h('div.alert-detail', { style: { marginTop: '.25rem' } },
+            `For the bistro: ${result.bistroSummary}. Recorded, and kept out of breakfast.`)
+          : null,
       ),
     ));
   };
@@ -153,6 +197,7 @@ function recentCard(recent) {
       // Reports sent back when the form asked which cycle still carry one, and
       // still say so. Nothing new sets it.
       r.cycle ? h('span.pill', r.cycle) : null,
+      r.destination === 'bistro' ? h('span.pill', 'bistro') : null,
       h('strong', `${fmtNum(r.qty, 2)} ${r.unit}`),
       h('span', r.name),
       r.producedBy ? h('span.muted', `· ${r.producedBy}`) : null,
