@@ -164,7 +164,9 @@ negative every week.
 | Feature | What it does |
 |---|---|
 | **A link** | An administrator issues one per bakery or per phone. It opens a single form listing only what you bake — no account, no PIN, nothing to remember. It shows no costs and reaches nothing else in the system. |
-| **Nothing to fill in** | The date is today unless changed, and the link itself says which bakery sent it — so the quantities are all anybody types. "Already sent" shows what has gone in today, so a bake never gets reported twice. |
+| **Nothing to fill in** | The date is today unless changed, and the link itself says which bakery sent it — so the quantities are all anybody types. |
+| **Breakfast and bistro** | Two boxes per item. What the bistro took is recorded — it was your flour and your oven — and lands nowhere in breakfast: not on the shelf, not in cost per guest. |
+| **Sending again replaces** | A second report for a day replaces the first rather than adding to it, so a wrong number is fixed by sending the day again, and a double tap costs nothing. Scoped per link, so two bakeries never overwrite each other. |
 | **Straight into stock** | Production enters the ledger exactly as a delivery does, valued at what a unit costs you to make. It is kept out of Purchases, which is money that actually went to suppliers. |
 | **Revocable** | Only a fingerprint of the token is stored, so a link cannot be looked up later. Lost one? Revoke and reissue; what it already sent is untouched. |
 

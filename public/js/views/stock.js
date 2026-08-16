@@ -311,7 +311,8 @@ async function loadBakery(host, reload) {
 
   const remove = async (event, run) => {
     if (!confirm(`Remove ${fmtNum(run.qty, 2)} ${run.unit} of ${run.name} from `
-      + `${fmtDay(run.day)}${run.cycle ? ` (${run.cycle})` : ''}? Stock goes back to what it was.`)) return;
+      + `${fmtDay(run.day)}${run.destination === 'bistro' ? ' (bistro)' : ''}?`
+      + `${run.destination === 'bistro' ? '' : ' Stock goes back to what it was.'}`)) return;
     event.target.disabled = true;
     try {
       await api.deleteProduction(run.id);
@@ -323,16 +324,27 @@ async function loadBakery(host, reload) {
     }
   };
 
-  const produced = data.runs.reduce((n, r) => n + r.value, 0);
+  // Only breakfast's loaves reached this shelf. The bistro's are listed below
+  // because the oven made them, but adding their worth to "added to the shelf"
+  // would say stock arrived that never did.
+  const isBistro = (r) => r.destination === 'bistro';
+  const produced = data.runs.filter((r) => !isBistro(r)).reduce((n, r) => n + r.value, 0);
+  const bistroCount = data.runs.filter(isBistro).length;
 
   mount(host, card('Baked in our own bakery', {
     wide: true,
-    note: `${data.cycles.length} ${data.cycles.length === 1 ? 'cycle' : 'cycles'} · `
-      + `${fmtMoney(produced, { compact: true })} added to the shelf`,
+    note: `${fmtMoney(produced, { compact: true })} added to the shelf`
+      + (bistroCount ? ` · ${bistroCount} ${bistroCount === 1 ? 'line' : 'lines'} for the bistro, not counted` : ''),
   },
     table([
       { key: 'day', label: 'Date', format: (v) => fmtDay(v) },
-      { key: 'cycle', label: 'Cycle', format: (v) => (v ? h('span.pill', v) : h('span.muted', '—')) },
+      {
+        key: 'destination',
+        label: 'For',
+        format: (v) => (v === 'bistro'
+          ? h('span.pill', 'bistro')
+          : h('span.muted', 'breakfast')),
+      },
       { key: 'name', label: 'Item' },
       { key: 'qty', label: 'Made', align: 'right', format: (v, r) => h('strong', `${fmtNum(v, 2)} ${r.unit}`) },
       { key: 'value', label: 'Worth', align: 'right', format: (v) => fmtMoney(v, { withSymbol: false }) },
@@ -349,8 +361,10 @@ async function loadBakery(host, reload) {
       },
     ], data.runs.slice(0, 60)),
     h('p.muted', { style: { fontSize: '.82rem', marginTop: '.6rem', marginBottom: 0 } },
-      'These add to stock exactly as a delivery does, and the morning sheet draws against '
-      + 'them. They are kept out of Purchases, which is money actually spent with suppliers.'),
+      'Breakfast’s add to stock exactly as a delivery does, and the morning sheet draws '
+      + 'against them. They are kept out of Purchases, which is money actually spent with '
+      + 'suppliers. Anything baked for the bistro is listed so the oven’s output is complete, '
+      + 'and is counted nowhere in breakfast — not in stock, not in cost per guest.'),
   ));
 }
 

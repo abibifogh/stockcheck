@@ -159,3 +159,63 @@ test('what was baked on a day is available without walking the list again', () =
   assert.equal(ds.producedByDay.get('2026-08-10').get(1), 65);
   assert.equal(ds.producedByDay.has('2026-08-11'), false);
 });
+
+// ---------------------------------------------------------------------------
+// The bistro
+// ---------------------------------------------------------------------------
+
+/**
+ * The bakery bakes for two places and reports both. Only one of them is
+ * breakfast's, and the whole point of recording the other is that it stays out
+ * of these figures — an oven's output is not the same thing as a shelf's.
+ */
+
+const bistroBake = (day, qty, unitCost = 15) => ({
+  ...bake(day, qty, null, unitCost), destination: 'bistro',
+});
+const breakfastBake = (day, qty, unitCost = 15) => ({
+  ...bake(day, qty, null, unitCost), destination: 'breakfast',
+});
+
+test('bread baked for the bistro never reaches the breakfast shelf', () => {
+  const ds = kitchen({ production: [bistroBake('2026-08-10', 40)] });
+  const row = stockReport(ds, '2026-08-10').rows.find((r) => r.name === 'Sliced Bread');
+  assert.equal(row.stock, 0, 'the bistro took it, so breakfast never had it');
+});
+
+test('the two are recorded side by side and only one is counted', () => {
+  const ds = kitchen({
+    production: [breakfastBake('2026-08-10', 40), bistroBake('2026-08-10', 25)],
+  });
+  const row = stockReport(ds, '2026-08-10').rows.find((r) => r.name === 'Sliced Bread');
+  assert.equal(row.stock, 40, 'only breakfast’s 40, never the bistro’s 25');
+});
+
+test('the bistro adds nothing to what the store is worth', () => {
+  const only = kitchen({ production: [breakfastBake('2026-08-10', 40)] });
+  const both = kitchen({
+    production: [breakfastBake('2026-08-10', 40), bistroBake('2026-08-10', 100)],
+  });
+  const worth = (ds) => stockReport(ds, '2026-08-10')
+    .rows.find((r) => r.name === 'Sliced Bread').value;
+  assert.equal(worth(both), worth(only));
+});
+
+test('a bake recorded before the bistro existed is breakfast’s', () => {
+  // No destination at all — every row written before the column was added. They
+  // were all breakfast's, and reading them as the bistro's would empty the shelf
+  // retrospectively.
+  const ds = kitchen({ production: [bake('2026-08-10', 40)] });
+  const row = stockReport(ds, '2026-08-10').rows.find((r) => r.name === 'Sliced Bread');
+  assert.equal(row.stock, 40);
+});
+
+test('the morning sheet still draws only against breakfast’s', () => {
+  const ds = kitchen({
+    production: [breakfastBake('2026-08-10', 40), bistroBake('2026-08-10', 60)],
+    days: [day('2026-08-10')],
+    usage: [{ day: '2026-08-10', ingredient_id: 1, qty: 12 }],
+  });
+  const row = stockReport(ds, '2026-08-10').rows.find((r) => r.name === 'Sliced Bread');
+  assert.equal(row.stock, 28, '40 baked for breakfast, 12 used — the bistro’s 60 is not here');
+});

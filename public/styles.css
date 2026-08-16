@@ -924,6 +924,16 @@ td.tick input, th.tick input { cursor: pointer; }
   font-variant-numeric: tabular-nums;
 }
 
+/* Two destinations for the same loaf. Labelled every time rather than once at
+   the top of the list: somebody typing on a phone sees one row at a time, and a
+   heading that has scrolled away is a heading that is not there. */
+.bake-dests { display: flex; align-items: flex-end; gap: .6rem; }
+.bake-dest { display: grid; gap: .2rem; justify-items: center; }
+.bake-dest > span {
+  font-size: .7rem; font-weight: 600; letter-spacing: .02em;
+  color: var(--text-faint); text-transform: uppercase;
+}
+
 .bake-foot {
   display: grid; gap: .6rem; margin-top: 1rem;
   padding-top: .8rem; border-top: 1px solid var(--border);
@@ -934,7 +944,8 @@ td.tick input, th.tick input { cursor: pointer; }
 @media (max-width: 480px) {
   .bake-row { flex-wrap: wrap; }
   .bake-name { flex: 1 1 100%; }
-  .bake-row .mx-step { margin-left: auto; }
+  .bake-dests { margin-left: auto; }
+  .bake-qty { width: 68px; }
 }
 
 /* ------------------------------------------------------- housekeeping -- */

@@ -72,7 +72,16 @@ export function makeDataset(raw) {
   // does, so the ledger is given both. They are kept apart everywhere else:
   // "what we spent with suppliers" must not quietly include loaves we made
   // ourselves, and a production run has no invoice behind it.
-  const production = raw.production ?? [];
+  // Bread baked for the bistro is not stock arriving here. It went out of the
+  // building to another kitchen, so it is neither on the breakfast shelf nor a
+  // cost this analysis carries — and counting it would show the morning a
+  // hundred loaves it can never draw against.
+  //
+  // Rows recorded before the bistro was reported have no destination, and are
+  // breakfast's. That is what they were.
+  const production = (raw.production ?? [])
+    .filter((p) => (p.destination ?? 'breakfast') !== 'bistro');
+
   const ledger = buildLedger({
     ingredients: raw.ingredients,
     purchases: [
