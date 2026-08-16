@@ -150,6 +150,9 @@ const OTHER_STORES = new Set([
   // never built here. An ALTER against a table this seed does not create fails
   // with "no such table" — and only once somebody runs the file.
   '0015_bistro_production.sql',
+  // Reads is_produced, which 0011 adds and this seed never does. The ALTER
+  // would succeed and the UPDATE right after it would fail on the column.
+  '0016_bistro_items.sql',
 ]);
 
 // The whole database a housekeeping-only site needs.

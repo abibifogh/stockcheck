@@ -268,18 +268,20 @@ const SECTIONS = [
       steps(
         h('span', h('strong', 'Open the link'), ' — bookmark it, it is the same one every time. '
           + 'There is no PIN and nothing to remember.'),
-        h('span', h('strong', 'Type how many came out'), ' beside each thing you baked — under '
-          + 'Breakfast, under Bistro, or both. Leave anything you did not bake blank.'),
+        h('span', h('strong', 'Type how many came out'), ' beside each thing you baked. Leave '
+          + 'anything you did not bake blank.'),
         h('span', h('strong', 'Press Send this report.'), ' A green box appears saying what went '
           + 'in. That box is your confirmation — if it is not there, it did not send.'),
       ),
       note('There is nothing to fill in but the numbers.',
         'The date is today unless you change it, and the link already says which bakery it came '
         + 'from — so the quantities are the only thing anybody types.'),
-      note('Bistro bread is counted separately, and not against breakfast.',
-        'Put what the bistro took in the Bistro box. It is recorded — it was your flour and your '
-        + 'oven — but it never lands on the breakfast shelf, so the kitchen is never shown bread '
-        + 'it cannot use and breakfast’s cost per guest is not moved by it.'),
+      note('A second box appears on whatever the bistro takes.',
+        'Only on those — the rest of the list has the one box, because the rest of the list is '
+        + 'breakfast’s. What you put in the Bistro box is recorded, since it was your flour and '
+        + 'your oven, but it never lands on the breakfast shelf: the kitchen is not shown bread '
+        + 'it cannot use, and breakfast’s cost per guest is not moved by it. A manager changes '
+        + 'which items have the box under Setup → Ingredients.'),
       note('Sending again replaces what you sent, it does not add to it.',
         'So a number typed wrongly is fixed by sending the day again with the right ones, and '
         + 'pressing Send twice because you were not sure the first went through costs nothing. '

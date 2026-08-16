@@ -19,8 +19,10 @@ import { create } from '../src/routes/bakery.js';
  */
 
 const ITEMS = [
-  { id: 1, name: 'Sliced Bread', default_unit_cost: 15 },
-  { id: 2, name: 'Rolls', default_unit_cost: 3 },
+  // The bistro takes the one bread and nothing else, which is the case the
+  // form and the server both have to agree about.
+  { id: 1, name: 'Wheat Bread', default_unit_cost: 15, is_bistro: 1 },
+  { id: 2, name: 'Rolls', default_unit_cost: 3, is_bistro: 0 },
 ];
 
 function fakeDb() {
@@ -115,8 +117,8 @@ test('a line with both destinations is written as two rows', async () => {
   assert.equal(qtyFor('bistro'), 25);
 
   const body = await res.json();
-  assert.match(body.summary, /40 Sliced Bread/, 'breakfast’s is the headline');
-  assert.match(body.bistroSummary, /25 Sliced Bread/);
+  assert.match(body.summary, /40 Wheat Bread/, 'breakfast’s is the headline');
+  assert.match(body.bistroSummary, /25 Wheat Bread/);
   assert.equal(body.replaced, 2, 'and it says what it replaced');
 });
 
@@ -133,7 +135,7 @@ test('a bistro-only line still writes, and says breakfast got nothing', async ()
 
   const body = await res.json();
   assert.equal(body.summary, 'nothing for breakfast');
-  assert.match(body.bistroSummary, /30 Sliced Bread/);
+  assert.match(body.bistroSummary, /30 Wheat Bread/);
 });
 
 test('a line with no destination named is breakfast’s', async () => {
@@ -152,4 +154,26 @@ test('every quantity zero is still refused', async () => {
     /Every quantity was zero/,
   );
   assert.equal(deletes(db).length, 0, 'and nothing is cleared on a refused report');
+});
+
+test('an item the bistro does not take cannot be filed against it', () => {
+  // The form does not offer the box. This is the same rule where it counts: a
+  // page left open since before somebody unticked one must not get through.
+  const db = fakeDb();
+  return assert.rejects(
+    () => create(context({
+      day: '2026-08-10',
+      lines: [{ ingredientId: 2, qty: 10, bistroQty: 4 }],
+    }, db)),
+    /Rolls is not one of the bistro's/,
+  );
+});
+
+test('that item is still perfectly fine for breakfast', async () => {
+  const db = fakeDb();
+  await create(context({ day: '2026-08-10', lines: [{ ingredientId: 2, qty: 10 }] }, db));
+
+  const rows = inserts(db);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].binds.at(-1), 'breakfast');
 });

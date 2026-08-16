@@ -928,7 +928,10 @@ td.tick input, th.tick input { cursor: pointer; }
    the top of the list: somebody typing on a phone sees one row at a time, and a
    heading that has scrolled away is a heading that is not there. */
 .bake-dests { display: flex; align-items: flex-end; gap: .6rem; }
-.bake-dest { display: grid; gap: .2rem; justify-items: center; }
+/* The width is the stepper's own (62px box + two 34px buttons + the gaps), set
+   here so a row the bistro does not take still holds the column open and every
+   Breakfast box stays in line. */
+.bake-dest { display: grid; gap: .2rem; justify-items: center; min-width: 138px; }
 .bake-dest > span {
   font-size: .7rem; font-weight: 600; letter-spacing: .02em;
   color: var(--text-faint); text-transform: uppercase;
