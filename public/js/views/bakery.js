@@ -31,6 +31,11 @@ export function productionForm(data, submit) {
   const day = h('input', { type: 'date', value: data.today, max: data.today });
   const note = h('input', { type: 'text', placeholder: 'Anything worth noting (optional)', maxlength: 300 });
 
+  // Only some of what comes out of the oven goes to the bistro. If none of it
+  // does, the form is a single column again and says nothing about a bistro at
+  // all — labelling one box "Breakfast" explains nothing when there is no other.
+  const anyBistro = data.items.some((i) => i.bistro);
+
   const rows = data.items.map((item) => {
     // The same stepper twice, told which basket it fills. Two near-identical
     // copies of this would be two places to fix the next time it changes.
@@ -64,17 +69,23 @@ export function productionForm(data, submit) {
     };
 
     const breakfast = stepper(forBreakfast);
-    const bistro = stepper(forBistro);
+    const bistro = item.bistro ? stepper(forBistro) : null;
 
     return {
       item,
-      boxes: [breakfast.box, bistro.box],
+      boxes: bistro ? [breakfast.box, bistro.box] : [breakfast.box],
       node: h('div.bake-row',
         h('div.bake-name', h('strong', item.name), h('span.muted', ` (${item.unit})`)),
-        h('div.bake-dests',
-          h('label.bake-dest', h('span', 'Breakfast'), breakfast.node),
-          h('label.bake-dest', h('span', 'Bistro'), bistro.node),
-        ),
+        anyBistro
+          ? h('div.bake-dests',
+            h('label.bake-dest', h('span', 'Breakfast'), breakfast.node),
+            // An empty cell rather than no cell, so the Breakfast boxes stay in
+            // one column down a list where only one row has a second box.
+            bistro
+              ? h('label.bake-dest', h('span', 'Bistro'), bistro.node)
+              : h('div.bake-dest'),
+          )
+          : breakfast.node,
       ),
     };
   });

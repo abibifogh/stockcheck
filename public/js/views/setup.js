@@ -58,7 +58,14 @@ export async function renderSetup() {
       { key: 'default_unit_cost', label: 'Fallback cost', align: 'right', format: (v) => fmtMoney(v, { withSymbol: false }) },
       { key: 'opening_stock', label: 'Opening stock', align: 'right', format: (v, r) => `${fmtNum(v, 2)} ${r.unit}` },
       { key: 'is_core', label: 'Everyday', format: (v) => (v ? h('span.pill.good', 'yes') : h('span.pill', 'no')) },
-      { key: 'is_produced', label: 'Source', format: (v) => (v ? h('span.pill.info', 'bakery') : h('span.muted', 'bought')) },
+      {
+        key: 'is_produced',
+        label: 'Source',
+        format: (v, r) => (v
+          ? h('span', h('span.pill.info', 'bakery'),
+            r.is_bistro ? h('span.pill', { style: { marginLeft: '.25rem' } }, 'bistro') : null)
+          : h('span.muted', 'bought')),
+      },
       { key: 'active', label: 'Status', format: (v) => (v ? h('span.pill.good', 'active') : h('span.pill.warn', 'retired')) },
       {
         key: 'id',
@@ -329,7 +336,7 @@ function ingredientForm(existing, categories, units, onSaved) {
   };
   const value = existing || {
     category_id: categories[0]?.id, name: '', unit: 'kg', step: 1,
-    par_level: 0, default_unit_cost: 0, opening_stock: 0, is_core: 1, is_produced: 0,
+    par_level: 0, default_unit_cost: 0, opening_stock: 0, is_core: 1, is_produced: 0, is_bistro: 0,
     active: 1, sort_order: 100,
   };
 
@@ -350,6 +357,12 @@ function ingredientForm(existing, categories, units, onSaved) {
   const isProduced = h('select',
     h('option', { value: '0', selected: !value.is_produced }, 'Bought in'),
     h('option', { value: '1', selected: !!value.is_produced }, 'Made in our bakery'));
+  // Which of the baked items the bistro takes. Only these get a second box on
+  // the bakery's form, so a bakery that bakes one thing for the bistro is asked
+  // about one thing.
+  const isBistro = h('select',
+    h('option', { value: '0', selected: !value.is_bistro }, 'Breakfast only'),
+    h('option', { value: '1', selected: !!value.is_bistro }, 'Also baked for the bistro'));
   const active = h('select',
     h('option', { value: '1', selected: !!value.active }, 'Active'),
     h('option', { value: '0', selected: !value.active }, 'Retired'));
@@ -372,6 +385,7 @@ function ingredientForm(existing, categories, units, onSaved) {
       opening_stock: Number(opening.value) || 0,
       is_core: isCore.value === '1',
       is_produced: isProduced.value === '1',
+      is_bistro: isBistro.value === '1',
       active: active.value === '1',
       sort_order: Number(order.value) || 100,
     };
@@ -397,6 +411,7 @@ function ingredientForm(existing, categories, units, onSaved) {
       h('label.field', h('span', 'Opening stock'), opening),
       h('label.field', h('span', 'Entry screen'), isCore),
       h('label.field', h('span', 'Where it comes from'), isProduced),
+      h('label.field', h('span', 'Who it is baked for'), isBistro),
       h('label.field', h('span', 'Status'), active),
       h('label.field', h('span', 'Sort order'), order),
     ),

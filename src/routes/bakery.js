@@ -69,7 +69,7 @@ async function linkFor(db, token) {
 /** The items a bakery reports on, and nothing else. */
 async function producedItems(db) {
   const rows = await db.prepare(
-    `SELECT id, name, unit, step, default_unit_cost
+    `SELECT id, name, unit, step, default_unit_cost, is_bistro
        FROM ingredients WHERE is_produced = 1 AND active = 1
       ORDER BY sort_order, name`,
   ).all();
@@ -140,7 +140,10 @@ export async function open(ctx) {
     label: link.label,
     propertyName: settings.property_name || 'Breakfast',
     today,
-    items: items.map((i) => ({ id: i.id, name: i.name, unit: i.unit, step: Number(i.step) || 1 })),
+    items: items.map((i) => ({
+      id: i.id, name: i.name, unit: i.unit, step: Number(i.step) || 1,
+      bistro: Boolean(i.is_bistro),
+    })),
     recent: (recent.results ?? []).map((r) => ({
       day: r.day, at: r.at, cycle: r.cycle, name: r.name, unit: r.unit,
       qty: Number(r.qty), destination: r.destination ?? 'breakfast',
@@ -196,7 +199,10 @@ export async function form(ctx) {
   return json({
     today,
     propertyName: settings.property_name || 'Breakfast',
-    items: items.map((i) => ({ id: i.id, name: i.name, unit: i.unit, step: Number(i.step) || 1 })),
+    items: items.map((i) => ({
+      id: i.id, name: i.name, unit: i.unit, step: Number(i.step) || 1,
+      bistro: Boolean(i.is_bistro),
+    })),
     recent: (recent.results ?? []).map((r) => ({
       id: r.id, day: r.day, at: r.at, cycle: r.cycle, name: r.name,
       unit: r.unit, qty: Number(r.qty), producedBy: r.produced_by,
@@ -251,13 +257,22 @@ async function record(ctx, { body, producedBy, linkId = null }) {
   // sets, and asking a bakery for it would get a guess.
   const holes = [...wanted.keys()].map(() => '?').join(',');
   const rows = await ctx.db.prepare(
-    `SELECT id, name, default_unit_cost FROM ingredients
+    `SELECT id, name, default_unit_cost, is_bistro FROM ingredients
       WHERE id IN (${holes}) AND is_produced = 1 AND active = 1`,
   ).bind(...wanted.keys()).all();
 
   const known = new Map((rows.results ?? []).map((r) => [r.id, r]));
   if (known.size !== wanted.size) {
     throw badRequest('Something on this form is no longer on the bakery list. Reload and try again.');
+  }
+
+  // The form only shows a Bistro box against the items the bistro takes. This
+  // says the same thing where it counts: a stale page open since before
+  // somebody unticked one must not be able to file against it.
+  for (const [id, qty] of wanted) {
+    if (qty.bistro > 0 && !known.get(id).is_bistro) {
+      throw badRequest(`${known.get(id).name} is not one of the bistro's. Reload and try again.`);
+    }
   }
 
   const inserts = [];
