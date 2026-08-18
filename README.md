@@ -151,6 +151,7 @@ unresolved rather than quietly clearing itself.
 | **Daily email** | A summary of each submitted day, with the analysis, to whichever addresses you choose. |
 | **Erase data** | Clear a trial run before going live, with a typed confirmation. Keeps people, settings and the ingredient list. |
 | **Approving counts** | A physical count in either store is a claim about the shelf; accepting it is what corrects the book. Whoever counts is never whoever decides. |
+| **Approving corrections** | In the parts store, changing or removing an issue or a delivery is a request rather than an act — it moves nothing until an administrator accepts it. Recording a *new* one stays immediate. Closes the way round a count: an agreed figure could otherwise be undone by deleting the delivery behind it. |
 | **Email alerts** | A summary of each submitted day sheet, and of each submitted bed check, to whichever addresses you choose — two separate lists, one sender. |
 | **Erase a period** | Delete everything recorded between two dates, with a typed confirmation. The panel counts what falls inside the dates first — so many checks, so many beds answered for — and that count comes from the same columns the delete uses, so it cannot promise one thing and do another. Only activity goes: people, settings, the ingredient list and the dorm layout are never touched by a period. |
 

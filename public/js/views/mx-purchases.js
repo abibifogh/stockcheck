@@ -162,19 +162,100 @@ export async function renderMxPurchases() {
         {
           key: 'id',
           label: '',
-          format: (id) => h('button.btn-sm.btn-ghost', {
-            onclick: async () => {
-              if (!confirm('Remove this purchase? Stock and costs will be recalculated.')) return;
-              try {
-                await api.mxDeletePurchase(id);
-                toast('Purchase removed');
+          // Neither of these changes anything on its own. What is already
+          // recorded moves when an administrator accepts the request, which is
+          // why the wording is "ask" and the confirmation says what happens next.
+          format: (id, row) => h('div.btn-row',
+            h('button.btn-sm.btn-ghost', {
+              onclick: () => editPurchase(row, async () => {
                 mount(host, await renderMxPurchases());
-              } catch (err) { toast(err.message, 'bad'); }
-            },
-          }, 'Remove'),
+              }),
+            }, 'Correct'),
+            h('button.btn-sm.btn-ghost', {
+              onclick: async () => {
+                const reason = prompt('Ask to remove this delivery. Why?\n\n'
+                  + 'Nothing changes until an administrator accepts it.');
+                if (reason === null) return;
+                try {
+                  await api.mxDeletePurchase(id, reason.trim() || null);
+                  toast('Sent to an administrator — nothing has moved yet', 'good');
+                  mount(host, await renderMxPurchases());
+                } catch (err) { toast(err.message, 'bad'); }
+              },
+            }, 'Remove'),
+          ),
         },
       ], purchases.purchases, { empty: 'Nothing bought yet.' })),
   );
 
   return host;
+}
+
+
+/**
+ * Ask for a delivery to be corrected.
+ *
+ * The part itself is not editable. Changing which item a delivery is about is
+ * not a correction but a different delivery, and letting it through here would
+ * move stock on two items from one signature.
+ */
+function editPurchase(row, onSent) {
+  const day = h('input', { type: 'date', value: row.day });
+  const qty = h('input', { type: 'number', min: '0', step: '0.01', value: row.qty });
+  const unitCost = h('input', { type: 'number', min: '0', step: '0.01', value: row.unit_cost });
+  const supplier = h('input', { type: 'text', value: row.supplier ?? '', maxlength: 120 });
+  const note = h('input', { type: 'text', value: row.note ?? '', maxlength: 300 });
+  const reason = h('input', { type: 'text', placeholder: 'Why it needs changing', maxlength: 300 });
+
+  const dialog = h('dialog', {
+    style: {
+      border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+      background: 'var(--surface)', color: 'var(--text)',
+      maxWidth: '560px', width: '92vw', padding: '1.2rem',
+    },
+  },
+    h('div.card-head',
+      h('h2', `Correct ${row.item_name}`),
+      h('button.btn-sm.btn-ghost', { onclick: () => dialog.close() }, '✕'),
+    ),
+    h('p.muted', { style: { fontSize: '.85rem', marginTop: 0 } },
+      'This asks for the change. The delivery stays exactly as it is, and stock and costs '
+      + 'stay where they are, until an administrator accepts it.'),
+    h('div.field-row',
+      h('label.field', h('span', 'Date'), day),
+      h('label.field', h('span', 'Quantity'), qty),
+      h('label.field', h('span', 'Each'), unitCost),
+      h('label.field', h('span', 'Supplier'), supplier),
+    ),
+    h('label.field', { style: { marginTop: '.6rem' } }, h('span', 'Note'), note),
+    h('label.field', { style: { marginTop: '.6rem' } }, h('span', 'Reason'), reason),
+    h('div.btn-row', { style: { marginTop: '1rem' } },
+      h('button.btn-primary', {
+        onclick: async (event) => {
+          event.target.disabled = true;
+          try {
+            await api.mxUpdatePurchase(row.id, {
+              day: day.value,
+              qty: Number(qty.value),
+              unitCost: Number(unitCost.value),
+              supplier: supplier.value.trim() || null,
+              note: note.value.trim() || null,
+              reason: reason.value.trim() || null,
+            });
+            toast('Sent to an administrator — nothing has moved yet', 'good');
+            dialog.close();
+            onSent();
+          } catch (err) {
+            toast(err.message, 'bad');
+            event.target.disabled = false;
+          }
+        },
+      }, 'Ask for this change'),
+      h('button', { onclick: () => dialog.close() }, 'Cancel'),
+    ),
+  );
+
+  dialog.addEventListener('close', () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
 }

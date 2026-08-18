@@ -22,6 +22,9 @@ export async function renderMxIssue(params = {}) {
   const [data, recent] = await Promise.all([api.mxBootstrap(), api.mxIssues({ limit: 12 })]);
 
   const host = h('div');
+  // Redrawing the whole screen after a request is sent, so "Just recorded"
+  // shows the entry with its request now against it rather than as it was.
+  const reload = async () => mount(host, await renderMxIssue({ areaId }));
   const basket = new Map(); // itemId -> qty
   // Kept across a save: somebody fixing room 214 usually has more than one
   // thing to record for room 214.
@@ -240,15 +243,29 @@ export async function renderMxIssue(params = {}) {
         h('label.field', h('span', 'Note'), note),
       ),
     ),
-    recentCard(recent.issues ?? []),
+    recentCard(recent.issues ?? [], reload),
     basketHost,
   );
 
   return host;
 }
 
-function recentCard(issues) {
+function recentCard(issues, reload) {
   if (!issues.length) return null;
+
+  // Neither button acts. Parts already issued go back on the shelf only when an
+  // administrator accepts it, so a technician who fitted the wrong thing asks
+  // rather than quietly putting the record right.
+  const ask = (issue) => async () => {
+    const reason = prompt('Ask to remove this entry. Why?\n\n'
+      + 'The parts stay issued until an administrator accepts it.');
+    if (reason === null) return;
+    try {
+      await api.mxDeleteIssue(issue.id, reason.trim() || null);
+      toast('Sent to an administrator — nothing has moved yet', 'good');
+      reload();
+    } catch (err) { toast(err.message, 'bad'); }
+  };
 
   return card('Just recorded', { note: 'The last few, newest first' },
     h('div.mx-recent', issues.map((issue) => h('div.mx-recent-row',
@@ -258,6 +275,10 @@ function recentCard(issues) {
       h('span.muted', '→'),
       h('span', issue.area_name || 'not recorded'),
       issue.issued_by ? h('span.muted', `· ${issue.issued_by}`) : null,
+      h('button.btn-sm.btn-ghost', { style: { marginLeft: 'auto' }, onclick: ask(issue) }, 'Remove'),
     ))),
+    h('p.muted', { style: { fontSize: '.82rem', marginTop: '.6rem', marginBottom: 0 } },
+      'Removing an entry puts those parts back on the shelf, so it goes to an administrator '
+      + 'first. Until they accept it, the store still reads as it does now.'),
   );
 }

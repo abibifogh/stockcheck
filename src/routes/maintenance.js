@@ -138,12 +138,12 @@ export async function listIssues(ctx) {
 
 /** Undo a mistake. Deleting is honest here — the audit log keeps the record. */
 export async function deleteIssue(ctx, id) {
-  const row = await ctx.db.prepare('SELECT * FROM mx_issues WHERE id = ?').bind(Number(id)).first();
-  if (!row) throw notFound('That entry has already gone.');
+  return propose(ctx, { kind: 'issue', action: 'delete', id });
+}
 
-  await ctx.db.prepare('DELETE FROM mx_issues WHERE id = ?').bind(Number(id)).run();
-  await audit(ctx, 'mx.issue.delete', id, { day: row.day, itemId: row.item_id, qty: row.qty });
-  return json({ ok: true });
+/** Ask to correct an issue — the wrong room, the wrong quantity, the wrong day. */
+export async function updateIssue(ctx, id) {
+  return propose(ctx, { kind: 'issue', action: 'edit', id });
 }
 
 // ---------------------------------------------------------------------------
@@ -216,11 +216,12 @@ export async function createDelivery(ctx) {
 }
 
 export async function deletePurchase(ctx, id) {
-  const row = await ctx.db.prepare('SELECT * FROM mx_purchases WHERE id = ?').bind(Number(id)).first();
-  if (!row) throw notFound('That purchase has already gone.');
-  await ctx.db.prepare('DELETE FROM mx_purchases WHERE id = ?').bind(Number(id)).run();
-  await audit(ctx, 'mx.purchase.delete', id, { day: row.day, itemId: row.item_id });
-  return json({ ok: true });
+  return propose(ctx, { kind: 'purchase', action: 'delete', id });
+}
+
+/** Ask to correct a delivery — a mistyped cost, a wrong quantity, a wrong date. */
+export async function updatePurchase(ctx, id) {
+  return propose(ctx, { kind: 'purchase', action: 'edit', id });
 }
 
 // ---------------------------------------------------------------------------
@@ -408,6 +409,261 @@ export async function countHistory(ctx) {
       reviewNote: row.review_note,
     })),
   });
+}
+
+// ---------------------------------------------------------------------------
+// Changing something already recorded
+// ---------------------------------------------------------------------------
+
+/**
+ * What each kind of entry is, and which of its columns may be corrected.
+ *
+ * The item is deliberately not among them. Changing which part an entry is
+ * about is not a correction, it is a different entry — and allowing it here
+ * would move stock on two items from one approval, which is the one shape a
+ * reviewer cannot check at a glance.
+ */
+const ADJUSTABLE = {
+  issue: {
+    table: 'mx_issues',
+    label: 'issue',
+    fields: ['day', 'area_id', 'qty', 'job_ref', 'note'],
+  },
+  purchase: {
+    table: 'mx_purchases',
+    label: 'delivery',
+    fields: ['day', 'qty', 'unit_cost', 'supplier', 'note'],
+  },
+};
+
+/** The proposed row, validated now rather than at approval time. */
+async function proposedFields(ctx, kind, body, previous) {
+  const day = body.day == null ? previous.day : str(body.day, 'Date', { max: 10 });
+  if (!isDay(day)) throw badRequest('That date is not valid.');
+
+  const note = body.note === undefined
+    ? previous.note
+    : (str(body.note, 'Note', { max: 300, fallback: '' }) || null);
+
+  if (kind === 'issue') {
+    const qty = num(body.qty ?? previous.qty, 'Quantity', { min: 0.0001, max: 100000 });
+    const areaId = body.areaId === undefined
+      ? previous.area_id
+      : (body.areaId == null || body.areaId === '' ? null : Number(body.areaId));
+    if (areaId != null) {
+      const area = await ctx.db.prepare('SELECT id FROM mx_areas WHERE id = ? AND active = 1')
+        .bind(areaId).first();
+      if (!area) throw badRequest('That room or area is no longer on the list.');
+    }
+    const jobRef = body.jobRef === undefined
+      ? previous.job_ref
+      : (str(body.jobRef, 'Job reference', { max: 60, fallback: '' }) || null);
+    return { day, area_id: areaId, qty, job_ref: jobRef, note };
+  }
+
+  const qty = num(body.qty ?? previous.qty, 'Quantity', { min: 0.0001, max: 1000000 });
+  const unitCost = num(body.unitCost ?? previous.unit_cost, 'Unit cost', { min: 0, max: 1000000 });
+  const supplier = body.supplier === undefined
+    ? previous.supplier
+    : (str(body.supplier, 'Supplier', { max: 120, fallback: '' }) || null);
+  return { day, qty, unit_cost: unitCost, supplier, note };
+}
+
+/**
+ * Record a request to change or remove something, and change nothing.
+ *
+ * The entry stays exactly as it is until somebody with the users permission
+ * decides — the same rule as a count, for the same reason. An administrator
+ * asking goes through here too: it is one path, and the record of who asked and
+ * who agreed is worth more than the click it saves them.
+ */
+async function propose(ctx, { kind, action, id }) {
+  const spec = ADJUSTABLE[kind];
+  const targetId = Number(id);
+
+  const previous = await ctx.db.prepare(`SELECT * FROM ${spec.table} WHERE id = ?`)
+    .bind(targetId).first();
+  if (!previous) throw notFound(`That ${spec.label} has already gone.`);
+
+  // A removal carries a reason and nothing else, and older callers send no body
+  // at all — so its parse is allowed to come back empty. An edit's is not: a
+  // malformed one there should say so rather than quietly propose no change.
+  const body = action === 'delete'
+    ? await readJson(ctx.request).catch(() => ({}))
+    : await readJson(ctx.request);
+  const reason = str(body.reason, 'Reason', { max: 300, fallback: '' }) || null;
+
+  const payload = action === 'edit'
+    ? await proposedFields(ctx, kind, body, previous)
+    : null;
+
+  // An edit that changes nothing is not a request, it is a stray press. Saying
+  // so beats putting a no-op in front of somebody to sign.
+  if (payload && spec.fields.every((f) => `${payload[f] ?? ''}` === `${previous[f] ?? ''}`)) {
+    throw badRequest('Nothing on that entry was changed.');
+  }
+
+  try {
+    await ctx.db.prepare(
+      `INSERT INTO mx_adjustments (kind, action, target_id, payload, previous, reason, requested_by)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
+    ).bind(
+      kind, action, targetId,
+      payload ? JSON.stringify(payload) : null,
+      JSON.stringify(previous), reason, ctx.session.user.name,
+    ).run();
+  } catch (err) {
+    // The partial unique index. Two people correcting the same delivery is an
+    // ordinary collision, not a server error.
+    if (/UNIQUE/i.test(String(err?.message))) {
+      throw badRequest(`There is already a change waiting on that ${spec.label}. `
+        + 'An administrator has to decide on that one first.');
+    }
+    throw err;
+  }
+
+  await audit(ctx, `mx.${kind}.${action}.request`, targetId, { day: previous.day });
+
+  const settings = await readSettings(ctx.db);
+  if (settings.notify_count_pending !== '0') {
+    const task = announce(ctx.db, ctx.env, {
+      kind: 'mx_adjustment',
+      audience: 'users',
+      title: `A ${spec.label} is waiting to be ${action === 'delete' ? 'removed' : 'corrected'}`,
+      body: `${ctx.session.user.name} asked to ${action === 'delete' ? 'remove' : 'change'} `
+        + `a ${spec.label} dated ${previous.day}. Nothing has moved until it is accepted.`,
+      link: '#/mx-stock',
+      linkLabel: 'Review the request',
+    });
+    if (ctx.executionContext?.waitUntil) ctx.executionContext.waitUntil(task);
+    else await task.catch(() => {});
+  }
+
+  return json({ ok: true, awaitingApproval: true }, { status: 202 });
+}
+
+/** Requests nobody has decided on, with the entry as it stands now. */
+export async function pendingAdjustments(ctx) {
+  const rows = await ctx.db.prepare(
+    "SELECT * FROM mx_adjustments WHERE status = 'pending' ORDER BY id DESC LIMIT 100",
+  ).all().catch(() => ({ results: [] }));
+
+  const items = await ctx.db.prepare('SELECT id, name, unit FROM mx_items').all()
+    .catch(() => ({ results: [] }));
+  const itemById = new Map((items.results ?? []).map((i) => [i.id, i]));
+  const areas = await ctx.db.prepare('SELECT id, name FROM mx_areas').all()
+    .catch(() => ({ results: [] }));
+  const areaById = new Map((areas.results ?? []).map((a) => [a.id, a.name]));
+
+  const parse = (value) => { try { return JSON.parse(value); } catch { return null; } };
+
+  return json({
+    adjustments: (rows.results ?? []).map((row) => {
+      const previous = parse(row.previous) ?? {};
+      const item = itemById.get(previous.item_id);
+      return {
+        id: row.id,
+        kind: row.kind,
+        action: row.action,
+        targetId: row.target_id,
+        name: item?.name ?? 'a part that has since gone',
+        unit: item?.unit ?? '',
+        areaName: previous.area_id ? (areaById.get(previous.area_id) ?? null) : null,
+        previous,
+        payload: parse(row.payload),
+        reason: row.reason,
+        requestedBy: row.requested_by,
+        requestedAt: row.requested_at,
+      };
+    }),
+  });
+}
+
+/**
+ * Accept or reject. Accepting is what finally moves the entry.
+ *
+ * The target is read again here rather than trusted from the request: between
+ * asking and deciding, somebody else's accepted request may have removed the
+ * very row this one is about.
+ */
+export async function reviewAdjustments(ctx) {
+  const body = await readJson(ctx.request);
+  const approve = body.approve === true;
+  const note = str(body.note, 'Note', { max: 300, fallback: '' }) || null;
+  const ids = readIds(body.ids ?? []);
+  if (!ids.length) throw badRequest('Nothing was selected.');
+
+  const holes = ids.map(() => '?').join(',');
+  const rows = await ctx.db.prepare(
+    `SELECT * FROM mx_adjustments WHERE id IN (${holes}) AND status = 'pending'`,
+  ).bind(...ids).all();
+
+  const waiting = rows.results ?? [];
+  if (!waiting.length) throw badRequest('Those requests have already been decided.');
+
+  const statements = [];
+  let applied = 0;
+  let missing = 0;
+
+  for (const row of waiting) {
+    const spec = ADJUSTABLE[row.kind];
+    if (!spec) continue;
+
+    if (!approve) {
+      statements.push(decide(ctx, row.id, 'rejected', note));
+      continue;
+    }
+
+    const target = await ctx.db.prepare(`SELECT id FROM ${spec.table} WHERE id = ?`)
+      .bind(row.target_id).first();
+    if (!target) {
+      // Already gone. Recording it as rejected with the reason is honest; the
+      // alternative is a request that stays pending for ever.
+      missing += 1;
+      statements.push(decide(ctx, row.id, 'rejected', 'That entry no longer exists.'));
+      continue;
+    }
+
+    if (row.action === 'delete') {
+      statements.push(ctx.db.prepare(`DELETE FROM ${spec.table} WHERE id = ?`).bind(row.target_id));
+    } else {
+      let payload;
+      try { payload = JSON.parse(row.payload); } catch { payload = null; }
+      if (!payload) {
+        statements.push(decide(ctx, row.id, 'rejected', 'That request could not be read.'));
+        continue;
+      }
+      const sets = spec.fields.map((f, i) => `${f} = ?${i + 1}`).join(', ');
+      statements.push(ctx.db.prepare(
+        `UPDATE ${spec.table} SET ${sets} WHERE id = ?${spec.fields.length + 1}`,
+      ).bind(...spec.fields.map((f) => payload[f] ?? null), row.target_id));
+    }
+
+    applied += 1;
+    statements.push(decide(ctx, row.id, 'approved', note));
+  }
+
+  await ctx.db.batch(statements);
+  await audit(ctx, approve ? 'mx.adjustment.approve' : 'mx.adjustment.reject', null, {
+    requests: waiting.length, applied, missing, note,
+  });
+
+  return json({
+    ok: true,
+    decided: waiting.length,
+    applied,
+    // Worth saying out loud rather than counting as accepted: the reviewer
+    // pressed accept and this one did not happen.
+    missing,
+  });
+}
+
+function decide(ctx, id, status, note) {
+  return ctx.db.prepare(
+    `UPDATE mx_adjustments
+        SET status = ?, reviewed_by = ?, reviewed_at = datetime('now'), review_note = ?
+      WHERE id = ? AND status = 'pending'`,
+  ).bind(status, ctx.session.user.name, note, id);
 }
 
 // ---------------------------------------------------------------------------
