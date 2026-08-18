@@ -470,6 +470,53 @@ other down. Add a second `deploy` step with
 `command: deploy -c wrangler.housekeeping.toml` if you would rather both went
 out together.
 
+### 8. Signing in from the group hub (optional)
+
+If the group runs **Insight** — the reporting site that reads this database
+alongside attendance, the restaurant and the laundry — somebody who has signed
+in there can click through to this site and arrive already signed in.
+
+Nothing needs pasting. Insight's own repository has a workflow that sets both
+ends, because both Workers are on the same Cloudflare account:
+
+> **abibifogh/attendance → Actions → Set Insight's secrets → Run workflow**,
+> with Insight's address filled in.
+
+It generates a shared secret, puts it on Insight as `SSO_SECRET_BREAKFAST` and
+on this Worker as `INSIGHT_SSO_SECRET`, and tells this Worker where to redeem.
+Nobody ever reads the value, including that workflow's log.
+
+Then, in Insight under **Accounts → Where each system lives**, set this site's
+sign-in address to `https://breakfast.niceoperation.com/sso` and tick the
+hand-off.
+
+What arrives is a code, not a person. This site calls Insight back, server to
+server, and asks who the code was for. Three rules it follows, which are the
+whole reason the arrangement is safe:
+
+- **It never trusts the address bar.** The code carries no identity.
+- **It never creates an account.** If Insight names somebody who has no account
+  here, they are refused and told so by name. Otherwise whoever controls the hub
+  could mint themselves an account in the kitchen's records.
+- **It never widens anybody.** The role Insight sends is ignored. What somebody
+  may do here is what their row in this database says, exactly as before.
+
+Only accounts with an **email address** can be handed over — the address is the
+one identifier the two systems share. The kitchen's PIN accounts have none, and
+that is the right answer: a PIN is shared knowledge in a kitchen, and a
+hand-off is one person.
+
+Setting these two by hand instead, if you would rather:
+
+```bash
+wrangler secret put INSIGHT_SSO_URL      # https://insight.niceoperation.com/api/sso/redeem
+wrangler secret put INSIGHT_SSO_SECRET   # the same value as SSO_SECRET_BREAKFAST on Insight
+```
+
+The housekeeping deployment redeems as `housekeeping` rather than `breakfast`,
+derived from its own `APP_SITE`, so the two need separate secrets and separate
+grants and neither can use the other's code.
+
 ---
 
 ## Day-to-day use
