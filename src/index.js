@@ -20,6 +20,7 @@ import * as bakery from './routes/bakery.js';
 import * as stocktakes from './routes/stocktakes.js';
 import * as hk from './routes/housekeeping.js';
 import { openDueTasks } from './lib/stocktakes.js';
+import { handleSsoArrival } from './lib/sso-consumer.js';
 import { todayIn } from './util/dates.js';
 import { PIN_TAKEN } from './routes/admin.js';
 
@@ -231,6 +232,13 @@ function match(pattern, pathname) {
 export default {
   async fetch(request, env, executionContext) {
     const url = new URL(request.url);
+
+    // Arriving from the group hub already signed in. Handled before the asset
+    // fallthrough, because `/sso` is a route and not a file — left to ASSETS it
+    // would answer with the single-page app's index and quietly drop the code.
+    if (url.pathname === '/sso') {
+      return handleSsoArrival(request, env, env.DB);
+    }
 
     if (!url.pathname.startsWith('/api/')) {
       return env.ASSETS.fetch(request);
