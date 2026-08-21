@@ -77,10 +77,15 @@ export async function listRevisions(ctx) {
   const ingredients = await ctx.db.prepare('SELECT id, name, unit FROM ingredients').all();
   const byId = new Map((ingredients.results ?? []).map((i) => [i.id, i]));
 
+  // A rejected request can still be accepted, so the two things that would make
+  // that a bad idea are worked out here rather than left for somebody to notice.
+  const context = await reviveContext(ctx.db, rows.results ?? []);
+
   return json({
     revisions: (rows.results ?? []).map((r) => {
       const proposed = parse(r.payload);
       const previous = parse(r.previous);
+      const flags = r.status === 'rejected' ? context(r) : {};
       return {
         id: r.id,
         day: r.day,
@@ -91,9 +96,62 @@ export async function listRevisions(ctx) {
         reviewedAt: r.reviewed_at,
         reviewNote: r.review_note,
         changes: buildDiff(proposed, previous, byId),
+        ...flags,
       };
     }),
   });
+}
+
+/**
+ * What an administrator needs to know before reopening a rejected request.
+ *
+ * Two things, and both are invisible on the request itself. Somebody may have
+ * proposed a newer change for the same day — that one is the live question, and
+ * applying both would land two whole sheets in an order nobody chose. And the
+ * day may simply have moved on since: the comparison stored with the request
+ * says what it would have replaced back then, so accepting it now would
+ * overwrite figures the reviewer was never shown.
+ */
+async function reviveContext(db, rows) {
+  const days = [...new Set(rows.filter((r) => r.status === 'rejected').map((r) => r.day))];
+  if (!days.length) return () => ({});
+
+  const holes = days.map(() => '?').join(',');
+  const [sheets, usage, open] = await Promise.all([
+    db.prepare(`SELECT day, inhouse_guests, outside_guests, note FROM service_days WHERE day IN (${holes})`)
+      .bind(...days).all().catch(() => ({ results: [] })),
+    db.prepare(`SELECT day, ingredient_id, qty FROM usage WHERE day IN (${holes})`)
+      .bind(...days).all().catch(() => ({ results: [] })),
+    db.prepare(`SELECT DISTINCT day FROM day_revisions WHERE status = 'pending' AND day IN (${holes})`)
+      .bind(...days).all().catch(() => ({ results: [] })),
+  ]);
+
+  const sheetByDay = new Map((sheets.results ?? []).map((r) => [r.day, r]));
+  const usageByDay = new Map();
+  for (const r of usage.results ?? []) {
+    if (!usageByDay.has(r.day)) usageByDay.set(r.day, new Map());
+    usageByDay.get(r.day).set(Number(r.ingredient_id), Number(r.qty));
+  }
+  const openDays = new Set((open.results ?? []).map((r) => r.day));
+
+  const same = (a, b) => `${a ?? ''}` === `${b ?? ''}`;
+
+  return (row) => {
+    const snapshot = parse(row.previous);
+    const sheet = sheetByDay.get(row.day) ?? {};
+    const live = usageByDay.get(row.day) ?? new Map();
+    const wasUsage = new Map(
+      Object.entries(snapshot.usage ?? {}).map(([id, qty]) => [Number(id), Number(qty)]),
+    );
+
+    const ids = new Set([...wasUsage.keys(), ...live.keys()]);
+    const moved = !same(sheet.inhouse_guests, snapshot.inhouse_guests)
+      || !same(sheet.outside_guests, snapshot.outside_guests)
+      || !same(sheet.note, snapshot.note)
+      || [...ids].some((id) => !same(live.get(id), wasUsage.get(id)));
+
+    return { supersededByOpen: openDays.has(row.day), stale: moved };
+  };
 }
 
 export async function reviewRevision(ctx, id) {
@@ -103,8 +161,24 @@ export async function reviewRevision(ctx, id) {
 
   const revision = await ctx.db.prepare('SELECT * FROM day_revisions WHERE id = ?').bind(id).first();
   if (!revision) throw notFound('That change request no longer exists');
-  if (revision.status !== 'pending') {
+
+  // Rejected as well as pending. A rejection usually means "I do not believe
+  // this yet", and the cook's explanation arrives the next morning — at which
+  // point making them re-submit the identical sheet would lose who proposed it
+  // and when. Approved stays out (applying a sheet twice is not a correction),
+  // and so does superseded: a newer proposal already replaced that one.
+  if (!['pending', 'rejected'].includes(revision.status)) {
     throw badRequest(`This request was already ${revision.status}.`);
+  }
+
+  if (revision.status === 'rejected' && approve) {
+    const open = await ctx.db.prepare(
+      "SELECT id FROM day_revisions WHERE day = ? AND status = 'pending' LIMIT 1",
+    ).bind(revision.day).first();
+    if (open) {
+      throw badRequest('A newer change for that day is waiting on a decision. '
+        + 'Answer that one instead — accepting both would apply two sheets to one day.');
+    }
   }
 
   const reviewer = `${ctx.session.user.name} (${ctx.session.user.role})`;

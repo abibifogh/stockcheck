@@ -53,13 +53,22 @@ const STATUS_PILL = {
 function revisionCard(rev, reload) {
   const [cls, label] = STATUS_PILL[rev.status] ?? ['', rev.status];
 
+  const reopening = rev.status === 'rejected';
+
   const decide = async (approve, event) => {
     const verb = approve ? 'Accept' : 'Reject';
     const note = window.prompt(
       `${verb} the changes to ${fmtDay(rev.day)}?\n\n`
+      + (reopening && approve
+        ? `This was rejected${rev.reviewedBy ? ` by ${rev.reviewedBy}` : ''}. Accepting it now applies it.\n`
+        : '')
       + (approve
         ? 'The recorded figures will be replaced with the proposed ones.'
         : 'The recorded figures will stay exactly as they are.')
+      + (reopening && approve && rev.stale
+        ? '\n\nThe day has changed since this was proposed. The comparison below is '
+          + 'against what was recorded then, not now.'
+        : '')
       + '\n\nAdd a note (optional):',
       '',
     );
@@ -87,8 +96,14 @@ function revisionCard(rev, reload) {
     wide: true,
     actions: h('div.btn-row',
       h(`span.pill${cls ? `.${cls}` : ''}`, label),
+      // A rejection is a decision for now, not a verdict for ever. Where a newer
+      // proposal is waiting on the same day, that one is the live question and
+      // this one offers nothing.
       rev.status === 'pending' ? h('button.btn-sm.btn-danger', { onclick: (e) => decide(false, e) }, 'Reject') : null,
-      rev.status === 'pending' ? h('button.btn-sm.btn-primary', { onclick: (e) => decide(true, e) }, 'Accept') : null,
+      rev.status === 'pending' || (reopening && !rev.supersededByOpen)
+        ? h('button.btn-sm.btn-primary', { onclick: (e) => decide(true, e) },
+          reopening ? 'Accept after all' : 'Accept')
+        : null,
     ),
   },
     rev.changes.length
@@ -122,6 +137,35 @@ function revisionCard(rev, reload) {
     rev.status === 'pending'
       ? h('p.muted', { style: { fontSize: '.82rem', marginTop: '.7rem', marginBottom: 0 } },
         'Until this is accepted, every report still uses the figures in the “Recorded now” column.')
+      : null,
+
+    reopening && rev.supersededByOpen
+      ? h('div.alert.info', { style: { marginTop: '.7rem' } },
+        h('span.alert-icon', 'ℹ️'),
+        h('div',
+          h('div.alert-title', 'A newer change for this day is waiting'),
+          h('div.alert-detail',
+            'Answer that one instead. Accepting both would apply two sheets to one day, in an '
+            + 'order nobody chose.'),
+        ))
+      : null,
+
+    reopening && rev.stale && !rev.supersededByOpen
+      ? h('div.alert.warn', { style: { marginTop: '.7rem' } },
+        h('span.alert-icon', '⚠️'),
+        h('div',
+          h('div.alert-title', 'The day has changed since this was proposed'),
+          h('div.alert-detail',
+            'The “Recorded now” column shows what was there when this was written, not what is '
+            + 'there today. Accepting replaces the day with the proposed figures either way — '
+            + 'check the day itself first if the difference matters.'),
+        ))
+      : null,
+
+    reopening && !rev.stale && !rev.supersededByOpen
+      ? h('p.muted', { style: { fontSize: '.82rem', marginTop: '.7rem', marginBottom: 0 } },
+        'This was rejected, and can still be accepted. The day has not moved since it was '
+        + 'proposed, so the comparison above is current.')
       : null,
   );
 }

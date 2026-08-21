@@ -55,7 +55,7 @@ indistinguishable from "we forgot" and silently drags every average down.
 | **Day** | What this morning cost, how it compares with a normal day *of the same weekday*, and which items moved the number. |
 | **Week** | This week against last, weekday patterns, biggest risers and fallers, portioning consistency. |
 | **Month** | Full report: cost per guest trend, category mix, outsider economics, store movement, best/worst days, projection. |
-| **Approvals** | Corrections to days already submitted, shown as a before/after list to accept or reject. |
+| **Approvals** | Corrections to days already submitted, shown as a before/after list to accept or reject. A rejection is not final — a turned-down correction can be accepted later, unless a newer one for the same day is waiting; where the day has moved on since, the screen says so before you do. |
 | **Stock** | Book stock, days of cover, reorder list, physical-count variances. Filter the page to one category, or band every table by category. |
 | **Purchases** | Delivery log — multi-line, supplier picked from a list, unit costs pre-filled from the last price paid. |
 

@@ -791,6 +791,16 @@ const SECTIONS = [
       ),
       note('Deal with these promptly.', 'A correction sitting unapproved means somebody knows the recorded '
         + 'numbers are wrong and the reports do not.'),
+      note('Rejecting is not final.',
+        'Most rejections mean \u201cnot until somebody explains this\u201d, and the explanation usually arrives '
+        + 'the next morning. A rejected correction keeps its own tab, and Accept after all applies it '
+        + 'just as accepting it first time would have \u2014 so nobody has to send the same sheet twice, '
+        + 'and who proposed it and when is kept.'),
+      warn('Two things stop a reopened one.',
+        'If a newer correction for the same day is waiting, answer that one instead \u2014 accepting both '
+        + 'would apply two sheets to one day. And if the day has moved on since, you are told so: the '
+        + 'before-and-after was written against the figures of the time, not today\u2019s, and accepting '
+        + 'replaces the day either way.'),
     ),
   },
 
