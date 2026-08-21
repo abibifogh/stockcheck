@@ -17,10 +17,12 @@ import { printButton } from '../print.js';
  * included. Every list here is drawn from the same rows, so they agree.
  */
 export async function renderMxStock() {
-  const [data, pending, asked] = await Promise.all([
+  const [data, pending, asked, adjustments] = await Promise.all([
     api.mxStock(),
     api.mxPendingCounts().catch(() => ({ counts: [], days: [] })),
     api.mxMyStocktakes().catch(() => ({ tasks: [] })),
+    // Absent until 0017 has been run, which is not a reason to fail the page.
+    api.mxPendingAdjustments().catch(() => ({ adjustments: [] })),
   ]);
   const host = h('div');
   const reload = async () => mount(host, await renderMxStock());
@@ -195,6 +197,8 @@ export async function renderMxStock() {
       ),
 
       countApprovalCard(pending, reload),
+      adjustmentCard(adjustments.adjustments ?? [], reload),
+      rejectedAdjustmentCard(adjustments.rejected ?? [], reload),
 
       shrinkage.length
         ? card('Where the count did not match the book', { wide: true },
@@ -403,5 +407,202 @@ function countApprovalCard(pending, reload) {
           + 'cannot unsettle it.'),
       )
       : null,
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// Changes waiting on a decision
+// ---------------------------------------------------------------------------
+
+/**
+ * Requests to correct or remove something already recorded.
+ *
+ * Sits beside the counts and reads the same way, because it is the same rule
+ * from the other side: a count that has been agreed can be undone just as
+ * quietly by deleting the delivery behind it, so that asks too.
+ */
+function adjustmentCard(adjustments, reload) {
+  if (!adjustments.length) return null;
+
+  const mayDecide = can('users');
+  const chosen = new Set(adjustments.map((a) => a.id));
+  const boxes = new Map();
+  const noteInput = h('input', { type: 'text', placeholder: 'Note (optional)', maxlength: 300 });
+  const foot = h('div.btn-row', { style: { marginTop: '.9rem' } });
+
+  const decide = async (approve) => {
+    const ids = [...chosen];
+    if (!ids.length) { toast('Nothing selected', 'bad'); return; }
+    try {
+      const result = await api.mxReviewAdjustments({
+        ids, approve, note: noteInput.value.trim() || null,
+      });
+      if (approve && result.missing) {
+        toast(`${result.applied} applied — ${result.missing} had already gone`, 'bad');
+      } else {
+        toast(approve ? `${result.applied} applied` : `${result.decided} rejected`, 'good');
+      }
+      reload();
+    } catch (err) { toast(err.message, 'bad'); }
+  };
+
+  const refresh = () => {
+    mount(foot, mayDecide
+      ? h('div',
+        h('span.muted', { style: { marginRight: '.6rem' } },
+          `${chosen.size} of ${adjustments.length} selected`),
+        h('button.btn-primary', { disabled: !chosen.size, onclick: () => decide(true) }, 'Accept'),
+        h('button', { disabled: !chosen.size, onclick: () => decide(false) }, 'Reject'),
+      )
+      : null);
+  };
+
+  refresh();
+
+  return card('Changes waiting for approval', {
+    wide: true,
+    note: mayDecide
+      ? 'Accepting is what finally moves the entry'
+      : 'An administrator has to accept these',
+  },
+    !mayDecide
+      ? h('div.alert.info',
+        h('span.alert-icon', 'ℹ️'),
+        h('div',
+          h('div.alert-title', 'These are with an administrator'),
+          h('div.alert-detail',
+            'Nothing below has happened yet. Each entry is still exactly as it was recorded.'),
+        ))
+      : null,
+
+    table([
+      ...(mayDecide ? [{
+        key: 'id',
+        label: '',
+        cls: 'tick',
+        format: (id) => {
+          const box = h('input', {
+            type: 'checkbox', checked: chosen.has(id),
+            onchange: (e) => {
+              if (e.target.checked) chosen.add(id); else chosen.delete(id);
+              refresh();
+            },
+          });
+          boxes.set(id, box);
+          return box;
+        },
+      }] : []),
+      { key: 'kind', label: 'What', format: (v) => h('span.pill', v === 'issue' ? 'issue' : 'delivery') },
+      {
+        key: 'previous',
+        label: 'Entry',
+        format: (v, r) => h('div',
+          h('div', h('strong', r.name)),
+          h('small.muted', `${fmtDay(v.day)}${r.areaName ? ` · ${r.areaName}` : ''}`)),
+      },
+      { key: 'action', label: 'Asked for', format: (_v, r) => changes(r) },
+      { key: 'reason', label: 'Why', format: (v) => (v ? h('span', v) : h('span.muted', '—')) },
+      {
+        key: 'requestedBy',
+        label: 'Asked by',
+        format: (v, r) => h('div', h('div', v || '—'),
+          h('small.muted', String(r.requestedAt ?? '').slice(0, 16).replace('T', ' '))),
+      },
+    ], adjustments),
+
+    mayDecide
+      ? h('div', { style: { marginTop: '.8rem' } },
+        h('label.field', h('span', 'Note on the decision'), noteInput),
+        foot,
+      )
+      : null,
+    h('p.muted', { style: { fontSize: '.82rem', marginTop: '.7rem', marginBottom: 0 } },
+      'Removing a delivery takes parts back off the shelf and removing an issue puts them back on, '
+      + 'which is why neither happens on its own. Whoever asks is never whoever decides — the same '
+      + 'rule as a count, and for the same reason.'),
+  );
+}
+
+
+/** What the reviewer needs: the field that moves, from what to what. */
+const CHANGE_LABELS = {
+  day: 'date', qty: 'quantity', unit_cost: 'each', supplier: 'supplier',
+  note: 'note', area_id: 'room', job_ref: 'job',
+};
+
+function changes(row) {
+  if (row.action === 'delete') return h('span.delta.up', 'remove it');
+  const moved = Object.keys(row.payload ?? {})
+    .filter((f) => `${row.payload[f] ?? ''}` !== `${row.previous[f] ?? ''}`)
+    .map((f) => h('div', h('span.muted', `${CHANGE_LABELS[f] ?? f}: `),
+      h('span', `${row.previous[f] ?? '—'}`), ' → ', h('strong', `${row.payload[f] ?? '—'}`)));
+  return moved.length ? h('div', moved) : h('span.muted', 'no change');
+}
+
+/**
+ * Requests that were turned down, and can still be accepted.
+ *
+ * A rejection is usually "I do not believe this yet" rather than "never", and
+ * the answer tends to arrive afterwards — the technician explains, or the
+ * delivery note turns up. Making somebody re-file the identical request would
+ * lose who asked, when and why, so the original is simply reopened.
+ *
+ * Only an administrator sees this. For everybody else a rejection is an answer,
+ * and a list of answers to argue with is not a screen anybody needs.
+ */
+function rejectedAdjustmentCard(rejected, reload) {
+  if (!rejected.length || !can('users')) return null;
+
+  const accept = (row) => async (event) => {
+    if (!confirm(`Accept this after all?\n\nIt was rejected`
+      + `${row.reviewedBy ? ` by ${row.reviewedBy}` : ''}`
+      + `${row.reviewNote ? ` — "${row.reviewNote}"` : ''}.\n\n`
+      + 'Accepting applies it now.')) return;
+    event.target.disabled = true;
+    try {
+      const result = await api.mxReviewAdjustments({ ids: [row.id], approve: true });
+      if (result.blocked) toast('Somebody has since asked again about that entry — decide that one', 'bad');
+      else if (result.missing) toast('That entry has since gone, so nothing was applied', 'bad');
+      else toast('Applied', 'good');
+      reload();
+    } catch (err) {
+      toast(err.message, 'bad');
+      event.target.disabled = false;
+    }
+  };
+
+  return card('Turned down earlier', {
+    wide: true,
+    note: 'A rejection is not final — these can still be accepted',
+  },
+    table([
+      { key: 'kind', label: 'What', format: (v) => h('span.pill', v === 'issue' ? 'issue' : 'delivery') },
+      {
+        key: 'previous',
+        label: 'Entry',
+        format: (v, r) => h('div',
+          h('div', h('strong', r.name)),
+          h('small.muted', `${fmtDay(v.day)}${r.areaName ? ` · ${r.areaName}` : ''}`)),
+      },
+      { key: 'action', label: 'Asked for', format: (_v, r) => changes(r) },
+      {
+        key: 'reviewedBy',
+        label: 'Rejected by',
+        format: (v, r) => h('div', h('div', v || '—'),
+          r.reviewNote ? h('small.muted', r.reviewNote) : null),
+      },
+      {
+        key: 'id',
+        label: '',
+        format: (_v, r) => (r.superseded
+          ? h('span.muted', { title: 'Somebody has asked again about this entry' }, 'asked again')
+          : h('button.btn-sm', { onclick: accept(r) }, 'Accept after all')),
+      },
+    ], rejected, { rowClass: (r) => (r.superseded ? 'row-muted' : '') }),
+    h('p.muted', { style: { fontSize: '.82rem', marginTop: '.6rem', marginBottom: 0 } },
+      'Accepting one here applies it straight away, exactly as accepting it first time would '
+      + 'have. Where somebody has since asked again about the same entry, answer that one '
+      + 'instead — two decisions on one entry would land in an order nobody chose.'),
   );
 }

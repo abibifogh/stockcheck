@@ -965,6 +965,52 @@ const SECTIONS = [
   },
 
   {
+    id: 'mx-changes',
+    title: 'Correcting something already recorded',
+    permission: 'mx_issue',
+    lead: 'Entries do not move on their own. You ask, and an administrator decides.',
+    render: () => h('div',
+      h('p', 'Recording an issue or a delivery is immediate — a technician handing out parts in a '
+        + 'corridor is not asking anybody\u2019s permission, and never was. Changing one afterwards is '
+        + 'different. Removing an issue puts those parts back on the shelf; removing a delivery '
+        + 'takes them off it. Either can undo an agreed count as quietly as a bad recount could, so '
+        + 'either goes to an administrator first.'),
+      steps(
+        h('span', h('strong', 'Press Correct or Remove'), ' on the entry \u2014 on the deliveries list, '
+          + 'or on \u201cJust recorded\u201d after issuing.'),
+        h('span', h('strong', 'Say why.'), ' One line is enough. It is what the administrator reads '
+          + 'when deciding, and it is kept with the decision afterwards.'),
+        h('span', h('strong', 'Nothing changes yet.'), ' The entry stays exactly as it is, and so do '
+          + 'stock and costs, until somebody accepts the request.'),
+      ),
+      note('The part itself cannot be changed.',
+        'Only the date, the quantity, the cost, the room and the note. An entry against the wrong '
+        + 'part is not a correction but a different entry: remove that one and record the right '
+        + 'one, so the two decisions are separate.'),
+      note('One request at a time per entry.',
+        'If somebody has already asked to change the same delivery, you are told so rather than '
+        + 'queueing a second one behind it. An administrator decides on that one first.'),
+      can('users')
+        ? note('Accepting is what finally moves it.',
+          'The requests sit under Parts \u2192 Stock, beside the counts waiting there, and each shows '
+          + 'the entry as it stands and what it would become. If the entry has since gone \u2014 '
+          + 'another request removed it \u2014 accepting says so rather than pretending it worked.')
+        : note('You will not see the decision on this screen.',
+          'It goes to whoever manages people. The entry simply changes, or does not, and the bell '
+          + 'tells them there is something waiting.'),
+      can('users')
+        ? note('Rejecting is not final.',
+          'Most rejections mean \u201cI do not believe this yet\u201d, and the answer turns up afterwards \u2014 '
+          + 'the technician explains, or the delivery note is found. Turned-down requests stay on '
+          + 'the same screen under \u201cTurned down earlier\u201d, and accepting one there applies it just '
+          + 'as it would have first time. Nobody has to re-file it, so who asked and why is kept.')
+        : note('A rejection can be revisited.',
+          'If you think it was turned down in error, say so \u2014 an administrator can accept the same '
+          + 'request later without you having to send it again.'),
+    ),
+  },
+
+  {
     id: 'mx-schedule',
     title: 'Counting on a schedule',
     permission: 'mx_stock',

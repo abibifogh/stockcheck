@@ -133,20 +133,25 @@ export const api = {
   mxBootstrap: () => request('/api/mx/bootstrap'),
   mxIssues: (params = {}) => request(`/api/mx/issues?${new URLSearchParams(params)}`),
   mxCreateIssue: (body) => request('/api/mx/issues', { method: 'POST', body }),
-  mxDeleteIssue: (id) => request(`/api/mx/issues/${id}`, { method: 'DELETE' }),
+  // Both ask for a change rather than making one. What comes back says so.
+  mxUpdateIssue: (id, body) => request(`/api/mx/issues/${id}`, { method: 'PUT', body }),
+  mxDeleteIssue: (id, reason) => request(`/api/mx/issues/${id}`, { method: 'DELETE', body: { reason } }),
 
   mxPurchases: (from, to) => request(`/api/mx/purchases?${new URLSearchParams({
     ...(from ? { from } : {}), ...(to ? { to } : {}),
   })}`),
   mxLastCosts: () => request('/api/mx/purchases/last-costs'),
   mxCreateDelivery: (body) => request('/api/mx/deliveries', { method: 'POST', body }),
-  mxDeletePurchase: (id) => request(`/api/mx/purchases/${id}`, { method: 'DELETE' }),
+  mxUpdatePurchase: (id, body) => request(`/api/mx/purchases/${id}`, { method: 'PUT', body }),
+  mxDeletePurchase: (id, reason) => request(`/api/mx/purchases/${id}`, { method: 'DELETE', body: { reason } }),
 
   mxStock: (asOf) => request(`/api/mx/stock${asOf ? `?asOf=${asOf}` : ''}`),
   mxSaveCounts: (body) => request('/api/mx/counts', { method: 'POST', body }),
   mxPendingCounts: () => request('/api/mx/counts/pending'),
   mxCountHistory: () => request('/api/mx/counts/history'),
   mxReviewCounts: (body) => request('/api/mx/counts/review', { method: 'POST', body }),
+  mxPendingAdjustments: () => request('/api/mx/adjustments'),
+  mxReviewAdjustments: (body) => request('/api/mx/adjustments/review', { method: 'POST', body }),
 
   mxOverview: () => request('/api/mx/overview'),
   mxReport: (from, to) => request(`/api/mx/report?${new URLSearchParams({

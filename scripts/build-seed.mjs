@@ -153,6 +153,9 @@ const OTHER_STORES = new Set([
   // Reads is_produced, which 0011 adds and this seed never does. The ALTER
   // would succeed and the UPDATE right after it would fail on the column.
   '0016_bistro_items.sql',
+  // The parts store's approval queue for changing something already recorded.
+  // Belongs to 0005 above, which this seed does not build.
+  '0017_mx_adjustments.sql',
 ]);
 
 // The whole database a housekeeping-only site needs.

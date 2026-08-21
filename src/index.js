@@ -143,11 +143,15 @@ const ROUTES = [
 
   ['GET', '/api/mx/issues', 'mx_issue', mx.listIssues],
   ['POST', '/api/mx/issues', 'mx_issue', mx.createIssue],
+  // Both of these ask rather than act: what is already recorded moves only
+  // once an administrator accepts it.
+  ['PUT', '/api/mx/issues/:id', 'mx_issue', mx.updateIssue],
   ['DELETE', '/api/mx/issues/:id', 'mx_issue', mx.deleteIssue],
 
   ['GET', '/api/mx/purchases', 'mx_purchases', mx.listPurchases],
   ['GET', '/api/mx/purchases/last-costs', 'mx_purchases', mx.lastCosts],
   ['POST', '/api/mx/deliveries', 'mx_purchases', mx.createDelivery],
+  ['PUT', '/api/mx/purchases/:id', 'mx_purchases', mx.updatePurchase],
   ['DELETE', '/api/mx/purchases/:id', 'mx_purchases', mx.deletePurchase],
 
   ['GET', '/api/mx/stock', 'mx_stock', mx.stock],
@@ -157,6 +161,11 @@ const ROUTES = [
   // Accepting a count rewrites the shelf, so it is an administrator's call —
   // never the same person who did the counting.
   ['POST', '/api/mx/counts/review', 'users', mx.reviewCounts],
+
+  // Anybody who can see the store can see what is waiting; only an
+  // administrator decides — the same split as a count.
+  ['GET', '/api/mx/adjustments', 'mx_stock', mx.pendingAdjustments],
+  ['POST', '/api/mx/adjustments/review', 'users', mx.reviewAdjustments],
 
   ['GET', '/api/mx/overview', 'mx_reports', mx.overview],
   ['GET', '/api/mx/report', 'mx_reports', mx.report],
