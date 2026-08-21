@@ -998,6 +998,15 @@ const SECTIONS = [
         : note('You will not see the decision on this screen.',
           'It goes to whoever manages people. The entry simply changes, or does not, and the bell '
           + 'tells them there is something waiting.'),
+      can('users')
+        ? note('Rejecting is not final.',
+          'Most rejections mean \u201cI do not believe this yet\u201d, and the answer turns up afterwards \u2014 '
+          + 'the technician explains, or the delivery note is found. Turned-down requests stay on '
+          + 'the same screen under \u201cTurned down earlier\u201d, and accepting one there applies it just '
+          + 'as it would have first time. Nobody has to re-file it, so who asked and why is kept.')
+        : note('A rejection can be revisited.',
+          'If you think it was turned down in error, say so \u2014 an administrator can accept the same '
+          + 'request later without you having to send it again.'),
     ),
   },
 

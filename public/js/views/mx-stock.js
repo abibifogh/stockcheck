@@ -198,6 +198,7 @@ export async function renderMxStock() {
 
       countApprovalCard(pending, reload),
       adjustmentCard(adjustments.adjustments ?? [], reload),
+      rejectedAdjustmentCard(adjustments.rejected ?? [], reload),
 
       shrinkage.length
         ? card('Where the count did not match the book', { wide: true },
@@ -457,22 +458,6 @@ function adjustmentCard(adjustments, reload) {
       : null);
   };
 
-  // What the reviewer actually needs: the field that moves, from what to what.
-  const changes = (row) => {
-    if (row.action === 'delete') {
-      return h('span.delta.up', 'remove it');
-    }
-    const labels = {
-      day: 'date', qty: 'quantity', unit_cost: 'each', supplier: 'supplier',
-      note: 'note', area_id: 'room', job_ref: 'job',
-    };
-    const moved = Object.keys(row.payload ?? {})
-      .filter((f) => `${row.payload[f] ?? ''}` !== `${row.previous[f] ?? ''}`)
-      .map((f) => h('div', h('span.muted', `${labels[f] ?? f}: `),
-        h('span', `${row.previous[f] ?? '—'}`), ' → ', h('strong', `${row.payload[f] ?? '—'}`)));
-    return moved.length ? h('div', moved) : h('span.muted', 'no change');
-  };
-
   refresh();
 
   return card('Changes waiting for approval', {
@@ -536,5 +521,88 @@ function adjustmentCard(adjustments, reload) {
       'Removing a delivery takes parts back off the shelf and removing an issue puts them back on, '
       + 'which is why neither happens on its own. Whoever asks is never whoever decides — the same '
       + 'rule as a count, and for the same reason.'),
+  );
+}
+
+
+/** What the reviewer needs: the field that moves, from what to what. */
+const CHANGE_LABELS = {
+  day: 'date', qty: 'quantity', unit_cost: 'each', supplier: 'supplier',
+  note: 'note', area_id: 'room', job_ref: 'job',
+};
+
+function changes(row) {
+  if (row.action === 'delete') return h('span.delta.up', 'remove it');
+  const moved = Object.keys(row.payload ?? {})
+    .filter((f) => `${row.payload[f] ?? ''}` !== `${row.previous[f] ?? ''}`)
+    .map((f) => h('div', h('span.muted', `${CHANGE_LABELS[f] ?? f}: `),
+      h('span', `${row.previous[f] ?? '—'}`), ' → ', h('strong', `${row.payload[f] ?? '—'}`)));
+  return moved.length ? h('div', moved) : h('span.muted', 'no change');
+}
+
+/**
+ * Requests that were turned down, and can still be accepted.
+ *
+ * A rejection is usually "I do not believe this yet" rather than "never", and
+ * the answer tends to arrive afterwards — the technician explains, or the
+ * delivery note turns up. Making somebody re-file the identical request would
+ * lose who asked, when and why, so the original is simply reopened.
+ *
+ * Only an administrator sees this. For everybody else a rejection is an answer,
+ * and a list of answers to argue with is not a screen anybody needs.
+ */
+function rejectedAdjustmentCard(rejected, reload) {
+  if (!rejected.length || !can('users')) return null;
+
+  const accept = (row) => async (event) => {
+    if (!confirm(`Accept this after all?\n\nIt was rejected`
+      + `${row.reviewedBy ? ` by ${row.reviewedBy}` : ''}`
+      + `${row.reviewNote ? ` — "${row.reviewNote}"` : ''}.\n\n`
+      + 'Accepting applies it now.')) return;
+    event.target.disabled = true;
+    try {
+      const result = await api.mxReviewAdjustments({ ids: [row.id], approve: true });
+      if (result.blocked) toast('Somebody has since asked again about that entry — decide that one', 'bad');
+      else if (result.missing) toast('That entry has since gone, so nothing was applied', 'bad');
+      else toast('Applied', 'good');
+      reload();
+    } catch (err) {
+      toast(err.message, 'bad');
+      event.target.disabled = false;
+    }
+  };
+
+  return card('Turned down earlier', {
+    wide: true,
+    note: 'A rejection is not final — these can still be accepted',
+  },
+    table([
+      { key: 'kind', label: 'What', format: (v) => h('span.pill', v === 'issue' ? 'issue' : 'delivery') },
+      {
+        key: 'previous',
+        label: 'Entry',
+        format: (v, r) => h('div',
+          h('div', h('strong', r.name)),
+          h('small.muted', `${fmtDay(v.day)}${r.areaName ? ` · ${r.areaName}` : ''}`)),
+      },
+      { key: 'action', label: 'Asked for', format: (_v, r) => changes(r) },
+      {
+        key: 'reviewedBy',
+        label: 'Rejected by',
+        format: (v, r) => h('div', h('div', v || '—'),
+          r.reviewNote ? h('small.muted', r.reviewNote) : null),
+      },
+      {
+        key: 'id',
+        label: '',
+        format: (_v, r) => (r.superseded
+          ? h('span.muted', { title: 'Somebody has asked again about this entry' }, 'asked again')
+          : h('button.btn-sm', { onclick: accept(r) }, 'Accept after all')),
+      },
+    ], rejected, { rowClass: (r) => (r.superseded ? 'row-muted' : '') }),
+    h('p.muted', { style: { fontSize: '.82rem', marginTop: '.6rem', marginBottom: 0 } },
+      'Accepting one here applies it straight away, exactly as accepting it first time would '
+      + 'have. Where somebody has since asked again about the same entry, answer that one '
+      + 'instead — two decisions on one entry would land in an order nobody chose.'),
   );
 }

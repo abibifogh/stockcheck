@@ -27,7 +27,7 @@ const PURCHASE = {
   supplier: 'Acme', note: null,
 };
 
-function fakeDb({ target = PURCHASE, pending = [], insertFails = null } = {}) {
+function fakeDb({ target = PURCHASE, pending = [], insertFails = null, openOnTarget = false } = {}) {
   const written = [];
 
   const statement = (sql) => ({
@@ -42,6 +42,8 @@ function fakeDb({ target = PURCHASE, pending = [], insertFails = null } = {}) {
       return { results: [] };
     },
     async first() {
+      // The revive guard: is a newer request already open on this entry?
+      if (/FROM mx_adjustments/.test(sql)) return openOnTarget ? { id: 99 } : null;
       if (/FROM mx_issues|FROM mx_purchases/.test(sql)) return target;
       if (/FROM mx_areas/.test(sql)) return { id: 2 };
       return null;
@@ -197,13 +199,15 @@ test('accepting something whose entry has since gone says so', async () => {
   assert.match(decision.binds[2], /no longer exists/);
 });
 
-test('a decision names who made it, and only lands on a pending row', async () => {
+test('a decision names who made it, and never lands on an applied one', async () => {
   const db = fakeDb({ pending: [request()] });
   await reviewAdjustments(context(db, { method: 'POST', body: { ids: [1], approve: true } }));
 
   const [decision] = wrote(db, /UPDATE mx_adjustments/);
   assert.equal(decision.binds[1], 'Ama');
-  assert.match(decision.sql, /status = 'pending'/);
+  // Pending or rejected may be decided; approved may not. Applying a change
+  // twice is never a correction.
+  assert.match(decision.sql, /status IN \('pending', 'rejected'\)/);
 });
 
 test('nothing selected is refused', async () => {
@@ -211,5 +215,65 @@ test('nothing selected is refused', async () => {
   await assert.rejects(
     () => reviewAdjustments(context(db, { method: 'POST', body: { ids: [], approve: true } })),
     /Nothing was selected/,
+  );
+});
+
+// ------------------------------------------------- changing a mind, later --
+
+/**
+ * A rejection is a decision for now, not a verdict for ever. The usual reason
+ * for one is "I do not believe this yet", and the answer arrives afterwards —
+ * at which point making somebody re-file the identical request would lose who
+ * asked, when, and why.
+ */
+
+const turnedDown = (over = {}) => request({ status: 'rejected', ...over });
+
+test('something rejected earlier can still be accepted', async () => {
+  const db = fakeDb({ pending: [turnedDown()] });
+  const res = await reviewAdjustments(context(db, { method: 'POST', body: { ids: [1], approve: true } }));
+
+  assert.equal(wrote(db, /DELETE FROM mx_purchases/).length, 1, 'it finally happens');
+  const body = await res.json();
+  assert.equal(body.applied, 1);
+  assert.equal(body.revived, 1, 'and the screen can say it was reopened rather than new');
+});
+
+test('the query that finds them looks past pending', async () => {
+  const db = fakeDb({ pending: [turnedDown()] });
+  await reviewAdjustments(context(db, { method: 'POST', body: { ids: [1], approve: true } }));
+
+  const [lookup] = db.written.filter((w) => /SELECT \* FROM mx_adjustments/.test(w.sql));
+  assert.ok(lookup === undefined || /status IN/.test(lookup.sql));
+});
+
+test('reviving is refused while a newer request is open on the same entry', async () => {
+  // Two decisions on one row, in an order nobody chose. The open one is the
+  // live question, so that is the one to answer.
+  const db = fakeDb({ pending: [turnedDown()], openOnTarget: true });
+  const res = await reviewAdjustments(context(db, { method: 'POST', body: { ids: [1], approve: true } }));
+
+  assert.equal(wrote(db, /DELETE FROM mx_purchases/).length, 0, 'nothing applied');
+  assert.equal(wrote(db, /UPDATE mx_adjustments/).length, 0, 'and it stays rejected');
+
+  const body = await res.json();
+  assert.equal(body.blocked, 1);
+  assert.equal(body.applied, 0);
+});
+
+test('a pending request is unaffected by that guard', async () => {
+  // The guard is only about reviving. A pending one is the live question.
+  const db = fakeDb({ pending: [request()], openOnTarget: true });
+  await reviewAdjustments(context(db, { method: 'POST', body: { ids: [1], approve: true } }));
+
+  assert.equal(wrote(db, /DELETE FROM mx_purchases/).length, 1);
+});
+
+test('an already-applied request is not offered again', async () => {
+  // The select returns nothing for it, which is the whole guard.
+  const db = fakeDb({ pending: [] });
+  await assert.rejects(
+    () => reviewAdjustments(context(db, { method: 'POST', body: { ids: [1], approve: true } })),
+    /already been applied/,
   );
 });

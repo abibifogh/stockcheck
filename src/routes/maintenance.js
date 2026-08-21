@@ -548,6 +548,14 @@ export async function pendingAdjustments(ctx) {
     "SELECT * FROM mx_adjustments WHERE status = 'pending' ORDER BY id DESC LIMIT 100",
   ).all().catch(() => ({ results: [] }));
 
+  // What was turned down, and can still be accepted. A rejection is a decision
+  // for now, not a verdict for ever: the usual reason for one is "I do not
+  // believe this yet", and the answer arrives later. Bounded, because this is a
+  // list to act on rather than a history — countHistory is the record.
+  const turnedDown = await ctx.db.prepare(
+    "SELECT * FROM mx_adjustments WHERE status = 'rejected' ORDER BY reviewed_at DESC, id DESC LIMIT 25",
+  ).all().catch(() => ({ results: [] }));
+
   const items = await ctx.db.prepare('SELECT id, name, unit FROM mx_items').all()
     .catch(() => ({ results: [] }));
   const itemById = new Map((items.results ?? []).map((i) => [i.id, i]));
@@ -557,25 +565,42 @@ export async function pendingAdjustments(ctx) {
 
   const parse = (value) => { try { return JSON.parse(value); } catch { return null; } };
 
+  const shape = (row) => {
+    const previous = parse(row.previous) ?? {};
+    const item = itemById.get(previous.item_id);
+    return {
+      id: row.id,
+      kind: row.kind,
+      action: row.action,
+      targetId: row.target_id,
+      name: item?.name ?? 'a part that has since gone',
+      unit: item?.unit ?? '',
+      areaName: previous.area_id ? (areaById.get(previous.area_id) ?? null) : null,
+      previous,
+      payload: parse(row.payload),
+      reason: row.reason,
+      requestedBy: row.requested_by,
+      requestedAt: row.requested_at,
+      reviewedBy: row.reviewed_by,
+      reviewedAt: row.reviewed_at,
+      reviewNote: row.review_note,
+    };
+  };
+
+  const rejected = (turnedDown.results ?? []).map(shape);
+  const open = new Set(
+    (rows.results ?? []).map((r) => `${r.kind}:${r.target_id}`),
+  );
+
   return json({
-    adjustments: (rows.results ?? []).map((row) => {
-      const previous = parse(row.previous) ?? {};
-      const item = itemById.get(previous.item_id);
-      return {
-        id: row.id,
-        kind: row.kind,
-        action: row.action,
-        targetId: row.target_id,
-        name: item?.name ?? 'a part that has since gone',
-        unit: item?.unit ?? '',
-        areaName: previous.area_id ? (areaById.get(previous.area_id) ?? null) : null,
-        previous,
-        payload: parse(row.payload),
-        reason: row.reason,
-        requestedBy: row.requested_by,
-        requestedAt: row.requested_at,
-      };
-    }),
+    adjustments: (rows.results ?? []).map(shape),
+    rejected: rejected.map((row) => ({
+      ...row,
+      // Somebody has asked again about the same entry since. Accepting the old
+      // one as well would apply two decisions to one row, so the screen says so
+      // and the server refuses it.
+      superseded: open.has(`${row.kind}:${row.targetId}`),
+    })),
   });
 }
 
@@ -593,17 +618,24 @@ export async function reviewAdjustments(ctx) {
   const ids = readIds(body.ids ?? []);
   if (!ids.length) throw badRequest('Nothing was selected.');
 
+  // Rejected as well as pending. A rejection is a decision for now — usually
+  // "I do not believe this yet" — and the answer often arrives afterwards, at
+  // which point making somebody re-file the identical request would lose who
+  // asked, when, and why. Already-approved rows stay out: applying one twice is
+  // never a correction.
   const holes = ids.map(() => '?').join(',');
   const rows = await ctx.db.prepare(
-    `SELECT * FROM mx_adjustments WHERE id IN (${holes}) AND status = 'pending'`,
+    `SELECT * FROM mx_adjustments
+      WHERE id IN (${holes}) AND status IN ('pending', 'rejected')`,
   ).bind(...ids).all();
 
   const waiting = rows.results ?? [];
-  if (!waiting.length) throw badRequest('Those requests have already been decided.');
+  if (!waiting.length) throw badRequest('Those requests have already been applied.');
 
   const statements = [];
   let applied = 0;
   let missing = 0;
+  let blocked = 0;
 
   for (const row of waiting) {
     const spec = ADJUSTABLE[row.kind];
@@ -612,6 +644,20 @@ export async function reviewAdjustments(ctx) {
     if (!approve) {
       statements.push(decide(ctx, row.id, 'rejected', note));
       continue;
+    }
+
+    // Reviving one while a newer request is open on the same entry would put
+    // two decisions on one row, in an order nobody chose. The open one is the
+    // live question, so that is the one to answer.
+    if (row.status === 'rejected') {
+      const open = await ctx.db.prepare(
+        `SELECT id FROM mx_adjustments
+          WHERE kind = ? AND target_id = ? AND status = 'pending' LIMIT 1`,
+      ).bind(row.kind, row.target_id).first();
+      if (open) {
+        blocked += 1;
+        continue;
+      }
     }
 
     const target = await ctx.db.prepare(`SELECT id FROM ${spec.table} WHERE id = ?`)
@@ -643,18 +689,24 @@ export async function reviewAdjustments(ctx) {
     statements.push(decide(ctx, row.id, 'approved', note));
   }
 
-  await ctx.db.batch(statements);
+  const revived = waiting.filter((r) => r.status === 'rejected').length;
+
+  if (statements.length) await ctx.db.batch(statements);
   await audit(ctx, approve ? 'mx.adjustment.approve' : 'mx.adjustment.reject', null, {
-    requests: waiting.length, applied, missing, note,
+    requests: waiting.length, applied, missing, blocked, revived, note,
   });
 
   return json({
     ok: true,
-    decided: waiting.length,
+    decided: waiting.length - blocked,
     applied,
-    // Worth saying out loud rather than counting as accepted: the reviewer
-    // pressed accept and this one did not happen.
+    // Both worth saying out loud rather than counting as accepted: the reviewer
+    // pressed accept and these did not happen.
     missing,
+    blocked,
+    // How many of these had been turned down before, so the screen can say
+    // "2 reopened" rather than implying they were new.
+    revived,
   });
 }
 
@@ -662,7 +714,7 @@ function decide(ctx, id, status, note) {
   return ctx.db.prepare(
     `UPDATE mx_adjustments
         SET status = ?, reviewed_by = ?, reviewed_at = datetime('now'), review_note = ?
-      WHERE id = ? AND status = 'pending'`,
+      WHERE id = ? AND status IN ('pending', 'rejected')`,
   ).bind(status, ctx.session.user.name, note, id);
 }
 
