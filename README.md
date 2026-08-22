@@ -440,7 +440,7 @@ deploy and test on the `*.workers.dev` address it prints.
 
 Both sites serve the same screens and the same permissions decide what anybody
 can open; what the housekeeping address changes is what it calls itself. It is
-titled **Bed Check**, carries a 🛏 rather than a 🏨, installs to a phone's home
+titled **Bed Check**, carries a 🛏 rather than a 📦, installs to a phone's home
 screen under its own name and icon, and opens on the bed check rather than the
 breakfast overview. A housekeeper never has to know the other site exists.
 
