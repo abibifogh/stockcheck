@@ -30,12 +30,15 @@ async function audit(ctx, action, entity, detail) {
 
 /** Everything the screens need to draw themselves, in one call. */
 export async function bootstrap(ctx) {
-  const [categories, items, areas, suppliers, settings] = await Promise.all([
+  const [categories, items, areas, suppliers, settings, products] = await Promise.all([
     ctx.db.prepare('SELECT * FROM mx_categories ORDER BY sort_order, name').all(),
     ctx.db.prepare('SELECT * FROM mx_items WHERE active = 1 ORDER BY name').all(),
     ctx.db.prepare('SELECT * FROM mx_areas WHERE active = 1 ORDER BY kind, sort_order, name').all(),
     ctx.db.prepare('SELECT * FROM suppliers ORDER BY name').all().catch(() => ({ results: [] })),
     ctx.db.prepare('SELECT key, value FROM settings').all(),
+    // Absent until 0018 has run, which is not a reason to fail every screen.
+    ctx.db.prepare('SELECT id, name FROM mx_products ORDER BY name').all()
+      .catch(() => ({ results: [] })),
   ]);
 
   const map = Object.fromEntries((settings.results ?? []).map((r) => [r.key, r.value]));
@@ -43,6 +46,7 @@ export async function bootstrap(ctx) {
   return json({
     categories: categories.results ?? [],
     items: items.results ?? [],
+    products: products.results ?? [],
     areas: areas.results ?? [],
     suppliers: suppliers.results ?? [],
     settings: {
@@ -754,6 +758,208 @@ export function readAttributes(value) {
   if (!count) return null;
   if (count > 12) throw badRequest('A part can carry up to 12 details.');
   return JSON.stringify(clean);
+}
+
+/**
+ * A product and the variants it comes in, created together.
+ *
+ * The variants are what the store actually holds, so each one becomes a part
+ * with its own balance. The product is the name above them.
+ *
+ * All or nothing: a half-created product leaves variants nobody can find under
+ * a heading that does not exist, and the person who typed six sizes would have
+ * to work out which four landed.
+ */
+export async function createProduct(ctx) {
+  const body = await readJson(ctx.request);
+  const name = str(body.name, 'Product name', { required: true, max: 100 });
+  const categoryId = body.categoryId ? Number(body.categoryId) : null;
+  const unit = str(body.unit, 'Unit', { max: 20, fallback: 'pcs' }) || 'pcs';
+  const note = str(body.note, 'Note', { max: 300, fallback: '' }) || null;
+
+  const variants = Array.isArray(body.variants) ? body.variants : [];
+  if (!variants.length) throw badRequest('Add at least one variant — a size, a colour, a rating.');
+  if (variants.length > 50) throw badRequest('That is more than 50 variants for one product.');
+
+  const clean = variants.map((v) => cleanVariant(v, { unit }));
+  const labels = new Set(clean.map((v) => v.variant.toLowerCase()));
+  if (labels.size !== clean.length) {
+    throw badRequest('Two variants have the same label. Each one has to be distinguishable.');
+  }
+
+  let product;
+  try {
+    product = await ctx.db.prepare(
+      'INSERT INTO mx_products (name, category_id, note) VALUES (?1, ?2, ?3) RETURNING *',
+    ).bind(name, categoryId, note).first();
+  } catch (err) {
+    rethrowConstraint(err, {
+      unique: `There is already a product called "${name}".`,
+      foreignKey: 'That category no longer exists.',
+    });
+    throw err;
+  }
+
+  try {
+    await ctx.db.batch(clean.map((v) => ctx.db.prepare(
+      `INSERT INTO mx_items
+         (category_id, name, unit, par_level, opening_stock, default_unit_cost,
+          is_common, note, attributes, product_id, variant)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`,
+    ).bind(
+      categoryId, variantName(name, v.variant), v.unit, v.parLevel, v.openingStock,
+      v.unitCost, v.isCommon, v.note, v.attributes, product.id, v.variant,
+    )));
+  } catch (err) {
+    // The product exists and its variants do not, which is worse than neither.
+    await ctx.db.prepare('DELETE FROM mx_products WHERE id = ?').bind(product.id).run().catch(() => {});
+    rethrowConstraint(err, {
+      unique: 'One of those variants has the same name as a part that already exists.',
+      foreignKey: 'That category no longer exists.',
+    });
+    throw err;
+  }
+
+  await audit(ctx, 'mx.product.create', product.id, { name, variants: clean.length });
+  return json({ product, variants: clean.length }, { status: 201 });
+}
+
+/** One more variant of something already stocked. */
+export async function addVariant(ctx, id) {
+  const body = await readJson(ctx.request);
+  const productId = Number(id);
+
+  const product = await ctx.db.prepare('SELECT * FROM mx_products WHERE id = ?')
+    .bind(productId).first();
+  if (!product) throw notFound('That product no longer exists.');
+
+  const v = cleanVariant(body, { unit: str(body.unit, 'Unit', { max: 20, fallback: 'pcs' }) || 'pcs' });
+
+  const clash = await ctx.db.prepare(
+    'SELECT id FROM mx_items WHERE product_id = ? AND lower(variant) = lower(?)',
+  ).bind(productId, v.variant).first();
+  if (clash) throw badRequest(`${product.name} already comes in ${v.variant}.`);
+
+  try {
+    const row = await ctx.db.prepare(
+      `INSERT INTO mx_items
+         (category_id, name, unit, par_level, opening_stock, default_unit_cost,
+          is_common, note, attributes, product_id, variant)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) RETURNING *`,
+    ).bind(
+      product.category_id, variantName(product.name, v.variant), v.unit, v.parLevel,
+      v.openingStock, v.unitCost, v.isCommon, v.note, v.attributes, productId, v.variant,
+    ).first();
+    await audit(ctx, 'mx.variant.create', row.id, { product: product.name, variant: v.variant });
+    return json({ item: row }, { status: 201 });
+  } catch (err) {
+    rethrowConstraint(err, { unique: 'A part with that name already exists.' });
+    throw err;
+  }
+}
+
+/**
+ * Attach a part that already exists to a product.
+ *
+ * It keeps its id, so every issue, delivery and count ever recorded against it
+ * stays where it is. That is the whole reason products are a table of their own
+ * rather than a parent row: joining one is a label, not a migration.
+ */
+export async function attachToProduct(ctx, id) {
+  const body = await readJson(ctx.request);
+  const itemId = Number(id);
+  const productId = body.productId == null ? null : Number(body.productId);
+
+  const item = await ctx.db.prepare('SELECT * FROM mx_items WHERE id = ?').bind(itemId).first();
+  if (!item) throw notFound('That part no longer exists.');
+
+  if (productId == null) {
+    await ctx.db.prepare('UPDATE mx_items SET product_id = NULL, variant = NULL WHERE id = ?')
+      .bind(itemId).run();
+    await audit(ctx, 'mx.variant.detach', itemId, { name: item.name });
+    return json({ ok: true, productId: null });
+  }
+
+  const product = await ctx.db.prepare('SELECT * FROM mx_products WHERE id = ?')
+    .bind(productId).first();
+  if (!product) throw notFound('That product no longer exists.');
+
+  const variant = str(body.variant, 'Variant', { required: true, max: 60 });
+  const clash = await ctx.db.prepare(
+    'SELECT id FROM mx_items WHERE product_id = ? AND lower(variant) = lower(?) AND id <> ?',
+  ).bind(productId, variant, itemId).first();
+  if (clash) throw badRequest(`${product.name} already comes in ${variant}.`);
+
+  await ctx.db.prepare('UPDATE mx_items SET product_id = ?, variant = ? WHERE id = ?')
+    .bind(productId, variant, itemId).run();
+  await audit(ctx, 'mx.variant.attach', itemId, { product: product.name, variant });
+  return json({ ok: true, productId, variant });
+}
+
+/** Products with their variants, for the screens that group by them. */
+export async function listProducts(ctx) {
+  const [products, items] = await Promise.all([
+    ctx.db.prepare('SELECT * FROM mx_products ORDER BY name').all().catch(() => ({ results: [] })),
+    ctx.db.prepare('SELECT * FROM mx_items WHERE product_id IS NOT NULL ORDER BY variant').all()
+      .catch(() => ({ results: [] })),
+  ]);
+
+  const byProduct = new Map();
+  for (const item of items.results ?? []) {
+    if (!byProduct.has(item.product_id)) byProduct.set(item.product_id, []);
+    byProduct.get(item.product_id).push({
+      id: item.id, name: item.name, variant: item.variant, unit: item.unit,
+      parLevel: Number(item.par_level) || 0, active: !!item.active,
+    });
+  }
+
+  return json({
+    products: (products.results ?? []).map((p) => ({
+      id: p.id,
+      name: p.name,
+      categoryId: p.category_id,
+      note: p.note,
+      variants: byProduct.get(p.id) ?? [],
+    })),
+  });
+}
+
+/**
+ * A product goes only when nothing hangs off it.
+ *
+ * Removing the heading and leaving the parts would scatter them back into the
+ * flat list under composed names nobody chose — "LED bulb — 40W warm" with
+ * nothing to say what it was part of.
+ */
+export async function deleteProduct(ctx, id) {
+  const productId = Number(id);
+  const held = await ctx.db.prepare('SELECT COUNT(*) AS n FROM mx_items WHERE product_id = ?')
+    .bind(productId).first();
+  if ((held?.n ?? 0) > 0) {
+    throw badRequest('That product still has variants. Detach or remove them first.');
+  }
+  const result = await ctx.db.prepare('DELETE FROM mx_products WHERE id = ?').bind(productId).run();
+  if (!result.meta?.changes) throw notFound('That product has already gone.');
+  await audit(ctx, 'mx.product.delete', productId, null);
+  return json({ ok: true });
+}
+
+/** The part's own name, composed so it stays unique and reads on its own. */
+function variantName(productName, variant) {
+  return `${productName} — ${variant}`;
+}
+
+function cleanVariant(v, { unit }) {
+  return {
+    variant: str(v.variant, 'Variant', { required: true, max: 60 }),
+    unit: str(v.unit, 'Unit', { max: 20, fallback: unit }) || unit,
+    parLevel: num(v.parLevel, 'Restock level', { min: 0, max: 1000000, fallback: 0 }),
+    openingStock: num(v.openingStock, 'Opening stock', { min: 0, max: 1000000, fallback: 0 }),
+    unitCost: num(v.unitCost, 'Unit cost', { min: 0, max: 1000000, fallback: 0 }),
+    isCommon: v.isCommon ? 1 : 0,
+    note: str(v.note, 'Note', { max: 300, fallback: '' }) || null,
+    attributes: readAttributes(v.attributes),
+  };
 }
 
 export async function createItem(ctx) {

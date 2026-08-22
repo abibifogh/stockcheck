@@ -181,6 +181,14 @@ const ROUTES = [
   ['POST', '/api/mx/items', 'mx_setup', mx.createItem],
   ['PUT', '/api/mx/items/:id', 'mx_setup', mx.updateItem],
   ['DELETE', '/api/mx/items/:id', 'mx_setup', mx.deleteItem],
+  // Products group the parts that are variants of one thing. The parts keep
+  // their own stock — a product is a heading, never a balance.
+  ['GET', '/api/mx/products', 'mx_issue', mx.listProducts],
+  ['POST', '/api/mx/products', 'mx_setup', mx.createProduct],
+  ['POST', '/api/mx/products/:id/variants', 'mx_setup', mx.addVariant],
+  ['DELETE', '/api/mx/products/:id', 'mx_setup', mx.deleteProduct],
+  ['PUT', '/api/mx/items/:id/product', 'mx_setup', mx.attachToProduct],
+
   ['POST', '/api/mx/categories', 'mx_setup', mx.createCategory],
   ['GET', '/api/mx/items/template', 'mx_setup', mx.partsTemplate],
   ['POST', '/api/mx/items/import', 'mx_setup', mx.importParts],

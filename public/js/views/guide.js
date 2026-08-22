@@ -1089,6 +1089,29 @@ const SECTIONS = [
           + 'show under its name on the issue screen and in the stock list, and searching matches '
           + 'them, so somebody can type “9W” or “chrome” instead of hunting through the list.'),
       ),
+      h('h3', { style: { marginTop: '1.1rem' } }, 'Parts you keep in more than one kind'),
+      h('p', 'A bulb you stock in 40W warm, 40W white and 60W is three parts, not one. They sit in '
+        + 'different boxes and run out on different days, so a single figure covering all three '
+        + 'tells nobody when to order any of them. Products are how you say the three belong '
+        + 'together without pretending they are one thing.'),
+      steps(
+        h('span', h('strong', 'Name the product'), ' \u2014 what everybody calls it. \u201cLED bulb\u201d.'),
+        h('span', h('strong', 'List the variants,'), ' each with its own restock level. The 60W may '
+          + 'go slower than the others, and it is not held to their level.'),
+        h('span', h('strong', 'Create it,'), ' and each variant becomes a part in its own right.'),
+      ),
+      note('Counting is where this pays.',
+        'Every variant gets its own line on a count, its own balance and its own restock alert \u2014 '
+        + 'because every one of them is an ordinary part. Nothing about counting changed to make '
+        + 'that work; the variants simply are the parts.'),
+      note('The product is only a heading.',
+        'It never holds stock of its own, so there is no figure on it to go wrong. Removing a '
+        + 'product later leaves every part exactly where it is, with everything ever recorded '
+        + 'against it \u2014 they go back to being ordinary parts under their own names.'),
+      note('Details are still the right answer for one part.',
+        'Use variants when you genuinely stock several and count them apart. If you keep only '
+        + 'one and just want its size written down, that is a detail on the part, not a product.'),
+
       h('h3', { style: { marginTop: '1.1rem' } }, 'Loading the whole list from a spreadsheet'),
       h('p', 'Adding thirty parts one form at a time is how a store ends up with eight of them. '
         + 'Download the template, fill it in, upload it, and check the preview before anything is '

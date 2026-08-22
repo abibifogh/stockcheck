@@ -156,6 +156,9 @@ const OTHER_STORES = new Set([
   // The parts store's approval queue for changing something already recorded.
   // Belongs to 0005 above, which this seed does not build.
   '0017_mx_adjustments.sql',
+  // Products group the parts store's items, and alter mx_items with them.
+  // Neither exists in a housekeeping database.
+  '0018_mx_product_variants.sql',
 ]);
 
 // The whole database a housekeeping-only site needs.
