@@ -19,4 +19,4 @@
  */
 export const BRAND = /housekeeping/.test(location.hostname)
   ? { app: 'housekeeping', mark: '🛏', name: 'Bed Check' }
-  : { app: 'main', mark: '🏨', name: 'Nice Operation' };
+  : { app: 'main', mark: '📦', name: 'Nice Operation' };
