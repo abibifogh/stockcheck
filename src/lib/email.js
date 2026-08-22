@@ -92,7 +92,7 @@ export function renderDailyEmail({ insight, propertyName, siteUrl, submittedBy }
 <div style="margin:0;padding:24px 12px;background:#eef1f5">
 <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:14px;overflow:hidden">
   <tr><td style="padding:20px 24px;background:#14181f">
-    <div style="font:700 17px/1.3 Arial,sans-serif;color:#ffffff">🍳 ${escapeHtml(propertyName)}</div>
+    <div style="font:700 17px/1.3 Arial,sans-serif;color:#ffffff">🏨 ${escapeHtml(propertyName)}</div>
     <div style="font:400 13px/1.4 Arial,sans-serif;color:#9aa5b5">Breakfast recorded — ${dateLabel}</div>
   </td></tr>
 

@@ -135,7 +135,7 @@ export async function emailAudience(db, env, {
       to: addresses,
       subject: subject ?? title,
       html: shell({
-        propertyName: settings.property_name || 'Breakfast Control',
+        propertyName: settings.property_name || 'Nice Operation',
         title,
         body,
         link: link && siteUrl ? `${siteUrl}${link}` : null,

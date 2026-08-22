@@ -30,8 +30,8 @@ export function printReport({ title, subtitle, note }) {
 
   const header = h('div.print-header',
     h('div.print-brand',
-      h('span', '🍳'),
-      h('strong', state.settings.property_name || 'Breakfast Control'),
+      h('span', '🏨'),
+      h('strong', state.settings.property_name || 'Nice Operation'),
     ),
     h('h1.print-title', title),
     subtitle ? h('div.print-subtitle', subtitle) : null,

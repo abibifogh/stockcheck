@@ -6,9 +6,10 @@
  * own people, and each carries its own sections and only its own — the bed
  * check is not on the breakfast site, and the kitchen is not on this one.
  *
- * What this decides is only the name and the mark: a housekeeper who put "Bed
- * Check" on their home screen should not be greeted by a frying pan, and a cook
- * should not be greeted by a bed.
+ * What this decides is only the name and the mark. The main site started as the
+ * breakfast sheet and was named for it; it now carries the parts store and the
+ * bakery too, so it is named for the property rather than for one of its
+ * rounds. A technician opening it to issue a tap washer was never cooking.
  *
  * Matched loosely on the hostname so a *.workers.dev preview of the
  * housekeeping Worker brands itself the same way as the real address.
@@ -18,4 +19,4 @@
  */
 export const BRAND = /housekeeping/.test(location.hostname)
   ? { app: 'housekeeping', mark: '🛏', name: 'Bed Check' }
-  : { app: 'breakfast', mark: '🍳', name: 'Breakfast Control' };
+  : { app: 'main', mark: '🏨', name: 'Nice Operation' };

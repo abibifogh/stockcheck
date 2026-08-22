@@ -20,7 +20,7 @@ database_id = "9862ed78-69f0-4dfe-a36f-7fe3bd9020c1"
 [vars]
 # Everything here is safe to keep in source control. Secrets (PINs, session
 # key) are set with `wrangler secret put` — see README.
-APP_NAME = "Nice Operation · Breakfast"
+APP_NAME = "Nice Operation"
 
 # Custom domain. Comment this block out until the zone is active on Cloudflare,
 # otherwise the first deploy fails on an unknown route.
