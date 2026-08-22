@@ -300,6 +300,10 @@ export function stockReport(ds, asOf) {
       name: item.name,
       unit: item.unit,
       attributes: item.attributes ?? null,
+      // A variant is a part like any other here — its own balance, its own
+      // restock alert. These two only say what it should be filed under.
+      productId: item.product_id ?? null,
+      variant: item.variant ?? null,
       categoryId: item.category_id,
       categoryName: ds.categoryById.get(item.category_id)?.name ?? 'Uncategorised',
       stock: round(stock, 3),

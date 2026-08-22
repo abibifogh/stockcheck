@@ -171,6 +171,12 @@ export const api = {
   mxCreateItem: (body) => request('/api/mx/items', { method: 'POST', body }),
   mxUpdateItem: (id, body) => request(`/api/mx/items/${id}`, { method: 'PUT', body }),
   mxDeleteItem: (id) => request(`/api/mx/items/${id}`, { method: 'DELETE' }),
+  mxProducts: () => request('/api/mx/products'),
+  mxCreateProduct: (body) => request('/api/mx/products', { method: 'POST', body }),
+  mxAddVariant: (id, body) => request(`/api/mx/products/${id}/variants`, { method: 'POST', body }),
+  mxDeleteProduct: (id) => request(`/api/mx/products/${id}`, { method: 'DELETE' }),
+  mxSetItemProduct: (id, body) => request(`/api/mx/items/${id}/product`, { method: 'PUT', body }),
+
   mxCreateCategory: (body) => request('/api/mx/categories', { method: 'POST', body }),
   mxPartsTemplateUrl: () => '/api/mx/items/template',
   mxImportParts: (body) => request('/api/mx/items/import', { method: 'POST', body }),

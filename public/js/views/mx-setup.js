@@ -11,12 +11,14 @@ import { schedulesCard } from './mx-schedules.js';
  * everything against nothing.
  */
 export async function renderMxSetup() {
-  const [data, areas, schedules] = await Promise.all([
+  const [data, areas, schedules, products] = await Promise.all([
     api.mxBootstrap(),
     api.mxAreas(),
     // A store that has not run the latest database changes yet should still be
     // able to reach its parts list, so a missing schedules table is survivable.
     api.mxStocktakes().catch(() => null),
+    // Absent until 0018 has run. The parts list itself does not depend on it.
+    api.mxProducts().catch(() => null),
   ]);
   const host = h('div');
   const reload = async () => mount(host, await renderMxSetup());
@@ -30,6 +32,7 @@ export async function renderMxSetup() {
     ),
     roomsCard(areas.areas, reload),
     schedules ? schedulesCard(schedules, reload) : null,
+    products ? productsCard(products.products ?? [], data, reload) : null,
     bulkPartsCard(data, reload),
     itemsCard(data, reload),
   );
@@ -666,4 +669,149 @@ function editItem(item, data, reload) {
   document.body.append(dialog);
   dialog.addEventListener('close', () => dialog.remove());
   dialog.showModal();
+}
+
+
+// ---------------------------------------------------------------------------
+// Products and their variants
+// ---------------------------------------------------------------------------
+
+/**
+ * Parts that come in sizes, colours or ratings.
+ *
+ * The heading is the only new thing. Each variant underneath is an ordinary
+ * part with its own shelf, its own restock level and its own line on a count —
+ * which is the point: two 40W bulbs in different colours run out on different
+ * days, and a single figure covering both tells nobody when to buy either.
+ */
+function productsCard(products, data, reload) {
+  const name = h('input', { type: 'text', placeholder: 'e.g. LED bulb', maxlength: 100 });
+  const unit = h('input', { type: 'text', value: 'pcs', maxlength: 20 });
+  const category = h('select',
+    h('option', { value: '' }, 'Uncategorised'),
+    ...data.categories.map((c) => h('option', { value: String(c.id) }, c.name)));
+
+  // Variants are typed as a list because that is how somebody thinks about
+  // them — "we keep it in 40W warm, 40W white and 60W" — rather than one form
+  // filled in three times.
+  const rows = [];
+  const rowHost = h('div', { style: { display: 'grid', gap: '.4rem' } });
+
+  const addRow = (value = '', par = '') => {
+    const label = h('input', { type: 'text', placeholder: 'Variant — 40W warm', maxlength: 60, value });
+    const parLevel = h('input', { type: 'number', min: '0', step: '1', placeholder: 'Restock at', value: par });
+    const row = { label, parLevel };
+    rows.push(row);
+    paint();
+    return row;
+  };
+
+  const paint = () => {
+    mount(rowHost, rows.map((r, i) => h('div', {
+      style: { display: 'grid', gridTemplateColumns: '1fr 130px auto', gap: '.4rem' },
+    },
+      r.label,
+      r.parLevel,
+      h('button.btn-sm.btn-ghost', {
+        onclick: () => { rows.splice(i, 1); paint(); },
+        disabled: rows.length === 1,
+      }, '✕'),
+    )));
+  };
+
+  addRow();
+  addRow();
+
+  const create = async (event) => {
+    const variants = rows
+      .map((r) => ({ variant: r.label.value.trim(), parLevel: Number(r.parLevel.value) || 0 }))
+      .filter((v) => v.variant);
+    if (!name.value.trim()) { toast('Give the product a name', 'bad'); return; }
+    if (!variants.length) { toast('Add at least one variant', 'bad'); return; }
+
+    event.target.disabled = true;
+    try {
+      await api.mxCreateProduct({
+        name: name.value.trim(),
+        unit: unit.value.trim() || 'pcs',
+        categoryId: category.value || null,
+        variants,
+      });
+      toast(`${name.value.trim()} added with ${variants.length} variants`, 'good');
+      reload();
+    } catch (err) {
+      toast(err.message, 'bad');
+      event.target.disabled = false;
+    }
+  };
+
+  const addOne = (product) => async () => {
+    const label = prompt(`Another variant of ${product.name}?\n\n`
+      + 'It becomes a part of its own, with its own stock and its own count line.');
+    if (label === null || !label.trim()) return;
+    try {
+      await api.mxAddVariant(product.id, { variant: label.trim() });
+      toast('Variant added', 'good');
+      reload();
+    } catch (err) { toast(err.message, 'bad'); }
+  };
+
+  const remove = (product) => async () => {
+    if (!confirm(`Remove the product “${product.name}”?\n\n`
+      + 'Only the heading goes. Its variants stay as ordinary parts, with everything '
+      + 'ever recorded against them.')) return;
+    try {
+      // Detach first: the server refuses to remove a heading with parts under
+      // it, precisely so this cannot half-happen.
+      for (const v of product.variants) await api.mxSetItemProduct(v.id, { productId: null });
+      await api.mxDeleteProduct(product.id);
+      toast('Product removed, parts kept', 'good');
+      reload();
+    } catch (err) { toast(err.message, 'bad'); }
+  };
+
+  return card('Products and their variants', {
+    wide: true,
+    note: 'For parts kept in more than one size, colour or rating',
+  },
+    products.length
+      ? h('div', { style: { display: 'grid', gap: '.7rem', marginBottom: '1.1rem' } },
+        products.map((p) => h('div', {
+          style: {
+            border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+            padding: '.6rem .7rem', background: 'var(--surface-2)',
+          },
+        },
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: '.5rem', flexWrap: 'wrap' } },
+            h('strong', p.name),
+            h('span.muted', { style: { fontSize: '.82rem' } },
+              `${p.variants.length} ${p.variants.length === 1 ? 'variant' : 'variants'}`),
+            h('div.btn-row', { style: { marginLeft: 'auto' } },
+              h('button.btn-sm.btn-ghost', { onclick: addOne(p) }, '+ Variant'),
+              h('button.btn-sm.btn-ghost', { onclick: remove(p) }, 'Remove'),
+            ),
+          ),
+          h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '.3rem', marginTop: '.4rem' } },
+            p.variants.length
+              ? p.variants.map((v) => h('span.pill', v.variant ?? v.name))
+              : h('span.muted', { style: { fontSize: '.82rem' } }, 'no variants yet')),
+        )))
+      : null,
+
+    h('div.field-row',
+      h('label.field', h('span', 'Product name'), name),
+      h('label.field', h('span', 'Unit'), unit),
+      h('label.field', h('span', 'Category'), category),
+    ),
+    h('div', { style: { marginTop: '.7rem' } },
+      h('div.stat-label', { style: { marginBottom: '.4rem' } }, 'The variants it comes in'),
+      rowHost,
+      h('button.btn-sm', { style: { marginTop: '.5rem' }, onclick: () => addRow() }, '+ Another variant'),
+    ),
+    h('button.btn-primary', { style: { marginTop: '.8rem' }, onclick: create }, 'Create the product'),
+    h('p.muted', { style: { fontSize: '.82rem', marginTop: '.8rem', marginBottom: 0 } },
+      'Each variant becomes a part in its own right — counted separately, restocked separately, '
+      + 'and issued separately. The product is only the name they share, so removing it later '
+      + 'leaves every part and everything recorded against it exactly where it is.'),
+  );
 }

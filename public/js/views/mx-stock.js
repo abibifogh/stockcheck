@@ -61,8 +61,12 @@ export async function renderMxStock() {
     }
   };
 
+  // A variant is counted as its own part, so it gets its own row — the label is
+  // what stops three near-identical names reading as one thing scrolled past.
   const nameCell = (v, r) => h('div',
-    h('div', v),
+    h('div', r.variant
+      ? h('span', v.replace(` — ${r.variant}`, ''), ' ', h('span.pill', r.variant))
+      : v),
     h('small.muted', [r.categoryName, attributeSummary(r.attributes)].filter(Boolean).join(' · ')));
 
   const paint = () => {
