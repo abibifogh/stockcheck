@@ -372,6 +372,12 @@ function previewReport(result) {
       ? h('div.guide-note', h('strong', 'New categories will be created: '), s.newCategories.join(', '))
       : null,
 
+    s.newProducts?.length
+      ? h('div.guide-note',
+        h('strong', 'New products will be created: '), s.newProducts.join(', '),
+        '. Each variant under them becomes a part of its own, counted separately.')
+      : null,
+
     s.errorCount
       ? h('div.alert.high', { style: { marginTop: '.7rem' } },
         h('span.alert-icon', '⛔'),
@@ -398,7 +404,13 @@ function previewReport(result) {
             label: '',
             format: (v) => h(`span.pill.${v === 'create' ? 'good' : 'warn'}`, v === 'create' ? 'add' : 'update'),
           },
-          { key: 'name', label: 'Part' },
+          {
+            key: 'name',
+            label: 'Part',
+            format: (v, r) => (r.variant
+              ? h('div', h('div', v), h('small.muted', `${r.product} · ${r.variant}`))
+              : v),
+          },
           { key: 'category', label: 'Category', format: (v) => v || h('span.muted', '—') },
           { key: 'unit', label: 'Unit' },
           { key: 'parLevel', label: 'Restock at', align: 'right' },
