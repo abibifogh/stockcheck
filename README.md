@@ -1,16 +1,24 @@
-# Breakfast Control
+# Nice Operation
 
-Ingredient usage tracking and consumption analytics for a hotel breakfast unit.
+Three rounds a hotel runs every day, each recorded in a few taps by somebody
+with no time, and the analysis derived from them.
 
-Cooks record what was used each morning in under a minute. Everything else —
-cost per guest, week-on-week comparisons, monthly reporting, stock levels and
-reorder lists — is derived from that one sheet plus the delivery log.
+- **The breakfast unit** — what was used each morning, and what it cost per
+  guest.
+- **The maintenance parts store** — what was issued, to which room, and what
+  the shelf holds.
+- **The bakery** — what came out of the oven, straight onto the breakfast
+  shelf.
 
-Alongside it are two other rounds that work the same way — a few taps from
-somebody with no time, and the analysis derived from them: a **maintenance
-parts store**, and a **dorm bed check** for hostel rooms. Each has its own
-screens and its own permissions, so a housekeeper's PIN opens the bed check and
-nothing else.
+Plus a **dorm bed check** for hostel rooms, which runs as its own site.
+
+It started as the breakfast sheet and was named for it. It is named for the
+property now, because a technician issuing a tap washer was never cooking.
+
+Everything after the recording is derived: cost per guest, week-on-week
+comparisons, monthly reporting, stock levels, reorder lists. Each round has its
+own screens and its own permissions, so a technician's PIN opens the parts store
+and nothing else.
 
 Runs entirely on Cloudflare: a Worker serves both the app and the API, with a
 D1 (SQLite) database behind it. Deploys from GitHub on every push to `main`.
@@ -432,7 +440,7 @@ deploy and test on the `*.workers.dev` address it prints.
 
 Both sites serve the same screens and the same permissions decide what anybody
 can open; what the housekeeping address changes is what it calls itself. It is
-titled **Bed Check**, carries a 🛏 rather than a 🍳, installs to a phone's home
+titled **Bed Check**, carries a 🛏 rather than a 🏨, installs to a phone's home
 screen under its own name and icon, and opens on the bed check rather than the
 breakfast overview. A housekeeper never has to know the other site exists.
 

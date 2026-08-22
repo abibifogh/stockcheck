@@ -1268,6 +1268,10 @@ export async function areaDetail(ctx, id) {
  */
 const PART_COLUMNS = {
   name: ['name', 'part', 'item', 'partname', 'itemname'],
+  // A part that is one of several kinds of the same thing. Product is the name
+  // they share; variant is what tells this one apart. Both or neither.
+  product: ['product', 'productname', 'belongsto', 'family'],
+  variant: ['variant', 'variantlabel', 'kind', 'version'],
   category: ['category', 'group'],
   unit: ['unit', 'measuredin', 'measure', 'uom'],
   parLevel: ['restocklevel', 'parlevel', 'par', 'reorderlevel', 'minimum'],
@@ -1291,10 +1295,12 @@ export function yesish(value) {
 
 /** A spreadsheet to fill in, pre-loaded with what is already there. */
 export async function partsTemplate(ctx) {
-  const [items, categories] = await Promise.all([
+  const [items, categories, products] = await Promise.all([
     ctx.db.prepare('SELECT * FROM mx_items WHERE active = 1 ORDER BY name').all(),
     ctx.db.prepare('SELECT name FROM mx_categories ORDER BY sort_order, name').all(),
+    ctx.db.prepare('SELECT id, name FROM mx_products').all().catch(() => ({ results: [] })),
   ]);
+  const productName = new Map((products.results ?? []).map((p) => [p.id, p.name]));
 
   const rows = items.results ?? [];
 
@@ -1313,8 +1319,8 @@ export async function partsTemplate(ctx) {
   }
 
   const header = [
-    'Name', 'Category', 'Unit', 'Restock level', 'On shelf now', 'Price each',
-    'Everyday part', 'Note', ...detailLabels,
+    'Name', 'Product', 'Variant', 'Category', 'Unit', 'Restock level', 'On shelf now',
+    'Price each', 'Everyday part', 'Note', ...detailLabels,
   ];
 
   const out = [header];
@@ -1325,15 +1331,23 @@ export async function partsTemplate(ctx) {
       ? (await ctx.db.prepare('SELECT name FROM mx_categories WHERE id = ?').bind(row.category_id).first())?.name ?? ''
       : '';
     out.push([
-      row.name, category, row.unit, row.par_level, row.opening_stock,
+      row.name, productName.get(row.product_id) ?? '', row.variant ?? '',
+      category, row.unit, row.par_level, row.opening_stock,
       row.default_unit_cost, row.is_common ? 'yes' : '', row.note ?? '',
       ...detailLabels.map((label) => parsed[label] ?? ''),
     ]);
   }
 
   if (!rows.length) {
-    out.push(['LED Bulb 15W', 'Electrical', 'pcs', 20, 0, 30, 'yes', 'example row — delete before importing',
+    // Two rows rather than one, because the thing worth showing is that a
+    // product is spelled the same on both and the variant differs. Leaving Name
+    // blank is deliberate: it is composed from the two columns beside it.
+    out.push(['', 'LED bulb', '15W daylight', 'Electrical', 'pcs', 20, 0, 30, 'yes',
+      'example row — delete before importing',
       ...detailLabels.map((l) => (l === 'Size' ? '15W' : l === 'Colour' ? 'Daylight' : ''))]);
+    out.push(['', 'LED bulb', '15W warm', 'Electrical', 'pcs', 20, 0, 30, 'yes',
+      'example row — delete before importing',
+      ...detailLabels.map((l) => (l === 'Size' ? '15W' : l === 'Colour' ? 'Warm' : ''))]);
   }
 
   return csvResponse('maintenance-parts-template.csv', out);
@@ -1355,20 +1369,41 @@ export async function importParts(ctx) {
 
   const header = rows[0];
   const mapped = header.map(columnKey);
-  if (!mapped.includes('name')) {
-    throw badRequest('That file needs a “Name” column. Download the template and fill that in.');
+  // A part can be named outright, or described as one variant of a product and
+  // have its name composed from the two. Either is enough to know what a row is
+  // about; neither leaves nothing to go on.
+  const namesVariants = mapped.includes('product') && mapped.includes('variant');
+  if (!mapped.includes('name') && !namesVariants) {
+    throw badRequest('That file needs a “Name” column, or a “Product” and “Variant” pair. '
+      + 'Download the template and fill one in.');
   }
   if (rows.length > 1001) throw badRequest('That is more than 1000 parts in one file.');
 
-  const [existingItems, existingCategories] = await Promise.all([
-    ctx.db.prepare('SELECT id, name FROM mx_items').all(),
+  const [existingItems, existingCategories, existingProducts] = await Promise.all([
+    ctx.db.prepare('SELECT id, name, product_id, variant FROM mx_items').all()
+      .catch(() => ctx.db.prepare('SELECT id, name FROM mx_items').all()),
     ctx.db.prepare('SELECT id, name FROM mx_categories').all(),
+    // Missing until 0018 has run. A file that does not mention products imports
+    // exactly as it did before; one that does is told why it cannot.
+    ctx.db.prepare('SELECT id, name FROM mx_products').all()
+      .then((r) => ({ ok: true, rows: r.results ?? [] }))
+      .catch(() => ({ ok: false, rows: [] })),
   ]);
   const byName = new Map((existingItems.results ?? []).map((r) => [r.name.trim().toLowerCase(), r]));
   const categoryByName = new Map((existingCategories.results ?? []).map((r) => [r.name.trim().toLowerCase(), r]));
+  const productByName = new Map(existingProducts.rows.map((r) => [r.name.trim().toLowerCase(), r]));
+
+  // Which (product, variant) pairs are already taken, and by which part — so a
+  // file cannot quietly give one product two variants with the same label.
+  const takenVariant = new Map();
+  for (const r of existingItems.results ?? []) {
+    if (r.product_id && r.variant) takenVariant.set(`${r.product_id}:${r.variant.toLowerCase()}`, r.id);
+  }
 
   const errors = [];
   const newCategories = new Set();
+  const newProducts = new Set();
+  const seenVariant = new Set();
   const toCreate = [];
   const toUpdate = [];
   const skipped = [];
@@ -1382,10 +1417,50 @@ export async function importParts(ctx) {
       return at === -1 ? '' : String(row[at] ?? '').trim();
     };
 
-    const name = get('name');
-    if (!name) { errors.push(`Row ${line}: no name.`); continue; }
-    if (name.length > 100) { errors.push(`Row ${line}: that name is too long.`); continue; }
     if (/^example row/i.test(get('note'))) continue; // the template's own sample
+
+    const product = get('product');
+    const variant = get('variant');
+    if (product && !variant) {
+      errors.push(`Row ${line}: “${product}” needs a variant — the size, colour or rating that tells this one apart.`);
+      continue;
+    }
+    if (variant && !product) {
+      errors.push(`Row ${line}: “${variant}” has no product to belong to.`);
+      continue;
+    }
+    if (product && !existingProducts.ok) {
+      errors.push(`Row ${line}: this database cannot hold products yet. Run the parts-store update first, or clear the Product and Variant columns.`);
+      continue;
+    }
+    if (product.length > 100 || variant.length > 60) {
+      errors.push(`Row ${line}: that product or variant name is too long.`);
+      continue;
+    }
+
+    // Named outright, or composed from the product and what tells it apart.
+    const name = get('name') || (product ? `${product} — ${variant}` : '');
+    if (!name) { errors.push(`Row ${line}: no name, and no product and variant to make one from.`); continue; }
+    if (name.length > 100) { errors.push(`Row ${line}: that name is too long.`); continue; }
+
+    if (product) {
+      const known = productByName.get(product.toLowerCase());
+      if (!known) newProducts.add(product);
+      const pairKey = `${product.toLowerCase()}::${variant.toLowerCase()}`;
+      if (seenVariant.has(pairKey)) {
+        errors.push(`Row ${line}: ${product} is given “${variant}” twice in this file.`);
+        continue;
+      }
+      seenVariant.add(pairKey);
+
+      // Already used by a different part in the database.
+      const heldBy = known ? takenVariant.get(`${known.id}:${variant.toLowerCase()}`) : null;
+      const thisPart = byName.get(name.toLowerCase());
+      if (heldBy && heldBy !== thisPart?.id) {
+        errors.push(`Row ${line}: ${product} already comes in “${variant}”, as a different part.`);
+        continue;
+      }
+    }
 
     const key = name.toLowerCase();
     if (seen.has(key)) { errors.push(`Row ${line}: “${name}” appears more than once in this file.`); continue; }
@@ -1427,6 +1502,8 @@ export async function importParts(ctx) {
     const record = {
       line,
       name,
+      productName: product || null,
+      variant: variant || null,
       categoryName: categoryName || null,
       unit: get('unit') || 'pcs',
       parLevel,
@@ -1449,6 +1526,7 @@ export async function importParts(ctx) {
     willUpdate: toUpdate.length,
     willSkip: skipped.length,
     newCategories: [...newCategories],
+    newProducts: [...newProducts],
     detailColumns: header.filter((_, c) => !mapped[c]).map((x) => String(x).trim()).filter(Boolean),
     errors: errors.slice(0, 25),
     errorCount: errors.length,
@@ -1457,6 +1535,8 @@ export async function importParts(ctx) {
   const preview = [...toCreate.slice(0, 10), ...toUpdate.slice(0, 10)].map((r) => ({
     line: r.line,
     name: r.name,
+    product: r.productName,
+    variant: r.variant,
     category: r.categoryName,
     unit: r.unit,
     parLevel: r.parLevel,
@@ -1489,28 +1569,61 @@ export async function importParts(ctx) {
     for (const row of after.results ?? []) categoryByName.set(row.name.trim().toLowerCase(), row);
   }
 
+  // Products next, for the same reason and in the same way: a part that names
+  // one needs something to point at.
+  if (newProducts.size) {
+    await ctx.db.batch([...newProducts].map((name) => ctx.db.prepare(
+      'INSERT OR IGNORE INTO mx_products (name) VALUES (?)',
+    ).bind(name)));
+    const after = await ctx.db.prepare('SELECT id, name FROM mx_products').all();
+    productByName.clear();
+    for (const row of after.results ?? []) productByName.set(row.name.trim().toLowerCase(), row);
+  }
+
   const categoryId = (name) => (name ? categoryByName.get(name.toLowerCase())?.id ?? null : null);
+  const productId = (name) => (name ? productByName.get(name.toLowerCase())?.id ?? null : null);
 
   const statements = [
     ...toCreate.map((r) => ctx.db.prepare(
-      `INSERT INTO mx_items (category_id, name, unit, par_level, opening_stock, default_unit_cost, is_common, note, attributes)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
+      `INSERT INTO mx_items (category_id, name, unit, par_level, opening_stock, default_unit_cost, is_common, note, attributes, product_id, variant)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`,
     ).bind(categoryId(r.categoryName), r.name, r.unit, r.parLevel, r.openingStock,
-      r.defaultUnitCost, r.isCommon ? 1 : 0, r.note, r.attributes)),
-    ...toUpdate.map((r) => ctx.db.prepare(
-      `UPDATE mx_items SET category_id = ?2, unit = ?3, par_level = ?4, opening_stock = ?5,
-              default_unit_cost = ?6, is_common = ?7, note = ?8, attributes = ?9, active = 1
-        WHERE id = ?1`,
-    ).bind(r.id, categoryId(r.categoryName), r.unit, r.parLevel, r.openingStock,
-      r.defaultUnitCost, r.isCommon ? 1 : 0, r.note, r.attributes)),
+      r.defaultUnitCost, r.isCommon ? 1 : 0, r.note, r.attributes,
+      productId(r.productName), r.variant)),
+    // An existing part named in a file with a product joins it here, keeping
+    // its id and everything ever recorded against it — the same as attaching
+    // one by hand. A row that names no product leaves the columns alone rather
+    // than detaching a part somebody grouped deliberately.
+    ...toUpdate.map((r) => (r.productName
+      ? ctx.db.prepare(
+        `UPDATE mx_items SET category_id = ?2, unit = ?3, par_level = ?4, opening_stock = ?5,
+                default_unit_cost = ?6, is_common = ?7, note = ?8, attributes = ?9,
+                product_id = ?10, variant = ?11, active = 1
+          WHERE id = ?1`,
+      ).bind(r.id, categoryId(r.categoryName), r.unit, r.parLevel, r.openingStock,
+        r.defaultUnitCost, r.isCommon ? 1 : 0, r.note, r.attributes,
+        productId(r.productName), r.variant)
+      : ctx.db.prepare(
+        `UPDATE mx_items SET category_id = ?2, unit = ?3, par_level = ?4, opening_stock = ?5,
+                default_unit_cost = ?6, is_common = ?7, note = ?8, attributes = ?9, active = 1
+          WHERE id = ?1`,
+      ).bind(r.id, categoryId(r.categoryName), r.unit, r.parLevel, r.openingStock,
+        r.defaultUnitCost, r.isCommon ? 1 : 0, r.note, r.attributes))),
   ];
 
   await ctx.db.batch(statements);
   await audit(ctx, 'mx.items.import', null, {
-    created: toCreate.length, updated: toUpdate.length, categories: [...newCategories],
+    created: toCreate.length, updated: toUpdate.length,
+    categories: [...newCategories], products: [...newProducts],
   });
 
-  return json({ applied: true, created: toCreate.length, updated: toUpdate.length, summary });
+  return json({
+    applied: true,
+    created: toCreate.length,
+    updated: toUpdate.length,
+    products: newProducts.size,
+    summary,
+  });
 }
 
 // ---------------------------------------------------------------------------

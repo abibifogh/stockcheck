@@ -1120,6 +1120,11 @@ const SECTIONS = [
         h('span', h('strong', 'Download the template.'), ' It comes down with the parts you already '
           + 'have, so the same file works whether you are setting up from nothing, correcting prices '
           + 'across the board, or re-levelling after a stocktake.'),
+        h('span', h('strong', 'Product and Variant group a part with its siblings.'), ' Fill both '
+          + 'and the part is one kind of that product — counted separately, restocked separately. '
+          + 'Leave the Name column blank on those rows and it is made from the two. A part that '
+          + 'already exists joins its product keeping everything ever recorded against it, and a '
+          + 'row that names no product leaves any grouping alone.'),
         h('span', h('strong', 'Sizes and colours are just columns.'), ' Any column that is not one of '
           + 'the standard ones becomes a detail: put “15W” under a Size column and “Chrome” under a '
           + 'Colour column and that is exactly what you get. A blank cell means that part has no such '
