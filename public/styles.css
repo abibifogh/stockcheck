@@ -474,6 +474,12 @@ body:has(.entry-footer) .toasts { bottom: calc(4.75rem + env(safe-area-inset-bot
 .muted { color: var(--text-faint); }
 .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .nowrap { white-space: nowrap; }
+
+/* The opposite, for the one column in a table that is prose rather than a
+   figure. Cells do not wrap by default so numbers stay on one line and columns
+   stay aligned; a part called "LED bulb — 40W warm" is not a number, and made
+   the order list scroll sideways to read a name. */
+td.wrap, th.wrap { white-space: normal; min-width: 10rem; }
 .hidden { display: none !important; }
 .skeleton { background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2)); background-size: 200% 100%; animation: shimmer 1.2s infinite; border-radius: var(--radius-sm); height: 1rem; }
 @keyframes shimmer { to { background-position: -200% 0; } }

@@ -839,6 +839,15 @@ function notificationsCard(data, reload) {
   const beds = addressList(hkRecipients,
     'Nobody named — the bed check will go to the daily email list above.');
 
+  // Who an alert addressed to a permission reaches. Off by default: "a count is
+  // waiting for approval" is for whoever can approve it, and a list of people
+  // who cannot approve anything learns to ignore the sender.
+  const alertsToWatchers = h('select',
+    h('option', { value: '0', selected: !data.alertsToWatchers },
+      'Only the people who can act on it'),
+    h('option', { value: '1', selected: !!data.alertsToWatchers },
+      'Also everyone on the list above'));
+
   const hkEnabled = h('select',
     h('option', { value: '1', selected: data.housekeeping?.enabled !== false }, 'Send an email when a bed check is submitted'),
     h('option', { value: '0', selected: data.housekeeping?.enabled === false }, 'Do not send bed check emails'),
@@ -864,6 +873,7 @@ function notificationsCard(data, reload) {
         from: from.value.trim(),
         siteUrl: siteUrl.value.trim(),
         pushEnabled: data.pushEnabled,
+        alertsToWatchers: alertsToWatchers.value === '1',
         hkEnabled: hkEnabled.value === '1',
         hkRecipients: hkRecipients.filter(Boolean),
       });
@@ -924,6 +934,14 @@ function notificationsCard(data, reload) {
       h('p.muted', { style: { fontSize: '.82rem', marginTop: '.5rem', marginBottom: 0 } },
         'This email lists every occupied bed found without a name tag, by room and bed, '
         + 'along with anything found where the roster said it should not be.'),
+    ),
+    h('div', { style: { marginTop: '1.1rem' } },
+      h('div.stat-label', { style: { marginBottom: '.4rem' } }, 'Approvals and other alerts'),
+      h('div.field-row', h('label.field', h('span', 'Who receives them'), alertsToWatchers)),
+      h('p.muted', { style: { fontSize: '.82rem', marginTop: '.5rem', marginBottom: 0 } },
+        'A count waiting for approval, a change waiting for a decision, a scheduled count falling '
+        + 'due. These go to whoever holds the permission that can act on them — an administrator '
+        + 'for an approval. Widen it only if the people on the list above genuinely want them.'),
     ),
     h('div.btn-row', { style: { marginTop: '1rem' } },
       h('button.btn-primary', { onclick: save }, 'Save'),

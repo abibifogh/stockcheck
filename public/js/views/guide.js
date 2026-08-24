@@ -1162,7 +1162,8 @@ const SECTIONS = [
           + 'guests, and how many items. Goes to everybody who can read reports.'),
         h('span', h('strong', 'A stock count is waiting for approval —'), ' from the kitchen or the '
           + 'parts store. Goes to administrators, because they are the only people who '
-          + 'can accept one.'),
+          + 'can accept one — not to the daily email list, unless an administrator has '
+          + 'deliberately widened it under Users & data → Email alerts.'),
         h('span', h('strong', 'A scheduled stock count has come round —'), ' goes to whoever was '
           + 'asked to do it, and to whoever runs the parts store.'),
         h('span', h('strong', 'The bakery reported a bake —'), ' goes to whoever can '
