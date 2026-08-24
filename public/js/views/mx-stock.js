@@ -173,7 +173,7 @@ export async function renderMxStock() {
         note: 'Type a figure in the last column to record a physical count',
       },
         table([
-          { key: 'name', label: sortHeader('Part', 'name', sort, onSort), format: nameCell },
+          { key: 'name', label: sortHeader('Part', 'name', sort, onSort), cls: 'wrap', format: nameCell },
           {
             key: 'stock',
             label: sortHeader('On shelf', 'stock', sort, onSort),

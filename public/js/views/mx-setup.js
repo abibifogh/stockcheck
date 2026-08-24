@@ -226,7 +226,7 @@ function roomsCard(areas, reload) {
       bar.el,
       table([
         { key: 'id', label: picked.headerBox(), cls: 'tick', format: (_v, row) => picked.rowBox(row) },
-        { key: 'name', label: 'Name' },
+        { key: 'name', label: 'Name', cls: 'wrap' },
         { key: 'kind', label: 'Kind', format: (v) => h(`span.pill.${v === 'room' ? 'info' : ''}`, v) },
         { key: 'block', label: 'Block', format: (v) => v || h('span.muted', '—') },
         {
@@ -409,11 +409,12 @@ function previewReport(result) {
           {
             key: 'name',
             label: 'Part',
+            cls: 'wrap',
             format: (v, r) => (r.variant
               ? h('div', h('div', v), h('small.muted', `${r.product} · ${r.variant}`))
               : v),
           },
-          { key: 'category', label: 'Category', format: (v) => v || h('span.muted', '—') },
+          { key: 'category', label: 'Category', cls: 'wrap', format: (v) => v || h('span.muted', '—') },
           { key: 'unit', label: 'Unit' },
           { key: 'parLevel', label: 'Restock at', align: 'right' },
           { key: 'openingStock', label: 'On shelf', align: 'right' },
@@ -570,6 +571,7 @@ function itemsCard(data, reload) {
         {
           key: 'name',
           label: sortHeader('Part', 'name', sort, onSort),
+          cls: 'wrap',
           format: (v, r) => h('div',
             h('div', v, r.is_common ? h('span.pill.info', { style: { marginLeft: '.4rem' } }, 'everyday') : null),
             h('small.muted', [
