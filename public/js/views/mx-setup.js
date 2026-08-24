@@ -32,7 +32,7 @@ export async function renderMxSetup() {
     ),
     roomsCard(areas.areas, reload),
     schedules ? schedulesCard(schedules, reload) : null,
-    products ? productsCard(products.products ?? [], data, reload) : null,
+    productsCard(products, data, reload),
     bulkPartsCard(data, reload),
     itemsCard(data, reload),
   );
@@ -696,7 +696,29 @@ function editItem(item, data, reload) {
  * which is the point: two 40W bulbs in different colours run out on different
  * days, and a single figure covering both tells nobody when to buy either.
  */
-function productsCard(products, data, reload) {
+function productsCard(loaded, data, reload) {
+  // The database cannot hold products yet. Offering the form anyway is how
+  // somebody types a product and three variants and learns on the Create
+  // button — so this says it before a single field is filled in, and names the
+  // file rather than describing it.
+  if (!loaded || loaded.ready === false) {
+    return card('Products and their variants', {
+      wide: true,
+      note: 'Waiting on a database update',
+    },
+      h('div.alert.warn',
+        h('span.alert-icon', '⚠️'),
+        h('div',
+          h('div.alert-title', 'This part of the site is ready, its tables are not'),
+          h('div.alert-detail',
+            'Run 0018_mx_product_variants.sql from migrations/console/ against the database, and '
+            + 'products will start working here. Everything else on this screen is unaffected, and '
+            + 'nothing has been lost.'),
+        )),
+    );
+  }
+
+  const products = loaded.products ?? [];
   const name = h('input', { type: 'text', placeholder: 'e.g. LED bulb', maxlength: 100 });
   const unit = h('input', { type: 'text', value: 'pcs', maxlength: 20 });
   const category = h('select',
