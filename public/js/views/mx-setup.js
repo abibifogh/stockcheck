@@ -1,6 +1,8 @@
 import { api } from '../api.js';
-import { attributeSummary, fmtMoney, fmtQty, h, mount, parseAttributes, toast } from '../util.js';
-import { card, table } from './components.js';
+import {
+  attributeSearchText, attributeSummary, fmtMoney, fmtQty, h, mount, parseAttributes, toast,
+} from '../util.js';
+import { card, nextSort, sortHeader, sorted, table } from './components.js';
 import { schedulesCard } from './mx-schedules.js';
 
 /**
@@ -464,6 +466,45 @@ function itemsCard(data, reload) {
     }
   };
 
+  // The list outgrew scrolling. Variants multiply it — one bulb kept in three
+  // colours is three rows — so finding a part meant reading every name until
+  // one matched.
+  const categoryName = (r) => data.categories.find((c) => c.id === r.category_id)?.name ?? 'Uncategorised';
+
+  let query = '';
+  let categoryId = '';
+  let everydayOnly = false;
+  let sort = { key: 'name', dir: 'asc' };
+  const NUMERIC = ['par_level', 'opening_stock', 'default_unit_cost'];
+
+  const search = h('input', {
+    type: 'search', placeholder: 'Search name, category or detail…', maxlength: 60,
+    oninput: (e) => { query = e.target.value.trim().toLowerCase(); paintList(); },
+  });
+  const categoryPick = h('select', {
+    onchange: (e) => { categoryId = e.target.value; paintList(); },
+  },
+    h('option', { value: '' }, 'Every category'),
+    data.categories.map((c) => h('option', { value: String(c.id) }, c.name)));
+  const everydayPick = h('input', {
+    type: 'checkbox',
+    onchange: (e) => { everydayOnly = e.target.checked; paintList(); },
+  });
+
+  // Matched against everything shown on the row, so what somebody can see is
+  // what they can search for — the detail under the name included.
+  const matches = (r) => {
+    if (categoryId && String(r.category_id ?? '') !== categoryId) return false;
+    if (everydayOnly && !r.is_common) return false;
+    if (!query) return true;
+    return [r.name, r.variant, r.unit, categoryName(r), attributeSearchText(r.attributes)]
+      .filter(Boolean).join(' ').toLowerCase()
+      .includes(query);
+  };
+
+  const onSort = (key) => { sort = nextSort(sort, key, { numeric: NUMERIC }); paintList(); };
+  const listHost = h('div');
+
   const picked = selection(data.items, (chosen) => bar.update(chosen));
   const bar = selectionBar({
     noun: 'part',
@@ -484,7 +525,7 @@ function itemsCard(data, reload) {
     },
   });
 
-  return card('The parts list', {
+  const el = card('The parts list', {
     wide: true,
     note: 'Everyday parts appear on the issue screen without searching',
   },
@@ -503,12 +544,32 @@ function itemsCard(data, reload) {
     h('button.btn-primary', { style: { marginTop: '.8rem' }, onclick: add }, 'Add part'),
 
     h('div', { style: { marginTop: '1.2rem' } },
+      h('div.field-row',
+        h('label.field', h('span', 'Search'), search),
+        h('label.field', h('span', 'Category'), categoryPick),
+        h('label.field', h('span', 'Everyday only'), everydayPick),
+      ),
       bar.el,
+      listHost),
+  );
+
+  function paintList() {
+    const rows = sorted(data.items.filter(matches), sort, {
+      // Category sorts by its name rather than its id, which is a number
+      // nobody chose and an order nobody expects.
+      value: (r, k) => (k === 'category' ? categoryName(r) : r[k]),
+    });
+
+    mount(listHost,
+      h('p.muted', { style: { fontSize: '.82rem', margin: '0 0 .5rem' } },
+        rows.length === data.items.length
+          ? `${data.items.length} ${data.items.length === 1 ? 'part' : 'parts'}`
+          : `${rows.length} of ${data.items.length} parts`),
       table([
         { key: 'id', label: picked.headerBox(), cls: 'tick', format: (_v, row) => picked.rowBox(row) },
         {
           key: 'name',
-          label: 'Part',
+          label: sortHeader('Part', 'name', sort, onSort),
           format: (v, r) => h('div',
             h('div', v, r.is_common ? h('span.pill.info', { style: { marginLeft: '.4rem' } }, 'everyday') : null),
             h('small.muted', [
@@ -517,10 +578,25 @@ function itemsCard(data, reload) {
             ].filter(Boolean).join(' · ')),
           ),
         },
-        { key: 'unit', label: 'Unit' },
-        { key: 'par_level', label: 'Restock at', align: 'right', format: (v, r) => fmtQty(v, r.unit) },
-        { key: 'opening_stock', label: 'Opening', align: 'right', format: (v, r) => fmtQty(v, r.unit) },
-        { key: 'default_unit_cost', label: 'Price each', align: 'right', format: (v) => fmtMoney(v, { withSymbol: false }) },
+        { key: 'unit', label: sortHeader('Unit', 'unit', sort, onSort) },
+        {
+          key: 'par_level',
+          label: sortHeader('Restock at', 'par_level', sort, onSort),
+          align: 'right',
+          format: (v, r) => fmtQty(v, r.unit),
+        },
+        {
+          key: 'opening_stock',
+          label: sortHeader('Opening', 'opening_stock', sort, onSort),
+          align: 'right',
+          format: (v, r) => fmtQty(v, r.unit),
+        },
+        {
+          key: 'default_unit_cost',
+          label: sortHeader('Price each', 'default_unit_cost', sort, onSort),
+          align: 'right',
+          format: (v) => fmtMoney(v, { withSymbol: false }),
+        },
         {
           key: 'id',
           label: '',
@@ -540,8 +616,15 @@ function itemsCard(data, reload) {
             }, 'Remove'),
           ),
         },
-      ], data.items, { empty: 'No parts yet.' })),
-  );
+      ], rows, {
+        empty: query || categoryId || everydayOnly
+          ? 'No part matches that. Clear the search or pick another category.'
+          : 'No parts yet.',
+      }));
+  }
+
+  paintList();
+  return el;
 }
 
 /**

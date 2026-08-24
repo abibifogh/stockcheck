@@ -475,6 +475,18 @@ body:has(.entry-footer) .toasts { bottom: calc(4.75rem + env(safe-area-inset-bot
 .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .nowrap { white-space: nowrap; }
 
+/* A heading that sorts. Looks like a heading until you notice the cursor —
+   a table full of buttons reads as a toolbar, which it is not. */
+.sort-head {
+  display: inline-flex; align-items: center; gap: .1rem;
+  padding: 0; border: 0; background: none;
+  color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit;
+  cursor: pointer;
+}
+.sort-head:hover { color: var(--accent); }
+.sort-head.on { color: var(--accent); }
+.sort-arrow { font-size: .7em; }
+
 /* The opposite, for the one column in a table that is prose rather than a
    figure. Cells do not wrap by default so numbers stay on one line and columns
    stay aligned; a part called "LED bulb — 40W warm" is not a number, and made

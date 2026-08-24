@@ -1089,6 +1089,15 @@ const SECTIONS = [
           + 'show under its name on the issue screen and in the stock list, and searching matches '
           + 'them, so somebody can type “9W” or “chrome” instead of hunting through the list.'),
       ),
+      note('Finding one part in a long list.',
+        'The parts list has a search box that matches the name, the category and the details \u2014 '
+        + 'so \u201c9W\u201d or \u201cchrome\u201d finds it without scrolling. Narrow to one category, or to '
+        + 'everyday parts only, and click any column heading to sort by it. Headings sort A\u2013Z the '
+        + 'first time for text and largest-first for numbers, because \u201csort by price\u201d nearly '
+        + 'always means \u201cwhat are the expensive ones\u201d. Clicking the same heading again '
+        + 'reverses it. The store list on Parts \u2192 Stock sorts the same way, and keeps any count '
+        + 'already typed while it reorders.'),
+
       h('h3', { style: { marginTop: '1.1rem' } }, 'Parts you keep in more than one kind'),
       h('p', 'A bulb you stock in 40W warm, 40W white and 60W is three parts, not one. They sit in '
         + 'different boxes and run out on different days, so a single figure covering all three '
