@@ -3,7 +3,9 @@ import { can, navigate } from '../app.js';
 import {
   attributeSummary, fmtDay, fmtMoney, fmtNum, fmtQty, h, mount, toast, todayISO,
 } from '../util.js';
-import { card, categoryBar, inCategory, statTile, table } from './components.js';
+import {
+  card, categoryBar, inCategory, nextSort, sortHeader, sorted, statTile, table,
+} from './components.js';
 import { printButton } from '../print.js';
 
 /**
@@ -33,6 +35,12 @@ export async function renderMxStock() {
   const counts = new Map();
   let category = null;
   let grouped = false;
+  // The category chips narrow the page; this orders what is left. Both go
+  // through paint(), and the counts typed into the last column live outside it,
+  // so re-sorting mid-count keeps every figure already entered.
+  let sort = { key: null, dir: 'asc' };
+  const NUMERIC = ['stock', 'parLevel', 'unitCost', 'value', 'used90', 'daysCover'];
+  const onSort = (key) => { sort = nextSort(sort, key, { numeric: NUMERIC }); paint(); };
 
   const statusPill = (status) => {
     const map = {
@@ -70,7 +78,11 @@ export async function renderMxStock() {
     h('small.muted', [r.categoryName, attributeSummary(r.attributes)].filter(Boolean).join(' · ')));
 
   const paint = () => {
-    const rows = inCategory(data.rows, category);
+    // Unsorted means the order the store sent, which is deliberate: worst
+    // first. Only once somebody picks a column does this reorder anything.
+    const rows = sort.key
+      ? sorted(inCategory(data.rows, category), sort)
+      : inCategory(data.rows, category);
     const reorder = inCategory(data.reorder, category);
     const idle = inCategory(data.idle, category);
     const shrinkage = inCategory(data.shrinkage, category);
@@ -161,13 +173,43 @@ export async function renderMxStock() {
         note: 'Type a figure in the last column to record a physical count',
       },
         table([
-          { key: 'name', label: 'Part', format: nameCell },
-          { key: 'stock', label: 'On shelf', align: 'right', format: (v, r) => fmtQty(v, r.unit) },
-          { key: 'parLevel', label: 'Level', align: 'right', format: (v, r) => fmtQty(v, r.unit) },
-          { key: 'unitCost', label: 'Each', align: 'right', format: (v) => fmtMoney(v, { withSymbol: false }) },
-          { key: 'value', label: 'Value', align: 'right', format: (v) => fmtMoney(v, { withSymbol: false }) },
-          { key: 'used90', label: 'Used (90d)', align: 'right', format: (v, r) => fmtQty(v, r.unit) },
-          { key: 'daysCover', label: 'Days left', align: 'right', format: (v) => (v == null ? '—' : fmtNum(v, 0)) },
+          { key: 'name', label: sortHeader('Part', 'name', sort, onSort), cls: 'wrap', format: nameCell },
+          {
+            key: 'stock',
+            label: sortHeader('On shelf', 'stock', sort, onSort),
+            align: 'right',
+            format: (v, r) => fmtQty(v, r.unit),
+          },
+          {
+            key: 'parLevel',
+            label: sortHeader('Level', 'parLevel', sort, onSort),
+            align: 'right',
+            format: (v, r) => fmtQty(v, r.unit),
+          },
+          {
+            key: 'unitCost',
+            label: sortHeader('Each', 'unitCost', sort, onSort),
+            align: 'right',
+            format: (v) => fmtMoney(v, { withSymbol: false }),
+          },
+          {
+            key: 'value',
+            label: sortHeader('Value', 'value', sort, onSort),
+            align: 'right',
+            format: (v) => fmtMoney(v, { withSymbol: false }),
+          },
+          {
+            key: 'used90',
+            label: sortHeader('Used (90d)', 'used90', sort, onSort),
+            align: 'right',
+            format: (v, r) => fmtQty(v, r.unit),
+          },
+          {
+            key: 'daysCover',
+            label: sortHeader('Days left', 'daysCover', sort, onSort),
+            align: 'right',
+            format: (v) => (v == null ? '—' : fmtNum(v, 0)),
+          },
           { key: 'status', label: '', format: statusPill },
           {
             key: 'itemId',

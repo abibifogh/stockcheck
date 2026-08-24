@@ -53,6 +53,49 @@ export function card(title, { note, actions, wide } = {}, ...children) {
  * rows of a group and returns whatever is worth putting on its heading, such
  * as what that group is worth.
  */
+/**
+ * A column heading that sorts the list under it.
+ *
+ * Passed as a column's `label`, so `table` needs to know nothing about
+ * sorting — a heading is whatever you hand it, and this is a heading that
+ * happens to be a button.
+ *
+ * `state` is read, not owned: the caller keeps { key, dir } and repaints, which
+ * is what lets a screen sort one table without disturbing a half-typed form
+ * beside it.
+ */
+export function sortHeader(label, key, state, onSort) {
+  const active = state.key === key;
+  return h('button.sort-head', {
+    class: active ? 'sort-head on' : 'sort-head',
+    title: `Sort by ${label}`,
+    onclick: () => onSort(key),
+  }, label, h('span.sort-arrow', active ? (state.dir === 'asc' ? ' ▲' : ' ▼') : ''));
+}
+
+/**
+ * Flip to a column, or reverse it if it is already the one being sorted.
+ *
+ * Text starts A→Z and numbers start with the largest, because "sort by price"
+ * almost always means "what are the expensive ones".
+ */
+export function nextSort(state, key, { numeric = [] } = {}) {
+  if (state.key === key) return { key, dir: state.dir === 'asc' ? 'desc' : 'asc' };
+  return { key, dir: numeric.includes(key) ? 'desc' : 'asc' };
+}
+
+/** Sort a copy, leaving whatever the caller was given alone. */
+export function sorted(rows, { key, dir }, { value = (r, k) => r[k] } = {}) {
+  const sign = dir === 'desc' ? -1 : 1;
+  return [...rows].sort((a, b) => {
+    const x = value(a, key);
+    const y = value(b, key);
+    const bothNumbers = typeof x === 'number' && typeof y === 'number';
+    if (bothNumbers) return (x - y) * sign;
+    return String(x ?? '').localeCompare(String(y ?? ''), undefined, { numeric: true }) * sign;
+  });
+}
+
 export function table(columns, rows, {
   rowClass = null, empty = 'No data yet.', groupBy = null, groupSummary = null,
 } = {}) {
