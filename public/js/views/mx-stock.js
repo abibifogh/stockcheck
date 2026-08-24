@@ -135,7 +135,7 @@ export async function renderMxStock() {
           note: 'Everything below its restock level, worst first',
         },
           table([
-            { key: 'name', label: 'Part', format: nameCell },
+            { key: 'name', label: 'Part', cls: 'wrap', format: nameCell },
             { key: 'stock', label: 'On shelf', align: 'right', format: (v, r) => fmtQty(v, r.unit) },
             { key: 'parLevel', label: 'Level', align: 'right', format: (v, r) => fmtQty(v, r.unit) },
             { key: 'suggestedOrder', label: 'Order', align: 'right', format: (v, r) => h('strong', fmtQty(v, r.unit)) },

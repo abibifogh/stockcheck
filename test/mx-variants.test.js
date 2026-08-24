@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  addVariant, attachToProduct, createProduct, deleteProduct,
+  addVariant, attachToProduct, createProduct, deleteProduct, listProducts,
 } from '../src/routes/maintenance.js';
 
 /**
@@ -224,4 +224,41 @@ test('an empty product goes', async () => {
 
   assert.equal((await res.json()).ok, true);
   assert.equal(wrote(db, /DELETE FROM mx_products/).length, 1);
+});
+
+// -------------------------------------------------- before the tables exist --
+
+test('a database that cannot hold products says so rather than reporting none', async () => {
+  // The two are not the same thing, and treating them as one is what let the
+  // setup screen offer a form that could only fail on its Create button.
+  const db = fakeDb();
+  db.prepare = (sql) => ({
+    sql,
+    bind() { return this; },
+    async all() {
+      if (/FROM mx_products/.test(sql)) throw new Error('D1_ERROR: no such table: mx_products');
+      return { results: [] };
+    },
+    async first() { return null; },
+    async run() { return { success: true }; },
+  });
+
+  const body = await (await listProducts({ db, session: { user: { name: 'Ama', role: 'admin' } } })).json();
+  assert.equal(body.ready, false);
+  assert.deepEqual(body.products, []);
+});
+
+test('a database with the table but nothing in it is ready, not broken', async () => {
+  const db = fakeDb();
+  db.prepare = (sql) => ({
+    sql,
+    bind() { return this; },
+    async all() { return { results: [] }; },
+    async first() { return null; },
+    async run() { return { success: true }; },
+  });
+
+  const body = await (await listProducts({ db, session: { user: { name: 'Ama', role: 'admin' } } })).json();
+  assert.equal(body.ready, true);
+  assert.deepEqual(body.products, []);
 });

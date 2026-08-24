@@ -118,10 +118,21 @@ export async function emailAudience(db, env, {
       if (address && address.includes('@') && !addresses.includes(address)) addresses.push(address);
     }
 
-    // Anybody explicitly listed for the daily email is presumed to want the
-    // rest of it too — that list is "who watches this hotel".
-    for (const extra of parseRecipients(settings.notify_recipients)) {
-      if (!addresses.includes(extra)) addresses.push(extra);
+    // Only if an administrator has said so.
+    //
+    // That list is the daily summary's audience — everybody who wants to know
+    // what breakfast cost. It was folded in here too, on the reasoning that
+    // they watch the hotel and would want the rest. They do not: "1 counted
+    // ingredient waiting for approval" is addressed to whoever can approve it,
+    // and sending it to eleven people who cannot is how a list of eleven people
+    // learns to ignore the sender.
+    //
+    // So the default is the audience and nobody else, and widening it is a
+    // decision somebody makes deliberately.
+    if (settings.notify_alerts_to_watchers === '1') {
+      for (const extra of parseRecipients(settings.notify_recipients)) {
+        if (!addresses.includes(extra)) addresses.push(extra);
+      }
     }
     if (!addresses.length) {
       await log('skipped', 'Nobody holding this permission has an email address');

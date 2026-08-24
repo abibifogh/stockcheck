@@ -117,7 +117,7 @@ function reorderCard(reorder, groupBy, groupValue) {
   return reorder.length
     ? card('Order list', { note: 'Suggested quantities bring each item back to its par level', wide: true },
       table([
-        { key: 'name', label: 'Ingredient', format: (v, r) => h('div', h('div', v), h('small.muted', r.categoryName)) },
+        { key: 'name', label: 'Ingredient', cls: 'wrap', format: (v, r) => h('div', h('div', v), h('small.muted', r.categoryName)) },
         { key: 'stock', label: 'On hand', align: 'right', format: (v, r) => `${fmtNum(v, 2)} ${r.unit}` },
         { key: 'parLevel', label: 'Par', align: 'right', format: (v, r) => `${fmtNum(v, 2)} ${r.unit}` },
         { key: 'avgDailyUse', label: 'Used/day', align: 'right', format: (v, r) => `${fmtNum(v, 2)} ${r.unit}` },

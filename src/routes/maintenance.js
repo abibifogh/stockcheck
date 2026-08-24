@@ -1,5 +1,6 @@
 import {
-  badRequest, csvResponse, json, notFound, num, readJson, rethrowConstraint, str,
+  badRequest, csvResponse, isMissingTable, json, notFound, num, readJson,
+  rethrowConstraint, str,
 } from '../lib/http.js';
 import { parseCsv } from './importing.js';
 import {
@@ -898,11 +899,23 @@ export async function attachToProduct(ctx, id) {
 
 /** Products with their variants, for the screens that group by them. */
 export async function listProducts(ctx) {
-  const [products, items] = await Promise.all([
-    ctx.db.prepare('SELECT * FROM mx_products ORDER BY name').all().catch(() => ({ results: [] })),
-    ctx.db.prepare('SELECT * FROM mx_items WHERE product_id IS NOT NULL ORDER BY variant').all()
-      .catch(() => ({ results: [] })),
-  ]);
+  // Whether this database can hold products at all, told apart from holding
+  // none. Swallowing the missing table into an empty list looks identical to a
+  // store that has simply not grouped anything yet — so the screen offered a
+  // form, somebody typed a product and three variants into it, and only the
+  // Create button found out. Saying which it is costs one field.
+  let ready = true;
+  const products = await ctx.db.prepare('SELECT * FROM mx_products ORDER BY name').all()
+    .catch((err) => {
+      if (!isMissingTable(err)) throw err;
+      ready = false;
+      return { results: [] };
+    });
+  if (!ready) return json({ ready: false, products: [] });
+
+  const items = await ctx.db
+    .prepare('SELECT * FROM mx_items WHERE product_id IS NOT NULL ORDER BY variant').all()
+    .catch(() => ({ results: [] }));
 
   const byProduct = new Map();
   for (const item of items.results ?? []) {
@@ -914,6 +927,7 @@ export async function listProducts(ctx) {
   }
 
   return json({
+    ready: true,
     products: (products.results ?? []).map((p) => ({
       id: p.id,
       name: p.name,

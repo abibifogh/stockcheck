@@ -286,6 +286,9 @@ export async function getNotifications(ctx) {
     devices: devices.results ?? [],
     pushLog: pushLog.results ?? [],
     recipients: parseRecipients(settings.notify_recipients),
+    // Whether an alert addressed to a permission — a count waiting, a change
+    // waiting — also goes to the daily email list. Off unless somebody says so.
+    alertsToWatchers: settings.notify_alerts_to_watchers === '1',
     // The bed check has its own audience — the people who care that a dorm bed
     // is unlabelled are rarely the people who care what the eggs cost — but it
     // shares the sender and the site address, which are properties of the
@@ -342,6 +345,7 @@ export async function updateNotifications(ctx) {
   const inApp = bool(body.inAppEnabled, keep('notify_in_app')) ? '1' : '0';
   const countPending = bool(body.countPendingEnabled, keep('notify_count_pending')) ? '1' : '0';
   const stocktakeDue = bool(body.stocktakeDueEnabled, keep('notify_stocktake_due')) ? '1' : '0';
+  const alertsToWatchers = bool(body.alertsToWatchers, stored.notify_alerts_to_watchers === '1') ? '1' : '0';
 
   await ctx.db.batch([
     setting(ctx.db, 'notify_on_submit', enabled),
@@ -354,6 +358,7 @@ export async function updateNotifications(ctx) {
     setting(ctx.db, 'notify_stocktake_due', stocktakeDue),
     setting(ctx.db, 'hk_notify_on_submit', hkEnabled),
     setting(ctx.db, 'hk_notify_recipients', JSON.stringify(hkRecipients)),
+    setting(ctx.db, 'notify_alerts_to_watchers', alertsToWatchers),
   ]);
 
   await audit(ctx, 'notifications.update', null, {
