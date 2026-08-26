@@ -33,7 +33,7 @@ export async function list(ctx) {
   let ready = true;
   const tools = await ctx.db.prepare(
     `SELECT t.*, c.name AS category_name
-       FROM mx_tools t
+       FROM tools t
        LEFT JOIN mx_categories c ON c.id = t.category_id
       WHERE t.active = 1
       ORDER BY t.name`,
@@ -46,7 +46,7 @@ export async function list(ctx) {
 
   const out = await ctx.db.prepare(
     `SELECT m.*, a.name AS area_name
-       FROM mx_tool_movements m
+       FROM tool_movements m
        LEFT JOIN mx_areas a ON a.id = m.area_id
       WHERE m.returned_at IS NULL`,
   ).all().catch(() => ({ results: [] }));
@@ -83,12 +83,12 @@ export async function list(ctx) {
 
 /** Everywhere one tool has been, newest first. */
 export async function history(ctx, id) {
-  const tool = await ctx.db.prepare('SELECT * FROM mx_tools WHERE id = ?').bind(Number(id)).first();
+  const tool = await ctx.db.prepare('SELECT * FROM tools WHERE id = ?').bind(Number(id)).first();
   if (!tool) throw notFound('That tool is not in the register.');
 
   const rows = await ctx.db.prepare(
     `SELECT m.*, a.name AS area_name
-       FROM mx_tool_movements m
+       FROM tool_movements m
        LEFT JOIN mx_areas a ON a.id = m.area_id
       WHERE m.tool_id = ?
       ORDER BY m.id DESC
@@ -124,7 +124,7 @@ export async function issue(ctx, id) {
   const body = await readJson(ctx.request);
   const toolId = Number(id);
 
-  const tool = await ctx.db.prepare('SELECT * FROM mx_tools WHERE id = ? AND active = 1')
+  const tool = await ctx.db.prepare('SELECT * FROM tools WHERE id = ? AND active = 1')
     .bind(toolId).first();
   if (!tool) throw notFound('That tool is not in the register.');
 
@@ -143,7 +143,7 @@ export async function issue(ctx, id) {
 
   try {
     await ctx.db.prepare(
-      `INSERT INTO mx_tool_movements (tool_id, area_id, issued_to, issued_by, issued_at, due_back_at, note)
+      `INSERT INTO tool_movements (tool_id, area_id, issued_to, issued_by, issued_at, due_back_at, note)
        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
     ).bind(toolId, areaId, issuedTo, ctx.session.user.name, now, dueBackAt(now, hours), note).run();
   } catch (err) {
@@ -151,7 +151,7 @@ export async function issue(ctx, id) {
     // already in a van, which is worth saying plainly rather than as a 500.
     if (/UNIQUE/i.test(String(err?.message ?? err))) {
       const held = await ctx.db.prepare(
-        'SELECT issued_to FROM mx_tool_movements WHERE tool_id = ? AND returned_at IS NULL',
+        'SELECT issued_to FROM tool_movements WHERE tool_id = ? AND returned_at IS NULL',
       ).bind(toolId).first();
       throw badRequest(`${tool.name} is already out${held?.issued_to ? ` with ${held.issued_to}` : ''}. `
         + 'Mark it returned before issuing it again.');
@@ -171,13 +171,13 @@ export async function markReturned(ctx, id) {
   const returnNote = str(body.returnNote, 'Note', { max: 300, fallback: '' }) || null;
 
   const trip = await ctx.db.prepare(
-    'SELECT * FROM mx_tool_movements WHERE tool_id = ? AND returned_at IS NULL',
+    'SELECT * FROM tool_movements WHERE tool_id = ? AND returned_at IS NULL',
   ).bind(toolId).first();
   if (!trip) throw badRequest('That tool is not out — there is nothing to return.');
 
   const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
   await ctx.db.prepare(
-    `UPDATE mx_tool_movements
+    `UPDATE tool_movements
         SET returned_at = ?1, received_by = ?2, return_note = ?3
       WHERE id = ?4 AND returned_at IS NULL`,
   ).bind(now, ctx.session.user.name, returnNote, trip.id).run();
@@ -197,7 +197,7 @@ export async function create(ctx) {
 
   try {
     const row = await ctx.db.prepare(
-      `INSERT INTO mx_tools (name, tag, category_id, note)
+      `INSERT INTO tools (name, tag, category_id, note)
        VALUES (?1, ?2, ?3, ?4) RETURNING *`,
     ).bind(
       name, tag,
@@ -222,7 +222,7 @@ export async function update(ctx, id) {
 
   try {
     const row = await ctx.db.prepare(
-      `UPDATE mx_tools SET name = ?2, tag = ?3, category_id = ?4, note = ?5
+      `UPDATE tools SET name = ?2, tag = ?3, category_id = ?4, note = ?5
         WHERE id = ?1 RETURNING *`,
     ).bind(
       Number(id), name, tag,
@@ -246,14 +246,14 @@ export async function update(ctx, id) {
  */
 export async function retire(ctx, id) {
   const out = await ctx.db.prepare(
-    'SELECT issued_to FROM mx_tool_movements WHERE tool_id = ? AND returned_at IS NULL',
+    'SELECT issued_to FROM tool_movements WHERE tool_id = ? AND returned_at IS NULL',
   ).bind(Number(id)).first();
   if (out) {
     throw badRequest(`That tool is still out with ${out.issued_to}. `
       + 'Mark it returned before retiring it.');
   }
 
-  const result = await ctx.db.prepare('UPDATE mx_tools SET active = 0 WHERE id = ? AND active = 1')
+  const result = await ctx.db.prepare('UPDATE tools SET active = 0 WHERE id = ? AND active = 1')
     .bind(Number(id)).run();
   if (!result.meta?.changes) throw notFound('That tool has already been retired.');
 

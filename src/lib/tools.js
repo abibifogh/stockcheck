@@ -15,7 +15,7 @@ import { announce, readSettings } from './notify.js';
 
 /** How long a tool may be out. Hours, so "still out at bedtime" is catchable. */
 export function graceHours(settings) {
-  const raw = Number(settings?.mx_tool_hours);
+  const raw = Number(settings?.tool_hours);
   if (!Number.isFinite(raw) || raw <= 0) return 24;
   // A week is already absurd for a hand tool; beyond that somebody has typed
   // a year and would never be told about anything again.
@@ -60,8 +60,8 @@ export async function chaseOverdueTools(db, env, now) {
   const rows = await db.prepare(
     `SELECT m.id, m.tool_id, m.issued_to, m.issued_at, m.due_back_at,
             t.name AS tool_name, t.tag, a.name AS area_name
-       FROM mx_tool_movements m
-       JOIN mx_tools t ON t.id = m.tool_id
+       FROM tool_movements m
+       JOIN tools t ON t.id = m.tool_id
        LEFT JOIN mx_areas a ON a.id = m.area_id
       WHERE m.returned_at IS NULL
         AND m.overdue_notified_at IS NULL
@@ -77,19 +77,19 @@ export async function chaseOverdueTools(db, env, now) {
   // leave the row unmarked, or the next sweep chases it again — and being told
   // twice about the same drill is how people learn to ignore the bell.
   await db.batch(late.map((row) => db.prepare(
-    "UPDATE mx_tool_movements SET overdue_notified_at = ? WHERE id = ? AND overdue_notified_at IS NULL",
+    "UPDATE tool_movements SET overdue_notified_at = ? WHERE id = ? AND overdue_notified_at IS NULL",
   ).bind(now, row.id)));
 
   for (const row of late) {
     const where = row.area_name ? ` at ${row.area_name}` : '';
     const task = announce(db, env, {
       kind: 'tool_overdue',
-      audience: 'mx_stock',
+      audience: 'tools_setup',
       title: `${row.tool_name} has not come back`,
       body: `${row.issued_to} took it${where} on ${String(row.issued_at).slice(0, 16)}. `
         + `It was due back ${overdueBy(row.due_back_at, now)} ago.`
         + (row.tag ? ` Tag ${row.tag}.` : ''),
-      link: '#/mx-tools',
+      link: '#/tools',
       linkLabel: 'See what is out',
     });
     await task.catch(() => {});

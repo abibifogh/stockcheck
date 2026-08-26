@@ -16,7 +16,7 @@ import * as insights from './routes/insights.js';
 import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
 import * as mx from './routes/maintenance.js';
-import * as mxTools from './routes/mx-tools.js';
+import * as tools from './routes/tools.js';
 import * as bakery from './routes/bakery.js';
 import * as stocktakes from './routes/stocktakes.js';
 import * as hk from './routes/housekeeping.js';
@@ -191,16 +191,6 @@ const ROUTES = [
   ['DELETE', '/api/mx/products/:id', 'mx_setup', mx.deleteProduct],
   ['PUT', '/api/mx/items/:id/product', 'mx_setup', mx.attachToProduct],
 
-  // Tools go out and come back. Issuing and returning is the technician's
-  // counter, so it sits with mx_issue; the register itself is setup.
-  ['GET', '/api/mx/tools', 'mx_issue', mxTools.list],
-  ['GET', '/api/mx/tools/:id/history', 'mx_issue', mxTools.history],
-  ['POST', '/api/mx/tools/:id/issue', 'mx_issue', mxTools.issue],
-  ['POST', '/api/mx/tools/:id/return', 'mx_issue', mxTools.markReturned],
-  ['POST', '/api/mx/tools', 'mx_setup', mxTools.create],
-  ['PUT', '/api/mx/tools/:id', 'mx_setup', mxTools.update],
-  ['DELETE', '/api/mx/tools/:id', 'mx_setup', mxTools.retire],
-
   ['POST', '/api/mx/categories', 'mx_setup', mx.createCategory],
   ['GET', '/api/mx/items/template', 'mx_setup', mx.partsTemplate],
   ['POST', '/api/mx/items/import', 'mx_setup', mx.importParts],
@@ -216,6 +206,17 @@ const ROUTES = [
   ['DELETE', '/api/mx/stocktakes/:id', 'mx_setup', stocktakes.remove],
   ['POST', '/api/mx/stocktakes/:id/run', 'mx_setup', stocktakes.runNow],
   ['POST', '/api/mx/stocktake-tasks/:id/cancel', 'mx_setup', stocktakes.cancelTask],
+
+  // ------------------------------------------------------------- tool store --
+  // Its own store, not a corner of the parts one. Borrowing a drill and running
+  // the parts shelf are different jobs, so they are different keys.
+  ['GET', '/api/tools', 'tools_issue', tools.list],
+  ['GET', '/api/tools/:id/history', 'tools_issue', tools.history],
+  ['POST', '/api/tools/:id/issue', 'tools_issue', tools.issue],
+  ['POST', '/api/tools/:id/return', 'tools_issue', tools.markReturned],
+  ['POST', '/api/tools', 'tools_setup', tools.create],
+  ['PUT', '/api/tools/:id', 'tools_setup', tools.update],
+  ['DELETE', '/api/tools/:id', 'tools_setup', tools.retire],
 
   // ----------------------------------------------------------- housekeeping --
   // The dorm bed check. `hk_check` reaches the round and nothing else, so a

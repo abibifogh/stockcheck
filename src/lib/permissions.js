@@ -22,6 +22,13 @@ export const PERMISSIONS = [
   { key: 'mx_purchases', label: 'Maintenance purchases', detail: 'Record parts bought, with cost' },
   { key: 'mx_setup', label: 'Maintenance setup', detail: 'The parts list, and the rooms and areas' },
 
+  // The tool store. Its own keys, because borrowing a drill and running the
+  // parts shelf are different jobs done by different people — an artisan who
+  // signs tools in and out has no reason to hold the store's purchase history,
+  // and whoever keeps the tool register is not necessarily the storekeeper.
+  { key: 'tools_issue', label: 'Tool store', detail: 'Sign tools out and back in, and see what is out' },
+  { key: 'tools_setup', label: 'Tool register', detail: 'The list of tools, and who is chased when one is late' },
+
   // Housekeeping. Separate again, and for the same reason: the housekeeper who
   // walks the dorms every morning should be handed the bed check and nothing
   // else — not the roster she is checking against, and certainly not the costs.
@@ -60,14 +67,15 @@ export const ROLES = [
   {
     key: 'technician',
     label: 'Technician',
-    detail: 'Issues parts to rooms. Sees no costs at all.',
-    defaults: ['mx_issue'],
+    detail: 'Issues parts to rooms and borrows tools. Sees no costs at all.',
+    defaults: ['mx_issue', 'tools_issue'],
   },
   {
     key: 'maintenance_manager',
     label: 'Maintenance manager',
     detail: 'Runs the parts store: issues, stock, purchases and the room-by-room analysis.',
-    defaults: ['mx_issue', 'mx_reports', 'mx_stock', 'mx_purchases', 'mx_setup'],
+    defaults: ['mx_issue', 'mx_reports', 'mx_stock', 'mx_purchases', 'mx_setup',
+      'tools_issue', 'tools_setup'],
   },
   {
     key: 'receptionist',
