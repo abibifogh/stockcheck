@@ -11,7 +11,7 @@
 --
 -- Safe to run more than once.
 
-CREATE TABLE IF NOT EXISTS tools (
+CREATE TABLE IF NOT EXISTS mx_tools (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   name        TEXT NOT NULL,
   -- What is stencilled on it. Two identical drills are two rows, and this is
@@ -28,9 +28,9 @@ CREATE TABLE IF NOT EXISTS tools (
 -- Not two tables and not a status column on the tool. A status says where a
 -- tool is now and forgets everything before it; these rows are the history, and
 -- where it is now is simply the one that has not come back yet.
-CREATE TABLE IF NOT EXISTS tool_movements (
+CREATE TABLE IF NOT EXISTS mx_tool_movements (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  tool_id     INTEGER NOT NULL REFERENCES tools (id),
+  tool_id     INTEGER NOT NULL REFERENCES mx_tools (id),
   -- Where the work is. Nullable because "he took it home" is a real answer and
   -- refusing to record it would mean not recording the trip at all.
   area_id     INTEGER REFERENCES mx_areas (id),
@@ -49,21 +49,21 @@ CREATE TABLE IF NOT EXISTS tool_movements (
   overdue_notified_at TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_tool_movements_tool ON tool_movements (tool_id, id DESC);
+CREATE INDEX IF NOT EXISTS idx_mx_tool_movements_tool ON mx_tool_movements (tool_id, id DESC);
 
 -- A tool is in one place at a time. Issuing one that is already out is not a
 -- second journey, it is somebody not knowing the first one happened — so the
 -- database refuses it rather than the handler remembering to.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_tool_out
-  ON tool_movements (tool_id) WHERE returned_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mx_tool_out
+  ON mx_tool_movements (tool_id) WHERE returned_at IS NULL;
 
 -- What the sweep reads: still out, past due, not yet mentioned.
-CREATE INDEX IF NOT EXISTS idx_tool_overdue
-  ON tool_movements (returned_at, due_back_at);
+CREATE INDEX IF NOT EXISTS idx_mx_tool_overdue
+  ON mx_tool_movements (returned_at, due_back_at);
 
 INSERT OR IGNORE INTO settings (key, value) VALUES
   -- How long a tool may be out before it is chased. Hours rather than days
   -- because a morning job that is still out at bedtime is the case worth
   -- catching.
-  ('tool_hours', '24'),
+  ('mx_tool_hours', '24'),
   ('notify_tool_overdue', '1');

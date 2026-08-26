@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS tools (
+CREATE TABLE IF NOT EXISTS mx_tools (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   name        TEXT NOT NULL,
       tag         TEXT UNIQUE,
@@ -7,9 +7,9 @@ CREATE TABLE IF NOT EXISTS tools (
   active      INTEGER NOT NULL DEFAULT 1,
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
-CREATE TABLE IF NOT EXISTS tool_movements (
+CREATE TABLE IF NOT EXISTS mx_tool_movements (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  tool_id     INTEGER NOT NULL REFERENCES tools (id),
+  tool_id     INTEGER NOT NULL REFERENCES mx_tools (id),
       area_id     INTEGER REFERENCES mx_areas (id),
   issued_to   TEXT NOT NULL,
   issued_by   TEXT,
@@ -21,11 +21,11 @@ CREATE TABLE IF NOT EXISTS tool_movements (
   return_note TEXT,
       overdue_notified_at TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_tool_movements_tool ON tool_movements (tool_id, id DESC);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_tool_out
-  ON tool_movements (tool_id) WHERE returned_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_tool_overdue
-  ON tool_movements (returned_at, due_back_at);
+CREATE INDEX IF NOT EXISTS idx_mx_tool_movements_tool ON mx_tool_movements (tool_id, id DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mx_tool_out
+  ON mx_tool_movements (tool_id) WHERE returned_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_mx_tool_overdue
+  ON mx_tool_movements (returned_at, due_back_at);
 INSERT OR IGNORE INTO settings (key, value) VALUES
-        ('tool_hours', '24'),
+        ('mx_tool_hours', '24'),
   ('notify_tool_overdue', '1');

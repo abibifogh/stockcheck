@@ -1021,15 +1021,14 @@ const SECTIONS = [
   },
 
   {
-    id: 'tools',
+    id: 'mx-tools',
     title: 'Tools that go out and come back',
-    permission: 'tools_issue',
+    permission: 'mx_issue',
     lead: 'Where a tool is, who has it, and what to do when it does not come back.',
     render: () => h('div',
-      h('p', 'A part is used up; a tool is borrowed. They are separate sections for that reason: '
-        + 'tools have no quantity, no restock level and no place on a reorder list \u2014 one drill is '
-        + 'one drill, and the question is never how many are left but where this one is. Somebody '
-        + 'can be given the tool store without the parts store, and usually should be.'),
+      h('p', 'A part is used up; a tool is borrowed. So tools are not on the parts list and have '
+        + 'no quantity \u2014 one drill is one drill, and the question is never how many are left but '
+        + 'where this one is.'),
       steps(
         h('span', h('strong', 'Press Issue'), ' against the tool, say who is taking it and which '
           + 'room or area they are working in. Leave the place blank if it is going off site.'),
@@ -1051,10 +1050,6 @@ const SECTIONS = [
         'Press History against a tool to see everywhere it has been: who took it, where they were '
         + 'working, when it came back and who received it. A tool chased every single time it goes '
         + 'out is telling you something about a habit rather than about one afternoon.'),
-      note('The register is under Tools, not Maintenance.',
-        'Tools \u2192 Register is where they are added and retired. The rooms and areas are shared with '
-        + 'the parts store, because a drill goes to the same Room 214 a tap washer is fitted in and '
-        + 'keeping two lists of the property would guarantee they disagreed.'),
       warn('Retiring keeps the history.',
         'A tool that is broken or lost is retired rather than deleted, so who had it and when is '
         + 'still answerable. One that is still out cannot be retired at all \u2014 it is in somebody\u2019s '

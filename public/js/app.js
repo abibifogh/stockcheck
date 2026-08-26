@@ -15,8 +15,7 @@ import { openAccountDialog } from './views/account.js';
 import { renderGuide } from './views/guide.js';
 import { renderCompare } from './views/compare.js';
 import { renderMxIssue } from './views/mx-issue.js';
-import { renderTools } from './views/tools.js';
-import { renderToolsSetup } from './views/tools-setup.js';
+import { renderMxTools } from './views/mx-tools.js';
 import { renderMxOverview, renderMxReport } from './views/mx-reports.js';
 import { renderMxStock } from './views/mx-stock.js';
 import { renderMxPurchases } from './views/mx-purchases.js';
@@ -63,16 +62,11 @@ const ROUTES = [
   { path: 'mx-report', label: 'Report', permission: 'mx_reports', render: renderMxReport, group: 'Maintenance', site: 'full' },
   { path: 'mx-compare', label: 'Compare', permission: 'mx_reports', render: renderMxCompare, group: 'Maintenance', site: 'full' },
   { path: 'mx-stock', label: 'Parts', permission: 'mx_stock', render: renderMxStock, group: 'Maintenance', site: 'full' },
+  { path: 'mx-tools', label: 'Tools', permission: 'mx_issue', render: renderMxTools, group: 'Maintenance', site: 'full' },
   { path: 'mx-purchases', label: 'Bought', permission: 'mx_purchases', render: renderMxPurchases, group: 'Maintenance', site: 'full' },
   { path: 'mx-setup', label: 'Setup', permission: 'mx_setup', render: renderMxSetup, group: 'Maintenance', site: 'full' },
   // Reached by clicking a room in the report rather than from the menu.
   { path: 'mx-area', label: 'Room', permission: 'mx_reports', render: renderMxArea, hidden: true, site: 'full' },
-
-  // ------------------------------------------------------------- tool store --
-  // Its own group. Tools are lent and returned; parts are used up. Somebody can
-  // be given one without the other, so the menu says so too.
-  { path: 'tools', label: 'Tool store', permission: 'tools_issue', render: renderTools, group: 'Tools', site: 'full' },
-  { path: 'tools-setup', label: 'Register', permission: 'tools_setup', render: renderToolsSetup, group: 'Tools', site: 'full' },
 
   // ----------------------------------------------------------- housekeeping --
   // The bed check comes first in its section because it is the only screen a

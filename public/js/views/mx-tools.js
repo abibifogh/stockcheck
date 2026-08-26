@@ -12,7 +12,7 @@ import { card, nextSort, sortHeader, sorted, statTile, table } from './component
  */
 export async function renderMxTools() {
   const [data, areas] = await Promise.all([
-    api.tools().catch(() => null),
+    api.mxTools().catch(() => null),
     api.mxAreas().catch(() => ({ areas: [] })),
   ]);
   const host = h('div');
@@ -27,7 +27,7 @@ export async function renderMxTools() {
           h('div',
             h('div.alert-title', 'This part of the site is ready, its tables are not'),
             h('div.alert-detail',
-              'Run 0019_tools.sql from migrations/console/ against the database, and the tool '
+              'Run 0019_mx_tools.sql from migrations/console/ against the database, and the tool '
               + 'register will start working. Nothing else is affected.'),
           )),
       ));
@@ -61,7 +61,7 @@ export async function renderMxTools() {
     }
 
     try {
-      const result = await api.issueTool(tool.id, {
+      const result = await api.mxIssueTool(tool.id, {
         issuedTo: who.trim(),
         areaId: match?.id ?? null,
       });
@@ -75,7 +75,7 @@ export async function renderMxTools() {
       + 'Anything worth noting about its condition (optional):');
     if (note === null) return;
     try {
-      const result = await api.returnTool(tool.id, { returnNote: note.trim() || null });
+      const result = await api.mxReturnTool(tool.id, { returnNote: note.trim() || null });
       toast(result.wasOverdue ? `${tool.name} back — it had been chased` : `${tool.name} back`, 'good');
       reload();
     } catch (err) { toast(err.message, 'bad'); }
@@ -83,7 +83,7 @@ export async function renderMxTools() {
 
   const showHistory = (tool) => async () => {
     try {
-      const { movements } = await api.toolHistory(tool.id);
+      const { movements } = await api.mxToolHistory(tool.id);
       openHistory(tool, movements);
     } catch (err) { toast(err.message, 'bad'); }
   };
@@ -171,9 +171,9 @@ export async function renderMxTools() {
             ),
           },
         ], rows, { empty: 'No tools in the register yet.' }),
-        can('tools_setup')
+        can('mx_setup')
           ? h('p.muted', { style: { fontSize: '.82rem', marginTop: '.7rem', marginBottom: 0 } },
-            'Add and retire tools under Tools → Register. A tool that is out cannot be retired '
+            'Add and retire tools under Maintenance setup. A tool that is out cannot be retired '
             + 'until it comes back.')
           : null,
       ),

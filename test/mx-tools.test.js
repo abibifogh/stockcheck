@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { chaseOverdueTools, dueBackAt, graceHours, overdueBy } from '../src/lib/tools.js';
-import { issue, markReturned, retire } from '../src/routes/tools.js';
+import { issue, markReturned, retire } from '../src/routes/mx-tools.js';
 
 /**
  * Tools that go out and come back.
@@ -16,18 +16,18 @@ import { issue, markReturned, retire } from '../src/routes/tools.js';
 // ------------------------------------------------------------ the clock --
 
 test('the grace period defaults to a day, and survives nonsense', () => {
-  assert.equal(graceHours({ tool_hours: '24' }), 24);
-  assert.equal(graceHours({ tool_hours: '8' }), 8);
+  assert.equal(graceHours({ mx_tool_hours: '24' }), 24);
+  assert.equal(graceHours({ mx_tool_hours: '8' }), 8);
   assert.equal(graceHours({}), 24, 'unset is a day');
-  assert.equal(graceHours({ tool_hours: 'soon' }), 24);
-  assert.equal(graceHours({ tool_hours: '0' }), 24, 'zero would chase everything instantly');
-  assert.equal(graceHours({ tool_hours: '-5' }), 24);
+  assert.equal(graceHours({ mx_tool_hours: 'soon' }), 24);
+  assert.equal(graceHours({ mx_tool_hours: '0' }), 24, 'zero would chase everything instantly');
+  assert.equal(graceHours({ mx_tool_hours: '-5' }), 24);
 });
 
 test('an absurd grace period is capped rather than obeyed', () => {
   // Somebody typing a year would never be told about anything again, which is
   // indistinguishable from the feature being broken.
-  assert.equal(graceHours({ tool_hours: '9000' }), 24 * 14);
+  assert.equal(graceHours({ mx_tool_hours: '9000' }), 24 * 14);
 });
 
 test('due back is the issue time plus the grace period', () => {
@@ -73,7 +73,7 @@ function fakeDb({ late = [LATE], settings = [] } = {}) {
     bind(...args) { this.binds = args; return this; },
     async all() {
       if (/FROM settings/.test(sql)) return { results: settings };
-      if (/FROM tool_movements/.test(sql)) return { results: late };
+      if (/FROM mx_tool_movements/.test(sql)) return { results: late };
       if (/FROM users/.test(sql)) return { results: [] };
       return { results: [] };
     },
@@ -105,7 +105,7 @@ test('it is marked as told, so the next sweep says nothing', async () => {
   const db = fakeDb();
   await chaseOverdueTools(db, {}, '2026-08-24 12:00:00');
 
-  const [mark] = wrote(db, /UPDATE tool_movements SET overdue_notified_at/);
+  const [mark] = wrote(db, /UPDATE mx_tool_movements SET overdue_notified_at/);
   assert.deepEqual(mark.binds, ['2026-08-24 12:00:00', 7]);
   assert.match(mark.sql, /overdue_notified_at IS NULL/, 'and only if nobody else marked it first');
 });
@@ -127,7 +127,7 @@ test('nothing late means nothing written', async () => {
   const result = await chaseOverdueTools(db, {}, '2026-08-24 12:00:00');
 
   assert.equal(result.chased, 0);
-  assert.equal(wrote(db, /UPDATE tool_movements/).length, 0);
+  assert.equal(wrote(db, /UPDATE mx_tool_movements/).length, 0);
 });
 
 test('the sweep can be switched off', async () => {
@@ -142,7 +142,7 @@ test('the query asks only for what is out, late and unmentioned', async () => {
   const db = fakeDb();
   let asked = '';
   const inner = db.prepare;
-  db.prepare = (sql) => { if (/FROM tool_movements/.test(sql)) asked = sql; return inner(sql); };
+  db.prepare = (sql) => { if (/FROM mx_tool_movements/.test(sql)) asked = sql; return inner(sql); };
   await chaseOverdueTools(db, {}, '2026-08-24 12:00:00');
 
   assert.match(asked, /returned_at IS NULL/);
@@ -159,17 +159,17 @@ function routeDb({ tool = { id: 3, name: 'Impact drill', active: 1 }, trip = nul
     binds: [],
     bind(...args) { this.binds = args; return this; },
     async all() {
-      if (/FROM settings/.test(sql)) return { results: [{ key: 'tool_hours', value: '24' }] };
+      if (/FROM settings/.test(sql)) return { results: [{ key: 'mx_tool_hours', value: '24' }] };
       return { results: [] };
     },
     async first() {
-      if (/FROM tools/.test(sql)) return tool;
-      if (/FROM tool_movements/.test(sql)) return trip;
+      if (/FROM mx_tools/.test(sql)) return tool;
+      if (/FROM mx_tool_movements/.test(sql)) return trip;
       if (/FROM mx_areas/.test(sql)) return { id: 2 };
       return null;
     },
     async run() {
-      if (issueFails && /INSERT INTO tool_movements/.test(sql)) throw new Error(issueFails);
+      if (issueFails && /INSERT INTO mx_tool_movements/.test(sql)) throw new Error(issueFails);
       written.push({ sql, binds: this.binds });
       return { success: true, meta: { changes: 1 } };
     },
@@ -192,7 +192,7 @@ test('issuing records who, where and when it is due', async () => {
   const db = routeDb();
   await issue(ctx(db, { issuedTo: 'Kofi', areaId: 2 }), 3);
 
-  const [move] = wrote(db, /INSERT INTO tool_movements/);
+  const [move] = wrote(db, /INSERT INTO mx_tool_movements/);
   assert.equal(move.binds[0], 3, 'the tool');
   assert.equal(move.binds[1], 2, 'the area');
   assert.equal(move.binds[2], 'Kofi', 'who took it');
@@ -202,7 +202,7 @@ test('issuing records who, where and when it is due', async () => {
 
 test('a tool already out is refused by name, not by a server error', async () => {
   // The partial unique index does the work; this is how it reaches a person.
-  const db = routeDb({ issueFails: 'UNIQUE constraint failed: idx_tool_out' });
+  const db = routeDb({ issueFails: 'UNIQUE constraint failed: idx_mx_tool_out' });
   await assert.rejects(
     () => issue(ctx(db, { issuedTo: 'Yaa' }), 3),
     /Impact drill is already out/,
@@ -218,7 +218,7 @@ test('returning closes the open trip and nothing else', async () => {
   const db = routeDb({ trip: { id: 7, issued_to: 'Kofi', overdue_notified_at: null } });
   await markReturned(ctx(db, { returnNote: 'chuck is loose' }), 3);
 
-  const [update] = wrote(db, /UPDATE tool_movements/);
+  const [update] = wrote(db, /UPDATE mx_tool_movements/);
   assert.match(update.sql, /returned_at IS NULL/, 'only a trip that is still open');
   assert.equal(update.binds[1], 'Ama', 'who took it back in');
   assert.equal(update.binds[2], 'chuck is loose');
@@ -234,14 +234,14 @@ test('a tool that is out cannot be retired', async () => {
   // Retiring it would strand the trip, and the drill is still in a van.
   const db = routeDb({ trip: { id: 7, issued_to: 'Kofi' } });
   await assert.rejects(() => retire(ctx(db, {}), 3), /still out with Kofi/);
-  assert.equal(wrote(db, /UPDATE tools/).length, 0);
+  assert.equal(wrote(db, /UPDATE mx_tools/).length, 0);
 });
 
 test('retiring keeps the tool and its journeys', async () => {
   const db = routeDb({ trip: null });
   await retire(ctx(db, {}), 3);
 
-  const [update] = wrote(db, /UPDATE tools/);
+  const [update] = wrote(db, /UPDATE mx_tools/);
   assert.match(update.sql, /SET active = 0/, 'retired, never deleted');
-  assert.equal(wrote(db, /DELETE FROM tool/).length, 0);
+  assert.equal(wrote(db, /DELETE FROM mx_tool/).length, 0);
 });

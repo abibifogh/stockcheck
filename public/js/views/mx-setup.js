@@ -13,7 +13,7 @@ import { schedulesCard } from './mx-schedules.js';
  * everything against nothing.
  */
 export async function renderMxSetup() {
-  const [data, areas, schedules, products] = await Promise.all([
+  const [data, areas, schedules, products, tools] = await Promise.all([
     api.mxBootstrap(),
     api.mxAreas(),
     // A store that has not run the latest database changes yet should still be
@@ -21,6 +21,8 @@ export async function renderMxSetup() {
     api.mxStocktakes().catch(() => null),
     // Absent until 0018 has run. The parts list itself does not depend on it.
     api.mxProducts().catch(() => null),
+    // Absent until 0019 has run. The rest of the screen does not depend on it.
+    api.mxTools().catch(() => null),
   ]);
   const host = h('div');
   const reload = async () => mount(host, await renderMxSetup());
@@ -35,6 +37,7 @@ export async function renderMxSetup() {
     roomsCard(areas.areas, reload),
     schedules ? schedulesCard(schedules, reload) : null,
     productsCard(products, data, reload),
+    toolsCard(tools, data, reload),
     bulkPartsCard(data, reload),
     itemsCard(data, reload),
   );
@@ -935,3 +938,105 @@ function productsCard(loaded, data, reload) {
   );
 }
 
+
+// ---------------------------------------------------------------------------
+// The tool register
+// ---------------------------------------------------------------------------
+
+/**
+ * Tools, as opposed to parts.
+ *
+ * A part is used up and counted; a tool goes out and comes back. Adding one
+ * here puts it on the Tools screen, where it is issued and returned — this card
+ * is only the register.
+ */
+function toolsCard(loaded, data, reload) {
+  if (!loaded || loaded.ready === false) {
+    return card('Tools', { wide: true, note: 'Waiting on a database update' },
+      h('div.alert.warn',
+        h('span.alert-icon', '⚠️'),
+        h('div',
+          h('div.alert-title', 'This part of the site is ready, its tables are not'),
+          h('div.alert-detail',
+            'Run 0019_mx_tools.sql from migrations/console/ against the database, and the tool '
+            + 'register will start working. Nothing else on this screen is affected.'),
+        )),
+    );
+  }
+
+  const tools = loaded.tools ?? [];
+  const name = h('input', { type: 'text', placeholder: 'e.g. Impact drill', maxlength: 100 });
+  const tag = h('input', { type: 'text', placeholder: 'Asset tag (optional)', maxlength: 40 });
+  const category = h('select',
+    h('option', { value: '' }, 'No category'),
+    data.categories.map((c) => h('option', { value: String(c.id) }, c.name)));
+  const note = h('input', { type: 'text', placeholder: 'Anything worth knowing', maxlength: 300 });
+
+  const add = async (event) => {
+    if (!name.value.trim()) { toast('Give the tool a name', 'bad'); return; }
+    event.target.disabled = true;
+    try {
+      await api.mxCreateTool({
+        name: name.value.trim(),
+        tag: tag.value.trim() || null,
+        categoryId: category.value || null,
+        note: note.value.trim() || null,
+      });
+      toast('Tool added', 'good');
+      reload();
+    } catch (err) {
+      toast(err.message, 'bad');
+      event.target.disabled = false;
+    }
+  };
+
+  const retire = (tool) => async () => {
+    if (!confirm(`Retire ${tool.name}?\n\n`
+      + 'It leaves the register, and every journey it has made is kept.')) return;
+    try {
+      await api.mxRetireTool(tool.id);
+      toast('Retired — its history is kept', 'good');
+      reload();
+    } catch (err) { toast(err.message, 'bad'); }
+  };
+
+  return card('Tools', {
+    wide: true,
+    note: 'Things that come back, as opposed to parts that are used up',
+  },
+    h('div.field-row',
+      h('label.field', h('span', 'Name'), name),
+      h('label.field', h('span', 'Asset tag'), tag),
+      h('label.field', h('span', 'Category'), category),
+      h('label.field', h('span', 'Note'), note),
+    ),
+    h('button.btn-primary', { style: { marginTop: '.8rem' }, onclick: add }, 'Add tool'),
+
+    tools.length
+      ? h('div', { style: { marginTop: '1.1rem' } },
+        table([
+          { key: 'name', label: 'Tool', cls: 'wrap' },
+          { key: 'tag', label: 'Tag', format: (v) => (v ? h('code.mono', v) : h('span.muted', '—')) },
+          { key: 'categoryName', label: 'Category', cls: 'wrap', format: (v) => v || h('span.muted', '—') },
+          {
+            key: 'out',
+            label: 'Where',
+            cls: 'wrap',
+            format: (v) => (v
+              ? h('span', h('span.pill.warn', 'out'), ` with ${v.issuedTo}`)
+              : h('span.muted', 'in the store')),
+          },
+          {
+            key: 'id',
+            label: '',
+            format: (_v, t) => h('button.btn-sm.btn-ghost', { onclick: retire(t) }, 'Retire'),
+          },
+        ], tools))
+      : null,
+
+    h('p.muted', { style: { fontSize: '.82rem', marginTop: '.9rem', marginBottom: 0 } },
+      'Issuing and returning happens on the Tools screen, not here. A tool that is out cannot be '
+      + 'retired until it comes back, and retiring keeps every journey it has made \u2014 who had it, '
+      + 'where, and for how long.'),
+  );
+}
