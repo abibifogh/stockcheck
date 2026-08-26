@@ -16,10 +16,12 @@ import * as insights from './routes/insights.js';
 import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
 import * as mx from './routes/maintenance.js';
+import * as mxTools from './routes/mx-tools.js';
 import * as bakery from './routes/bakery.js';
 import * as stocktakes from './routes/stocktakes.js';
 import * as hk from './routes/housekeeping.js';
 import { openDueTasks } from './lib/stocktakes.js';
+import { chaseOverdueTools } from './lib/tools.js';
 import { handleSsoArrival } from './lib/sso-consumer.js';
 import { todayIn } from './util/dates.js';
 import { PIN_TAKEN } from './routes/admin.js';
@@ -189,6 +191,16 @@ const ROUTES = [
   ['DELETE', '/api/mx/products/:id', 'mx_setup', mx.deleteProduct],
   ['PUT', '/api/mx/items/:id/product', 'mx_setup', mx.attachToProduct],
 
+  // Tools go out and come back. Issuing and returning is the technician's
+  // counter, so it sits with mx_issue; the register itself is setup.
+  ['GET', '/api/mx/tools', 'mx_issue', mxTools.list],
+  ['GET', '/api/mx/tools/:id/history', 'mx_issue', mxTools.history],
+  ['POST', '/api/mx/tools/:id/issue', 'mx_issue', mxTools.issue],
+  ['POST', '/api/mx/tools/:id/return', 'mx_issue', mxTools.markReturned],
+  ['POST', '/api/mx/tools', 'mx_setup', mxTools.create],
+  ['PUT', '/api/mx/tools/:id', 'mx_setup', mxTools.update],
+  ['DELETE', '/api/mx/tools/:id', 'mx_setup', mxTools.retire],
+
   ['POST', '/api/mx/categories', 'mx_setup', mx.createCategory],
   ['GET', '/api/mx/items/template', 'mx_setup', mx.partsTemplate],
   ['POST', '/api/mx/items/import', 'mx_setup', mx.importParts],
@@ -296,12 +308,17 @@ export default {
   },
 
   /**
-   * The daily tick, from a Cron Trigger.
+   * The hourly tick, from a Cron Trigger.
    *
-   * Its only job is to notice that a scheduled stock count has come round and
-   * tell the people asked to do it. Opening a task is idempotent, so a cron
-   * that fires twice — or a person opening the screen first — cannot produce
-   * two tasks or two rounds of email for the same count.
+   * Two jobs. A scheduled stock count that has come round is opened and its
+   * people told; a tool that has been out too long is chased.
+   *
+   * Hourly rather than daily because of the second one: "not back after 24
+   * hours" checked once a day means a tool issued at seven in the morning is
+   * chased at six the following evening, which is a day and a half. Both jobs
+   * are written to be idempotent — a task already opened is not opened again,
+   * and a tool already chased is not chased again — so running twelve times
+   * more often costs twelve near-empty queries and changes nothing else.
    */
   async scheduled(event, env, executionContext) {
     if (!env.DB) return;
@@ -311,6 +328,11 @@ export default {
         .catch(() => null);
       const result = await openDueTasks(env.DB, env, todayIn(row?.value || 'UTC'));
       if (result.opened) console.log(`Opened ${result.opened} stock count task(s)`);
+
+      const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+      const chased = await chaseOverdueTools(env.DB, env, now)
+        .catch((err) => { console.error('Tool sweep failed', err); return { chased: 0 }; });
+      if (chased.chased) console.log(`Chased ${chased.chased} overdue tool(s)`);
     })().catch((err) => console.error('Scheduled run failed', err));
 
     if (executionContext?.waitUntil) executionContext.waitUntil(run);

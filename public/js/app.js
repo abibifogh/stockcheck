@@ -15,6 +15,7 @@ import { openAccountDialog } from './views/account.js';
 import { renderGuide } from './views/guide.js';
 import { renderCompare } from './views/compare.js';
 import { renderMxIssue } from './views/mx-issue.js';
+import { renderMxTools } from './views/mx-tools.js';
 import { renderMxOverview, renderMxReport } from './views/mx-reports.js';
 import { renderMxStock } from './views/mx-stock.js';
 import { renderMxPurchases } from './views/mx-purchases.js';
@@ -61,6 +62,7 @@ const ROUTES = [
   { path: 'mx-report', label: 'Report', permission: 'mx_reports', render: renderMxReport, group: 'Maintenance', site: 'full' },
   { path: 'mx-compare', label: 'Compare', permission: 'mx_reports', render: renderMxCompare, group: 'Maintenance', site: 'full' },
   { path: 'mx-stock', label: 'Parts', permission: 'mx_stock', render: renderMxStock, group: 'Maintenance', site: 'full' },
+  { path: 'mx-tools', label: 'Tools', permission: 'mx_issue', render: renderMxTools, group: 'Maintenance', site: 'full' },
   { path: 'mx-purchases', label: 'Bought', permission: 'mx_purchases', render: renderMxPurchases, group: 'Maintenance', site: 'full' },
   { path: 'mx-setup', label: 'Setup', permission: 'mx_setup', render: renderMxSetup, group: 'Maintenance', site: 'full' },
   // Reached by clicking a room in the report rather than from the menu.
