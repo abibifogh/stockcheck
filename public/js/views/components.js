@@ -229,3 +229,65 @@ export function exportButton(href, label = 'Export CSV') {
 export function emptyState(title, detail) {
   return h('div.card.empty', h('h3', title), h('p', detail));
 }
+
+/**
+ * A modal form: same frame, same buttons, same closing, everywhere.
+ *
+ * `dialog` is referenced by the buttons it contains, which reads circular and
+ * is not — the closures run on a click, long after the assignment. `save` is
+ * handed the click event and the dialog, so a form can close itself on success
+ * and leave itself open with an error on failure.
+ */
+export function modal(title, fields, save, { saveLabel = 'Save', width = '460px' } = {}) {
+  const dialog = h('dialog', {
+    style: {
+      border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+      background: 'var(--surface)', color: 'var(--text)',
+      maxWidth: width, width: '92vw', padding: '1.2rem',
+    },
+  },
+    h('div.card-head', h('h2', title),
+      h('button.btn-sm.btn-ghost', { onclick: () => dialog.close() }, '✕')),
+    ...fields,
+    h('div.btn-row', { style: { justifyContent: 'flex-end', marginTop: '.8rem' } },
+      h('button', { onclick: () => dialog.close() }, 'Cancel'),
+      h('button.btn-primary', { onclick: (event) => save(event, dialog) }, saveLabel),
+    ),
+  );
+
+  document.body.append(dialog);
+  dialog.addEventListener('close', () => dialog.remove());
+  dialog.showModal();
+  return dialog;
+}
+
+/**
+ * A card that folds away once it has been answered.
+ *
+ * Built on <details> rather than a class and a click handler: the browser
+ * already knows how to open and close one, keyboards and screen readers
+ * already know what it is, and it survives a repaint of its contents without
+ * any state of ours to keep in step.
+ *
+ * The summary is the point. A folded step has to say what it was answered
+ * with — "Where · Room 214" — or folding it just hides information.
+ */
+export function stepCard(title, { summary, open = true, note } = {}, ...children) {
+  const line = h('span.step-summary', summary ?? '');
+  const el = h('details.card.step', { open },
+    h('summary.step-head',
+      h('span.step-title', title),
+      line,
+      note ? h('span.card-note', note) : null,
+    ),
+    h('div.step-body', ...children),
+  );
+  return {
+    el,
+    /** Say what it now holds, and fold it if that answer is a complete one. */
+    set(text, { fold } = {}) {
+      line.textContent = text ?? '';
+      if (fold !== undefined) el.open = !fold;
+    },
+  };
+}

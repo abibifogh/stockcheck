@@ -825,6 +825,70 @@ export async function createProduct(ctx) {
   return json({ product, variants: clean.length }, { status: 201 });
 }
 
+/**
+ * Rename a product, or move it to another category.
+ *
+ * The parts underneath carry composed names — "LED bulb — 40W warm" — so a
+ * rename that touched only the heading would leave the parts list, the order
+ * list and every count sheet still saying the old one. They are re-derived
+ * here, in the same batch, so the two cannot end up disagreeing.
+ *
+ * Only the ones still carrying a composed name, though. A part that already
+ * existed and was later attached as a variant kept the name somebody gave it,
+ * and a part renamed by hand since is somebody's decision. Re-deriving either
+ * would overwrite a name this rename was never asked about. The category
+ * follows the same rule: variants still filed where the product is move with
+ * it, and one filed somewhere else deliberately stays there.
+ */
+export async function updateProduct(ctx, id) {
+  const body = await readJson(ctx.request);
+  const productId = Number(id);
+  const name = str(body.name, 'Product name', { required: true, max: 100 });
+  const note = str(body.note, 'Note', { max: 300, fallback: '' }) || null;
+  const categoryId = body.categoryId ? Number(body.categoryId) : null;
+
+  const product = await ctx.db.prepare('SELECT * FROM mx_products WHERE id = ?')
+    .bind(productId).first();
+  if (!product) throw notFound('That product no longer exists.');
+
+  const variants = await ctx.db.prepare(
+    'SELECT id, name, variant, category_id FROM mx_items WHERE product_id = ?',
+  ).bind(productId).all();
+
+  const updates = [];
+  for (const v of variants.results ?? []) {
+    const composed = v.variant && v.name === variantName(product.name, v.variant);
+    const nextName = composed ? variantName(name, v.variant) : v.name;
+    const nextCategory = v.category_id === product.category_id ? categoryId : v.category_id;
+    if (nextName !== v.name || nextCategory !== v.category_id) {
+      updates.push(ctx.db.prepare('UPDATE mx_items SET name = ?2, category_id = ?3 WHERE id = ?1')
+        .bind(v.id, nextName, nextCategory));
+    }
+  }
+
+  try {
+    await ctx.db.batch([
+      ctx.db.prepare('UPDATE mx_products SET name = ?2, category_id = ?3, note = ?4 WHERE id = ?1')
+        .bind(productId, name, categoryId, note),
+      ...updates,
+    ]);
+  } catch (err) {
+    rethrowConstraint(err, {
+      unique: `There is already a product or part called "${name}".`,
+      foreignKey: 'That category no longer exists.',
+    });
+    throw err;
+  }
+
+  await audit(ctx, 'mx.product.update', productId, {
+    from: product.name, to: name, carried: updates.length,
+  });
+  return json({
+    product: { ...product, name, category_id: categoryId, note },
+    carried: updates.length,
+  });
+}
+
 /** One more variant of something already stocked. */
 export async function addVariant(ctx, id) {
   const body = await readJson(ctx.request);
@@ -857,6 +921,50 @@ export async function addVariant(ctx, id) {
     rethrowConstraint(err, { unique: 'A part with that name already exists.' });
     throw err;
   }
+}
+
+/**
+ * Change what tells one variant apart from its siblings.
+ *
+ * The label and the part's composed name move together, for the same reason a
+ * product rename carries its variants: a part still called "LED bulb — 40W
+ * warm" whose label now reads 60W is a part nobody standing at a shelf can
+ * find. A name somebody typed by hand is left exactly as it is.
+ */
+export async function renameVariant(ctx, id) {
+  const body = await readJson(ctx.request);
+  const itemId = Number(id);
+
+  const item = await ctx.db.prepare('SELECT * FROM mx_items WHERE id = ?').bind(itemId).first();
+  if (!item) throw notFound('That part no longer exists.');
+  if (!item.product_id) throw badRequest(`${item.name} is not a variant of anything.`);
+
+  const product = await ctx.db.prepare('SELECT * FROM mx_products WHERE id = ?')
+    .bind(item.product_id).first();
+  if (!product) throw notFound('That product no longer exists.');
+
+  const variant = str(body.variant, 'Variant', { required: true, max: 60 });
+
+  const clash = await ctx.db.prepare(
+    'SELECT id FROM mx_items WHERE product_id = ? AND lower(variant) = lower(?) AND id <> ?',
+  ).bind(item.product_id, variant, itemId).first();
+  if (clash) throw badRequest(`${product.name} already comes in ${variant}.`);
+
+  const composed = item.name === variantName(product.name, item.variant);
+  const name = composed ? variantName(product.name, variant) : item.name;
+
+  try {
+    await ctx.db.prepare('UPDATE mx_items SET variant = ?2, name = ?3 WHERE id = ?1')
+      .bind(itemId, variant, name).run();
+  } catch (err) {
+    rethrowConstraint(err, { unique: `There is already a part called "${name}".` });
+    throw err;
+  }
+
+  await audit(ctx, 'mx.variant.rename', itemId, {
+    product: product.name, from: item.variant, to: variant,
+  });
+  return json({ item: { ...item, variant, name } });
 }
 
 /**

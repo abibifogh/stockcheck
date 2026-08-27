@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import {
   attributeSearchText, attributeSummary, fmtMoney, fmtQty, h, mount, parseAttributes, toast,
 } from '../util.js';
-import { card, nextSort, sortHeader, sorted, table } from './components.js';
+import { card, modal, nextSort, sortHeader, sorted, table } from './components.js';
 import { schedulesCard } from './mx-schedules.js';
 
 /**
@@ -12,6 +12,23 @@ import { schedulesCard } from './mx-schedules.js';
  * setup screen goes unused, and an issue screen with no rooms on it files
  * everything against nothing.
  */
+/**
+ * Which section of the setup screen is open.
+ *
+ * Module-level rather than passed around, so `reload()` — which rebuilds the
+ * whole screen after every save — puts somebody back where they were. Adding a
+ * room and being returned to the parts list is the sort of thing that makes a
+ * setup screen feel like it is fighting you.
+ */
+let openTab = 'places';
+
+const TABS = [
+  { key: 'places', label: 'Rooms & areas' },
+  { key: 'parts', label: 'Parts' },
+  { key: 'tools', label: 'Tools' },
+  { key: 'counts', label: 'Stock counts' },
+];
+
 export async function renderMxSetup() {
   const [data, areas, schedules, products, tools] = await Promise.all([
     api.mxBootstrap(),
@@ -27,6 +44,34 @@ export async function renderMxSetup() {
   const host = h('div');
   const reload = async () => mount(host, await renderMxSetup());
 
+  // Six cards down one page meant scrolling past the parts list to reach the
+  // rooms, every time. They are the same six cards; what changed is that only
+  // the one being used is on screen.
+  const sections = {
+    places: () => [roomsCard(areas.areas, reload)],
+    parts: () => [
+      productsCard(products, data, reload),
+      bulkPartsCard(data, reload),
+      itemsCard(data, reload),
+    ],
+    tools: () => [toolsCard(tools, data, reload)],
+    counts: () => [schedules ? schedulesCard(schedules, reload) : noSchedules()],
+  };
+
+  const body = h('div');
+  const paint = () => mount(body, ...(sections[openTab] ?? sections.places)());
+
+  const tabs = h('div.seg.seg-wrap', { style: { marginBottom: '1rem' } },
+    ...TABS.map((t) => h(`button${t.key === openTab ? '.active' : ''}`, {
+      onclick: () => {
+        openTab = t.key;
+        for (const b of tabs.children) b.classList.toggle('active', b.dataset.tab === t.key);
+        paint();
+      },
+      dataset: { tab: t.key },
+    }, t.label)));
+
+  paint();
   mount(host,
     h('div.page-head',
       h('div',
@@ -34,15 +79,25 @@ export async function renderMxSetup() {
         h('div.sub', 'The parts you keep, the rooms you keep them for, and when they get counted'),
       ),
     ),
-    roomsCard(areas.areas, reload),
-    schedules ? schedulesCard(schedules, reload) : null,
-    productsCard(products, data, reload),
-    toolsCard(tools, data, reload),
-    bulkPartsCard(data, reload),
-    itemsCard(data, reload),
+    tabs,
+    body,
   );
 
   return host;
+}
+
+/** The counts tab with no schedules table behind it yet. */
+function noSchedules() {
+  return card('Stock counts', { wide: true, note: 'Waiting on a database update' },
+    h('div.alert.warn',
+      h('span.alert-icon', '\u26a0\ufe0f'),
+      h('div',
+        h('div.alert-title', 'This part of the site is ready, its tables are not'),
+        h('div.alert-detail',
+          'Run the outstanding files from migrations/console/ against the database and scheduled '
+          + 'counts will start working. Nothing else on this screen is affected.'),
+      )),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -240,19 +295,78 @@ function roomsCard(areas, reload) {
         {
           key: 'id',
           label: '',
-          format: (id, row) => h('button.btn-sm.btn-ghost', {
-            onclick: async () => {
-              if (!confirm(`Remove ${row.name}? If parts were issued to it, it is retired instead of deleted.`)) return;
-              try {
-                const result = await api.mxDeleteArea(id);
-                toast(result.retired ? `${row.name} retired — its history is kept` : 'Removed');
-                reload();
-              } catch (err) { toast(err.message, 'bad'); }
-            },
-          }, 'Remove'),
+          format: (id, row) => h('div.btn-row',
+            h('button.btn-sm.btn-ghost', { onclick: () => editArea(row, reload) }, 'Edit'),
+            h('button.btn-sm.btn-ghost', {
+              onclick: async () => {
+                if (!confirm(`Remove ${row.name}? If parts were issued to it, it is retired instead of deleted.`)) return;
+                try {
+                  const result = await api.mxDeleteArea(id);
+                  toast(result.retired ? `${row.name} retired — its history is kept` : 'Removed');
+                  reload();
+                } catch (err) { toast(err.message, 'bad'); }
+              },
+            }, 'Remove'),
+          ),
         },
       ], areas, { empty: 'No rooms or areas yet.' })),
   );
+}
+
+/**
+ * Correct a room or area already on the list.
+ *
+ * A room mistyped in a range of forty, or a store that has been called the
+ * wrong thing since setup, was previously fixable only by removing it and
+ * adding it again — which is not the same thing at all: anything ever issued
+ * to it points at the row, so removing it retires it and the new one starts
+ * with no history.
+ *
+ * Retiring is offered here too, as a switch rather than a second button. A
+ * place that is out of service for a season should stop being offered on the
+ * issue screen without its past disappearing from the reports.
+ */
+function editArea(area, reload) {
+  const name = h('input', { type: 'text', value: area.name, maxlength: 80 });
+  const kind = h('select',
+    h('option', { value: 'area', selected: area.kind !== 'room' }, 'Area'),
+    h('option', { value: 'room', selected: area.kind === 'room' }, 'Room'));
+  const block = h('input', { type: 'text', value: area.block ?? '', maxlength: 60 });
+  const order = h('input', { type: 'number', min: '0', value: String(area.sort_order ?? 100) });
+  const active = h('input', { type: 'checkbox', checked: area.active !== 0 });
+  const error = h('p.form-error');
+
+  const save = async (event, dialog) => {
+    if (!name.value.trim()) { error.textContent = 'Give it a name'; return; }
+    event.target.disabled = true;
+    try {
+      await api.mxUpdateArea(area.id, {
+        name: name.value.trim(),
+        kind: kind.value,
+        block: block.value.trim() || null,
+        sortOrder: order.value || 100,
+        active: active.checked,
+      });
+      toast('Saved', 'good');
+      dialog.close();
+      reload();
+    } catch (err) {
+      error.textContent = err.message;
+      event.target.disabled = false;
+    }
+  };
+
+  modal('Edit room or area', [
+    h('label.field', h('span', 'Name'), name),
+    h('label.field', h('span', 'Kind'), kind),
+    h('label.field', h('span', 'Block or floor'), block),
+    h('label.field', h('span', 'Order in the list'), order),
+    h('label.field', h('span', 'Still in use'), active),
+    h('p.muted', { style: { fontSize: '.82rem' } },
+      'Renaming keeps everything ever issued here. Turning off “still in use” takes it off the '
+      + 'issue screen and leaves the reports alone.'),
+    error,
+  ], save);
 }
 
 // ---------------------------------------------------------------------------
@@ -909,14 +1023,20 @@ function productsCard(loaded, data, reload) {
             h('span.muted', { style: { fontSize: '.82rem' } },
               `${p.variants.length} ${p.variants.length === 1 ? 'variant' : 'variants'}`),
             h('div.btn-row', { style: { marginLeft: 'auto' } },
+              h('button.btn-sm.btn-ghost', { onclick: () => editProduct(p, data.categories, reload) }, 'Edit'),
               h('button.btn-sm.btn-ghost', { onclick: addOne(p) }, '+ Variant'),
               h('button.btn-sm.btn-ghost', { onclick: remove(p) }, 'Remove'),
             ),
           ),
           h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '.3rem', marginTop: '.4rem' } },
             p.variants.length
-              ? p.variants.map((v) => h('span.pill', v.variant ?? v.name))
+              ? p.variants.map((v) => h('button.pill.pill-btn', {
+                title: `Rename this variant of ${p.name}`,
+                onclick: () => renameVariant(p, v, reload),
+              }, v.variant ?? v.name))
               : h('span.muted', { style: { fontSize: '.82rem' } }, 'no variants yet')),
+          h('p.muted', { style: { fontSize: '.78rem', margin: '.4rem 0 0' } },
+            'Click a variant to rename it.'),
         )))
       : null,
 
@@ -958,13 +1078,15 @@ function toolsCard(loaded, data, reload) {
         h('div',
           h('div.alert-title', 'This part of the site is ready, its tables are not'),
           h('div.alert-detail',
-            'Run 0019_mx_tools.sql from migrations/console/ against the database, and the tool '
-            + 'register will start working. Nothing else on this screen is affected.'),
+            'Run 0019_mx_tools.sql and 0020_tool_accessories.sql from migrations/console/ against '
+            + 'the database, and the tool register will start working. Nothing else on this '
+            + 'screen is affected.'),
         )),
     );
   }
 
   const tools = loaded.tools ?? [];
+  const flat = loaded.all ?? tools;
   const name = h('input', { type: 'text', placeholder: 'e.g. Impact drill', maxlength: 100 });
   const tag = h('input', { type: 'text', placeholder: 'Asset tag (optional)', maxlength: 40 });
   const category = h('select',
@@ -1015,7 +1137,17 @@ function toolsCard(loaded, data, reload) {
     tools.length
       ? h('div', { style: { marginTop: '1.1rem' } },
         table([
-          { key: 'name', label: 'Tool', cls: 'wrap' },
+          {
+            key: 'name',
+            label: 'Tool',
+            cls: 'wrap',
+            format: (v, t) => (t.parentToolId == null
+              ? h('span', v, (t.accessories ?? []).length
+                ? h('span.muted', { style: { fontWeight: '400' } },
+                  ` \u00b7 ${t.accessories.length} ${t.accessories.length === 1 ? 'accessory' : 'accessories'}`)
+                : null)
+              : h('span', { style: { paddingLeft: '1.1rem' } }, h('span.muted', '\u21b3 '), v)),
+          },
           { key: 'tag', label: 'Tag', format: (v) => (v ? h('code.mono', v) : h('span.muted', '—')) },
           { key: 'categoryName', label: 'Category', cls: 'wrap', format: (v) => v || h('span.muted', '—') },
           {
@@ -1029,14 +1161,146 @@ function toolsCard(loaded, data, reload) {
           {
             key: 'id',
             label: '',
-            format: (_v, t) => h('button.btn-sm.btn-ghost', { onclick: retire(t) }, 'Retire'),
+            format: (_v, t) => h('div.btn-row',
+              h('button.btn-sm.btn-ghost', {
+                onclick: () => linkAccessory(t, flat, reload),
+              }, t.parentToolId == null ? 'Belongs to' : 'Detach'),
+              h('button.btn-sm.btn-ghost', { onclick: retire(t) }, 'Retire'),
+            ),
           },
-        ], tools))
+        ], tools.flatMap((t) => [t, ...(t.accessories ?? [])])))
       : null,
 
     h('p.muted', { style: { fontSize: '.82rem', marginTop: '.9rem', marginBottom: 0 } },
       'Issuing and returning happens on the Tools screen, not here. A tool that is out cannot be '
       + 'retired until it comes back, and retiring keeps every journey it has made \u2014 who had it, '
       + 'where, and for how long.'),
+    h('p.muted', { style: { fontSize: '.82rem', marginTop: '.4rem', marginBottom: 0 } },
+      'An accessory is a tool like any other \u2014 a charger, a case, a set of bits \u2014 that '
+      + 'belongs with something. Saying so lets the whole lot go out on one signature, while each '
+      + 'piece keeps its own history, so a charger that does not come back can still be found.'),
   );
+}
+
+/**
+ * Rename a product, or move it to another category.
+ *
+ * What makes this more than an UPDATE is the names underneath. A variant is a
+ * part called "LED bulb — 40W warm", composed when it was created, so renaming
+ * only the heading would leave every parts screen and every order list still
+ * saying the old thing. The server carries them, and says how many it moved —
+ * which will be fewer than the total where somebody has renamed one by hand,
+ * because those are decisions this rename was never asked about.
+ */
+function editProduct(product, categories, reload) {
+  const name = h('input', { type: 'text', value: product.name, maxlength: 100 });
+  const category = h('select',
+    h('option', { value: '', selected: !product.categoryId }, 'Uncategorised'),
+    ...categories.map((c) => h('option', {
+      value: String(c.id), selected: c.id === product.categoryId,
+    }, c.name)));
+  const note = h('input', { type: 'text', value: product.note ?? '', maxlength: 300 });
+  const error = h('p.form-error');
+
+  const save = async (event, dialog) => {
+    if (!name.value.trim()) { error.textContent = 'Give the product a name'; return; }
+    event.target.disabled = true;
+    try {
+      const result = await api.mxUpdateProduct(product.id, {
+        name: name.value.trim(),
+        categoryId: category.value || null,
+        note: note.value.trim() || null,
+      });
+      toast(result.carried
+        ? `Saved — ${result.carried} ${result.carried === 1 ? 'variant' : 'variants'} renamed with it`
+        : 'Saved', 'good');
+      dialog.close();
+      reload();
+    } catch (err) {
+      error.textContent = err.message;
+      event.target.disabled = false;
+    }
+  };
+
+  modal('Edit product', [
+    h('label.field', h('span', 'Product name'), name),
+    h('label.field', h('span', 'Category'), category),
+    h('label.field', h('span', 'Note'), note),
+    h('p.muted', { style: { fontSize: '.82rem' } },
+      `${product.variants.length} ${product.variants.length === 1 ? 'variant hangs' : 'variants hang'} `
+      + 'off this. Renaming carries the ones still using the name they were given, and leaves any '
+      + 'you have renamed yourself. Nothing about their stock, their history or their counts moves.'),
+    error,
+  ], save);
+}
+
+/** Change the label that tells one variant from its siblings. */
+function renameVariant(product, variant, reload) {
+  const label = h('input', { type: 'text', value: variant.variant ?? '', maxlength: 60 });
+  const error = h('p.form-error');
+
+  const save = async (event, dialog) => {
+    if (!label.value.trim()) { error.textContent = 'Give the variant a label'; return; }
+    event.target.disabled = true;
+    try {
+      await api.mxRenameVariant(variant.id, { variant: label.value.trim() });
+      toast('Renamed', 'good');
+      dialog.close();
+      reload();
+    } catch (err) {
+      error.textContent = err.message;
+      event.target.disabled = false;
+    }
+  };
+
+  modal(`Variant of ${product.name}`, [
+    h('label.field', h('span', 'What tells it apart'), label),
+    h('p.muted', { style: { fontSize: '.82rem' } },
+      `The part is called “${variant.name}”. Change the label and the part name follows it, so the `
+      + 'two cannot end up saying different things. Its stock, its history and its counts stay '
+      + 'exactly where they are.'),
+    error,
+  ], save);
+}
+
+/**
+ * Say which tool an accessory belongs with, or set it loose again.
+ *
+ * The list offered excludes anything that is already an accessory, since these
+ * go one level deep — a charger belongs to a drill, not to a drill's case. It
+ * also excludes tools that have accessories of their own, because making one of
+ * those into an accessory would orphan everything under it.
+ */
+function linkAccessory(tool, allTools, reload) {
+  const attached = tool.parentToolId != null;
+  const parent = h('select',
+    h('option', { value: '' }, attached ? 'Nothing — a tool in its own right' : 'Pick a tool'),
+    ...allTools
+      .filter((t) => t.id !== tool.id && t.parentToolId == null)
+      .filter((t) => !(t.accessories ?? []).length || t.id === tool.parentToolId)
+      .map((t) => h('option', {
+        value: String(t.id), selected: t.id === tool.parentToolId,
+      }, t.tag ? `${t.name} (${t.tag})` : t.name)));
+  const error = h('p.form-error');
+
+  const save = async (event, dialog) => {
+    event.target.disabled = true;
+    try {
+      await api.mxSetToolParent(tool.id, { parentId: parent.value || null });
+      toast(parent.value ? 'Linked' : 'Set loose — it is a tool on its own now', 'good');
+      dialog.close();
+      reload();
+    } catch (err) {
+      error.textContent = err.message;
+      event.target.disabled = false;
+    }
+  };
+
+  modal(`What does ${tool.name} belong with?`, [
+    h('label.field', h('span', 'Goes with'), parent),
+    h('p.muted', { style: { fontSize: '.82rem' } },
+      'Nothing about its journeys changes either way. A charger that spent six months in a '
+      + 'drill’s case was still somewhere every day of them, and its history says where.'),
+    error,
+  ], save, { saveLabel: attached ? 'Save' : 'Link' });
 }

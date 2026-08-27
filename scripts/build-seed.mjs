@@ -161,6 +161,9 @@ const OTHER_STORES = new Set([
   '0018_mx_product_variants.sql',
   // The tool store, which references mx_areas and mx_categories from 0005.
   '0019_mx_tools.sql',
+  // Accessories alter the tool store's own tables, which 0019 builds and this
+  // seed does not. The ALTERs would fail with "no such table".
+  '0020_tool_accessories.sql',
 ]);
 
 // The whole database a housekeeping-only site needs.

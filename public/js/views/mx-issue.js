@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import {
   attributeSearchText, attributeSummary, fmtDay, fmtQty, h, mount, toast, todayISO,
 } from '../util.js';
-import { card } from './components.js';
+import { card, stepCard } from './components.js';
 
 /**
  * Releasing parts to a room.
@@ -32,6 +32,11 @@ export async function renderMxIssue(params = {}) {
   let showAll = false;
   let itemFilter = '';
   let areaFilter = '';
+  // A hotel has forty rooms and a phone shows about a dozen chips a screen.
+  // Showing all of them by default put the parts — the thing this screen is
+  // for — three swipes down.
+  let allAreas = false;
+  const AREA_CHIPS = 12;
 
   const jobRef = h('input', { type: 'text', placeholder: 'Job or ticket number (optional)', maxlength: 60 });
   const note = h('input', { type: 'text', placeholder: 'Note (optional)', maxlength: 300 });
@@ -53,11 +58,24 @@ export async function renderMxIssue(params = {}) {
 
     const chip = (area) => h('button.mx-chip', {
       class: areaId === area.id ? 'mx-chip on' : 'mx-chip',
-      onclick: () => { areaId = areaId === area.id ? null : area.id; drawAreas(); drawBasket(); },
+      onclick: () => {
+        areaId = areaId === area.id ? null : area.id;
+        drawAreas();
+        drawBasket();
+        // Answered, so it folds away and the parts come up the screen. The
+        // summary line says what it folded on, so nothing is hidden.
+        whereStep.set(labelFor(areaId) ?? '', { fold: areaId != null });
+      },
     }, area.name);
 
-    const shownRooms = rooms.filter(match);
     const shownPlaces = places.filter(match);
+    const allRooms = rooms.filter(match);
+    // Searching or asking for all shows everything; otherwise the first
+    // dozen, with the chosen one always among them so it is never off-list.
+    const capped = areaFilter || allAreas
+      ? allRooms
+      : allRooms.filter((a, i) => i < AREA_CHIPS || a.id === areaId);
+    const hidden = allRooms.length - capped.length;
 
     mount(areaHost,
       h('input.mx-search', {
@@ -70,11 +88,17 @@ export async function renderMxIssue(params = {}) {
         ? h('div', h('div.stat-label', { style: { margin: '.6rem 0 .35rem' } }, 'Areas'),
           h('div.mx-chips', shownPlaces.map(chip)))
         : null,
-      shownRooms.length
+      capped.length
         ? h('div', h('div.stat-label', { style: { margin: '.7rem 0 .35rem' } }, 'Rooms'),
-          h('div.mx-chips', shownRooms.map(chip)))
+          h('div.mx-chips', capped.map(chip)))
         : null,
-      !shownRooms.length && !shownPlaces.length
+      hidden > 0
+        ? h('button.btn-sm', {
+          style: { marginTop: '.6rem' },
+          onclick: () => { allAreas = true; drawAreas(); },
+        }, `Show ${hidden} more ${hidden === 1 ? 'room' : 'rooms'}`)
+        : null,
+      !capped.length && !shownPlaces.length
         ? h('p.muted', { style: { fontSize: '.87rem' } },
           rooms.length || places.length
             ? 'Nothing matches that.'
@@ -82,6 +106,8 @@ export async function renderMxIssue(params = {}) {
         : null,
     );
   };
+
+  const labelFor = (id) => (id ? data.areas.find((a) => a.id === id)?.name : null);
 
   // -------------------------------------------------------------- what --
 
@@ -221,9 +247,42 @@ export async function renderMxIssue(params = {}) {
     }
   }
 
+  // Three folding steps rather than four full-height cards. A technician is
+  // holding a phone in one hand: the parts have to be a thumb's reach from the
+  // top, and everything already answered should get out of the way.
+  const whereStep = stepCard('Where was the work?', {
+    summary: labelFor(areaId) ?? '',
+    open: areaId == null,
+    note: 'Optional',
+  }, areaHost);
+
+  const detailsStep = stepCard('Date, job number, note', {
+    summary: '',
+    open: false,
+    note: 'All optional',
+  },
+    h('div.field-row',
+      h('label.field', h('span', 'Date'), day),
+      h('label.field', h('span', 'Job or ticket'), jobRef),
+      h('label.field', h('span', 'Note'), note),
+    ));
+
+  // The fold has to say what is inside it, or somebody sets a date and cannot
+  // see that they did.
+  const describeDetails = () => {
+    const bits = [];
+    if (day.value && day.value !== data.today) bits.push(fmtDay(day.value));
+    if (jobRef.value.trim()) bits.push(jobRef.value.trim());
+    if (note.value.trim()) bits.push('note');
+    detailsStep.set(bits.join(' · '));
+  };
+  for (const field of [day, jobRef, note]) field.addEventListener('input', describeDetails);
+
   drawAreas();
   drawItems();
   drawBasket();
+
+  const recent7 = recentCard(recent.issues ?? [], reload);
 
   mount(host,
     h('div.page-head',
@@ -232,18 +291,10 @@ export async function renderMxIssue(params = {}) {
         h('div.sub', 'Tap where the work was, tap what you used, then record it'),
       ),
     ),
-    h('div.grid.grid-2',
-      card('Where was the work?', { note: 'Optional, but it is what makes the reports worth reading' }, areaHost),
-      card('What did you use?', {}, itemHost),
-    ),
-    card('Details', { note: 'All optional' },
-      h('div.field-row',
-        h('label.field', h('span', 'Date'), day),
-        h('label.field', h('span', 'Job or ticket'), jobRef),
-        h('label.field', h('span', 'Note'), note),
-      ),
-    ),
-    recentCard(recent.issues ?? [], reload),
+    whereStep.el,
+    card('What did you use?', { wide: true }, itemHost),
+    detailsStep.el,
+    recent7,
     basketHost,
   );
 
@@ -267,7 +318,11 @@ function recentCard(issues, reload) {
     } catch (err) { toast(err.message, 'bad'); }
   };
 
-  return card('Just recorded', { note: 'The last few, newest first' },
+  return stepCard('Just recorded', {
+    summary: `${issues.length}`,
+    open: false,
+    note: 'The last few, newest first',
+  },
     h('div.mx-recent', issues.map((issue) => h('div.mx-recent-row',
       h('span.muted', fmtDay(issue.day)),
       h('strong', fmtQty(issue.qty, issue.unit)),
@@ -280,5 +335,5 @@ function recentCard(issues, reload) {
     h('p.muted', { style: { fontSize: '.82rem', marginTop: '.6rem', marginBottom: 0 } },
       'Removing an entry puts those parts back on the shelf, so it goes to an administrator '
       + 'first. Until they accept it, the store still reads as it does now.'),
-  );
+  ).el;
 }

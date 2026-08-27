@@ -32,7 +32,11 @@ async function audit(ctx, action, entity, detail) {
 export async function list(ctx) {
   let ready = true;
   const tools = await ctx.db.prepare(
-    `SELECT t.*, c.name AS category_name
+    // parent_tool_id is named rather than covered by t.*, so a database that
+    // has 0019 but not 0020 trips the catch below and gets the "waiting on a
+    // database update" card — instead of a screen that looks fine until
+    // somebody presses Belongs to and gets "no such column".
+    `SELECT t.*, t.parent_tool_id, c.name AS category_name
        FROM mx_tools t
        LEFT JOIN mx_categories c ON c.id = t.category_id
       WHERE t.active = 1
@@ -54,30 +58,59 @@ export async function list(ctx) {
   const byTool = new Map((out.results ?? []).map((m) => [m.tool_id, m]));
   const settings = await readSettings(ctx.db);
 
+  const shape = (t) => {
+    const trip = byTool.get(t.id);
+    return {
+      id: t.id,
+      name: t.name,
+      tag: t.tag,
+      categoryName: t.category_name,
+      note: t.note,
+      parentToolId: t.parent_tool_id ?? null,
+      out: trip
+        ? {
+          movementId: trip.id,
+          issuedTo: trip.issued_to,
+          issuedBy: trip.issued_by,
+          issuedAt: trip.issued_at,
+          dueBackAt: trip.due_back_at,
+          areaName: trip.area_name,
+          note: trip.note,
+          // Whether it went out on its parent's trip or on one of its own.
+          // "Out with the drill" and "out on its own" are different answers to
+          // the question somebody is actually asking.
+          withMovementId: trip.with_movement_id ?? null,
+        }
+        : null,
+    };
+  };
+
+  const rows = (tools.results ?? []).map(shape);
+  const present = new Set(rows.map((t) => t.id));
+  const accessories = new Map();
+  for (const t of rows) {
+    // An accessory whose parent is not on this list — retired, or gone — is
+    // shown at the top rather than nested under nothing. Otherwise it would be
+    // in the database and on no screen, which is the one outcome a register
+    // must not have.
+    if (t.parentToolId == null || !present.has(t.parentToolId)) continue;
+    if (!accessories.has(t.parentToolId)) accessories.set(t.parentToolId, []);
+    accessories.get(t.parentToolId).push(t);
+  }
+  const nested = new Set([...accessories.values()].flat().map((t) => t.id));
+
   return json({
     ready: true,
     graceHours: graceHours(settings),
-    tools: (tools.results ?? []).map((t) => {
-      const trip = byTool.get(t.id);
-      return {
-        id: t.id,
-        name: t.name,
-        tag: t.tag,
-        categoryName: t.category_name,
-        note: t.note,
-        out: trip
-          ? {
-            movementId: trip.id,
-            issuedTo: trip.issued_to,
-            issuedBy: trip.issued_by,
-            issuedAt: trip.issued_at,
-            dueBackAt: trip.due_back_at,
-            areaName: trip.area_name,
-            note: trip.note,
-          }
-          : null,
-      };
-    }),
+    // Accessories are listed under their parent and not again at the top
+    // level, so the store reads as the shelf looks: a drill, and with it the
+    // things that live in its case.
+    tools: rows
+      .filter((t) => !nested.has(t.id))
+      .map((t) => ({ ...t, accessories: accessories.get(t.id) ?? [] })),
+    // Everything, flat, for the screens that need to find one tool by id
+    // without walking the tree.
+    all: rows,
   });
 }
 
@@ -141,11 +174,13 @@ export async function issue(ctx, id) {
   const hours = graceHours(settings);
   const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
 
+  const due = dueBackAt(now, hours);
+  let trip;
   try {
-    await ctx.db.prepare(
+    trip = await ctx.db.prepare(
       `INSERT INTO mx_tool_movements (tool_id, area_id, issued_to, issued_by, issued_at, due_back_at, note)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
-    ).bind(toolId, areaId, issuedTo, ctx.session.user.name, now, dueBackAt(now, hours), note).run();
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) RETURNING id`,
+    ).bind(toolId, areaId, issuedTo, ctx.session.user.name, now, due, note).first();
   } catch (err) {
     // The partial unique index. Somebody is trying to hand out a drill that is
     // already in a van, which is worth saying plainly rather than as a 500.
@@ -160,8 +195,52 @@ export async function issue(ctx, id) {
     throw err;
   }
 
-  await audit(ctx, 'mx.tool.issue', toolId, { issuedTo, areaId });
-  return json({ ok: true, dueBackAt: dueBackAt(now, hours) }, { status: 201 });
+  // The accessories that go with it, each its own journey pointing back at the
+  // parent's. One at a time rather than in a batch: a batch is all-or-nothing,
+  // so a case somebody else already has would refuse the drill as well — and
+  // the storeman standing at the counter would rather hand over the three that
+  // are on the shelf and be told about the fourth.
+  const wanted = Array.isArray(body.accessoryIds)
+    ? [...new Set(body.accessoryIds.map(Number).filter((n) => Number.isInteger(n) && n > 0))].slice(0, 50)
+    : [];
+  const took = [];
+  const missed = [];
+
+  if (wanted.length) {
+    // Read back rather than trusting the list: an id that is not actually an
+    // accessory of this tool would otherwise let one request issue anything in
+    // the register under somebody else's name.
+    const holes = wanted.map(() => '?').join(',');
+    const rows = await ctx.db.prepare(
+      `SELECT id, name FROM mx_tools
+        WHERE parent_tool_id = ? AND active = 1 AND id IN (${holes})
+        ORDER BY name`,
+    ).bind(toolId, ...wanted).all();
+
+    for (const a of rows.results ?? []) {
+      try {
+        await ctx.db.prepare(
+          `INSERT INTO mx_tool_movements
+             (tool_id, area_id, issued_to, issued_by, issued_at, due_back_at, note, with_movement_id)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
+        ).bind(a.id, areaId, issuedTo, ctx.session.user.name, now, due, note, trip.id).run();
+        took.push(a.name);
+      } catch (err) {
+        if (!/UNIQUE/i.test(String(err?.message ?? err))) throw err;
+        const held = await ctx.db.prepare(
+          'SELECT issued_to FROM mx_tool_movements WHERE tool_id = ? AND returned_at IS NULL',
+        ).bind(a.id).first();
+        missed.push(`${a.name} is already out${held?.issued_to ? ` with ${held.issued_to}` : ''}`);
+      }
+    }
+  }
+
+  await audit(ctx, 'mx.tool.issue', toolId, {
+    issuedTo, areaId, accessories: took.length, missed: missed.length,
+  });
+  return json({
+    ok: true, dueBackAt: due, movementId: trip.id, accessories: took, missed,
+  }, { status: 201 });
 }
 
 /** Take it back in. */
@@ -176,14 +255,46 @@ export async function markReturned(ctx, id) {
   if (!trip) throw badRequest('That tool is not out — there is nothing to return.');
 
   const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
-  await ctx.db.prepare(
-    `UPDATE mx_tool_movements
-        SET returned_at = ?1, received_by = ?2, return_note = ?3
-      WHERE id = ?4 AND returned_at IS NULL`,
-  ).bind(now, ctx.session.user.name, returnNote, trip.id).run();
 
-  await audit(ctx, 'mx.tool.return', toolId, { issuedTo: trip.issued_to });
-  return json({ ok: true, wasOverdue: Boolean(trip.overdue_notified_at) });
+  // What went out on this trip and has not come back. Offered as one act
+  // because that is how it happens at the counter — the drill is handed over
+  // with its case and its charger — while still leaving each accessory its own
+  // row, so one that stays behind can be seen to have stayed behind.
+  const alongside = await ctx.db.prepare(
+    `SELECT m.id, t.name
+       FROM mx_tool_movements m
+       JOIN mx_tools t ON t.id = m.tool_id
+      WHERE m.with_movement_id = ? AND m.returned_at IS NULL`,
+  ).bind(trip.id).all().catch(() => ({ results: [] }));
+
+  const alsoBack = body.withAccessories === false ? [] : (alongside.results ?? []);
+
+  await ctx.db.batch([
+    ctx.db.prepare(
+      `UPDATE mx_tool_movements
+          SET returned_at = ?1, received_by = ?2, return_note = ?3
+        WHERE id = ?4 AND returned_at IS NULL`,
+    ).bind(now, ctx.session.user.name, returnNote, trip.id),
+    ...alsoBack.map((a) => ctx.db.prepare(
+      `UPDATE mx_tool_movements
+          SET returned_at = ?1, received_by = ?2, return_note = ?3
+        WHERE id = ?4 AND returned_at IS NULL`,
+    ).bind(now, ctx.session.user.name, returnNote, a.id)),
+  ]);
+
+  await audit(ctx, 'mx.tool.return', toolId, {
+    issuedTo: trip.issued_to, accessories: alsoBack.length,
+  });
+  return json({
+    ok: true,
+    wasOverdue: Boolean(trip.overdue_notified_at),
+    accessories: alsoBack.map((a) => a.name),
+    // What is still out from this trip because somebody said not to take it
+    // back. Named so the screen can say it rather than quietly showing fewer.
+    stillOut: body.withAccessories === false
+      ? (alongside.results ?? []).map((a) => a.name)
+      : [],
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -239,6 +350,58 @@ export async function update(ctx, id) {
 }
 
 /**
+ * Say that one tool belongs with another — or that it no longer does.
+ *
+ * Both directions through one handler, because they are the same decision:
+ * `parentId: null` puts an accessory back on the shelf as a tool in its own
+ * right. Nothing about its journeys changes either way. A charger that spent
+ * six months in a drill's case was still somewhere every day of them, and the
+ * history says where.
+ *
+ * One level deep. A tool that already has accessories cannot become one, and
+ * an accessory cannot take accessories of its own — which is the rule that
+ * makes a cycle impossible rather than merely unlikely.
+ */
+export async function setParent(ctx, id) {
+  const body = await readJson(ctx.request);
+  const toolId = Number(id);
+  const parentId = body.parentId == null || body.parentId === '' ? null : Number(body.parentId);
+
+  const tool = await ctx.db.prepare('SELECT * FROM mx_tools WHERE id = ? AND active = 1')
+    .bind(toolId).first();
+  if (!tool) throw notFound('That tool is not in the register.');
+
+  if (parentId == null) {
+    await ctx.db.prepare('UPDATE mx_tools SET parent_tool_id = NULL WHERE id = ?').bind(toolId).run();
+    await audit(ctx, 'mx.tool.detach', toolId, { name: tool.name });
+    return json({ ok: true, parentToolId: null });
+  }
+
+  if (parentId === toolId) throw badRequest('A tool cannot be an accessory of itself.');
+
+  const parent = await ctx.db.prepare('SELECT * FROM mx_tools WHERE id = ? AND active = 1')
+    .bind(parentId).first();
+  if (!parent) throw notFound('That tool is not in the register.');
+  if (parent.parent_tool_id != null) {
+    throw badRequest(`${parent.name} is itself an accessory of something. `
+      + 'Accessories go one level deep, so pick the tool it all belongs to.');
+  }
+
+  const own = await ctx.db.prepare(
+    'SELECT COUNT(*) AS n FROM mx_tools WHERE parent_tool_id = ? AND active = 1',
+  ).bind(toolId).first();
+  if ((own?.n ?? 0) > 0) {
+    throw badRequest(`${tool.name} has accessories of its own, so it cannot become one. `
+      + 'Detach those first.');
+  }
+
+  await ctx.db.prepare('UPDATE mx_tools SET parent_tool_id = ?2 WHERE id = ?1')
+    .bind(toolId, parentId).run();
+  await audit(ctx, 'mx.tool.attach', toolId, { name: tool.name, parent: parent.name });
+  return json({ ok: true, parentToolId: parentId });
+}
+
+/**
  * Retire a tool rather than delete it.
  *
  * Its journeys are the record of who had what and when, and a broken drill
@@ -253,10 +416,20 @@ export async function retire(ctx, id) {
       + 'Mark it returned before retiring it.');
   }
 
-  const result = await ctx.db.prepare('UPDATE mx_tools SET active = 0 WHERE id = ? AND active = 1')
-    .bind(Number(id)).run();
+  // Anything hanging off it goes back to being a tool in its own right. The
+  // drill is in a skip; the charger is still on the shelf, and leaving it
+  // pointing at a retired parent would take it off the list altogether —
+  // present in the database, absent from every screen.
+  const freed = await ctx.db.prepare(
+    'SELECT COUNT(*) AS n FROM mx_tools WHERE parent_tool_id = ? AND active = 1',
+  ).bind(Number(id)).first();
+
+  const [result] = await ctx.db.batch([
+    ctx.db.prepare('UPDATE mx_tools SET active = 0 WHERE id = ? AND active = 1').bind(Number(id)),
+    ctx.db.prepare('UPDATE mx_tools SET parent_tool_id = NULL WHERE parent_tool_id = ?').bind(Number(id)),
+  ]);
   if (!result.meta?.changes) throw notFound('That tool has already been retired.');
 
-  await audit(ctx, 'mx.tool.retire', id, null);
-  return json({ ok: true, retired: true });
+  await audit(ctx, 'mx.tool.retire', id, { freed: freed?.n ?? 0 });
+  return json({ ok: true, retired: true, freed: freed?.n ?? 0 });
 }

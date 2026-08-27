@@ -163,6 +163,14 @@ function routeDb({ tool = { id: 3, name: 'Impact drill', active: 1 }, trip = nul
       return { results: [] };
     },
     async first() {
+      // The parent's trip is inserted with RETURNING id, because the
+      // accessories that go out with it point back at that row.
+      if (/INSERT INTO mx_tool_movements/.test(sql)) {
+        if (issueFails) throw new Error(issueFails);
+        written.push({ sql, binds: this.binds });
+        return { id: 77 };
+      }
+      if (/COUNT\(\*\) AS n FROM mx_tools/.test(sql)) return { n: 0 };
       if (/FROM mx_tools/.test(sql)) return tool;
       if (/FROM mx_tool_movements/.test(sql)) return trip;
       if (/FROM mx_areas/.test(sql)) return { id: 2 };
@@ -174,7 +182,14 @@ function routeDb({ tool = { id: 3, name: 'Impact drill', active: 1 }, trip = nul
       return { success: true, meta: { changes: 1 } };
     },
   });
-  return { written, prepare: (sql) => statement(sql), async batch() { return []; } };
+  return {
+    written,
+    prepare: (sql) => statement(sql),
+    async batch(statements) {
+      for (const st of statements) written.push({ sql: st.sql, binds: st.binds });
+      return statements.map(() => ({ meta: { changes: 1 } }));
+    },
+  };
 }
 
 const ctx = (db, body) => ({

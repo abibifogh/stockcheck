@@ -255,6 +255,12 @@ a { color: var(--accent); }
 .pill.bad  { background: var(--bad-soft);  color: var(--bad);  border-color: transparent; }
 .pill.info { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
 
+/* A pill that does something. Inherits the shape and says so on hover, rather
+   than looking identical to the ones that are only labels. */
+.pill-btn { cursor: pointer; font-family: inherit; }
+.pill-btn:hover { border-color: var(--accent); color: var(--accent); }
+.pill-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
 /* --------------------------------------------------------------- alerts -- */
 .alert {
   display: flex; gap: .7rem; align-items: flex-start;
@@ -337,6 +343,18 @@ input:focus, select:focus, textarea:focus {
 label.field { display: block; margin-bottom: .7rem; }
 label.field > span { display: block; font-size: .78rem; font-weight: 620; color: var(--text-dim); margin-bottom: .25rem; }
 .field-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .7rem; }
+
+/* A tick box and its label on one line. The plain .field stacks its label
+   above the control, which is right for a text box and wrong for a checkbox:
+   it puts the word a whole line away from the thing it names. */
+label.field.field-inline {
+  display: flex; align-items: center; gap: .5rem; margin-bottom: .35rem;
+}
+label.field.field-inline > span {
+  display: inline; margin-bottom: 0; font-weight: 500;
+  font-size: .88rem; color: var(--text);
+}
+label.field.field-inline > input[type="checkbox"] { flex: none; width: auto; }
 
 .seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 2px; }
 .seg button { border: none; background: transparent; border-radius: 999px; padding: .32rem .8rem; font-size: .82rem; color: var(--text-dim); }
@@ -460,6 +478,7 @@ body:has(.entry-footer) .toasts { bottom: calc(4.75rem + env(safe-area-inset-bot
 }
 .toast.good { border-color: color-mix(in srgb, var(--good) 45%, transparent); color: var(--good); }
 .toast.bad { border-color: color-mix(in srgb, var(--bad) 45%, transparent); color: var(--bad); }
+.toast.warn { border-color: color-mix(in srgb, var(--warn) 45%, transparent); color: var(--warn); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
 
 /* ---------------------------------------------------------------- misc --- */
@@ -795,6 +814,28 @@ body:has(.entry-footer) .toasts[popover] { bottom: calc(4.75rem + env(safe-area-
   border: 1px solid var(--border); border-radius: var(--radius-sm);
   background: var(--surface-2); color: var(--text); font-size: .92rem;
 }
+
+/* ------------------------------------------------------- folding steps --
+   A card that collapses once answered. On a phone the issue screen is a
+   column of these, so the parts are a thumb's reach from the top rather than
+   below forty room chips. */
+details.card.step { padding: 0; }
+.step-head {
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  padding: .8rem 1rem; cursor: pointer; list-style: none;
+  font-weight: 650; user-select: none;
+}
+.step-head::-webkit-details-marker { display: none; }
+.step-head::after {
+  content: '\203a'; margin-left: auto; color: var(--text-faint);
+  font-size: 1.2rem; line-height: 1; transition: transform .15s;
+}
+details[open] > .step-head::after { transform: rotate(90deg); }
+.step-head:hover { background: var(--surface-2); }
+.step-title { font-size: 1rem; }
+.step-summary { font-size: .85rem; font-weight: 500; color: var(--accent); }
+.step-summary:empty { display: none; }
+.step-body { padding: 0 1rem 1rem; }
 
 .mx-chips { display: flex; flex-wrap: wrap; gap: .4rem; }
 .mx-chip {
