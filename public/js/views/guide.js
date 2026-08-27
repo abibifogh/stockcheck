@@ -1021,6 +1021,43 @@ const SECTIONS = [
   },
 
   {
+    id: 'mx-tools',
+    title: 'Tools that go out and come back',
+    permission: 'mx_issue',
+    lead: 'Where a tool is, who has it, and what to do when it does not come back.',
+    render: () => h('div',
+      h('p', 'A part is used up; a tool is borrowed. So tools are not on the parts list and have '
+        + 'no quantity \u2014 one drill is one drill, and the question is never how many are left but '
+        + 'where this one is.'),
+      steps(
+        h('span', h('strong', 'Press Issue'), ' against the tool, say who is taking it and which '
+          + 'room or area they are working in. Leave the place blank if it is going off site.'),
+        h('span', h('strong', 'It is due back within a day.'), ' The clock starts when you issue '
+          + 'it, and the screen shows when each one is due.'),
+        h('span', h('strong', 'Press Take back'), ' when it returns. Note anything wrong with it '
+          + 'while somebody is standing there \u2014 a loose chuck written down is a repair; a loose '
+          + 'chuck remembered is an argument next month.'),
+      ),
+      note('A tool cannot be in two places.',
+        'Issuing one that is already out is refused, and it names who has it. That is not a rule '
+        + 'the screen remembers to apply \u2014 the database itself will not hold two open journeys '
+        + 'for one tool, so it cannot be got round.'),
+      note('Not back after a day, and somebody is told.',
+        'Every hour the system looks for tools that are out past their time and tells whoever '
+        + 'runs the store, once. Not once an hour until it reappears \u2014 being told the same thing '
+        + 'twelve times is how people learn to ignore the bell.'),
+      note('Every journey is kept.',
+        'Press History against a tool to see everywhere it has been: who took it, where they were '
+        + 'working, when it came back and who received it. A tool chased every single time it goes '
+        + 'out is telling you something about a habit rather than about one afternoon.'),
+      warn('Retiring keeps the history.',
+        'A tool that is broken or lost is retired rather than deleted, so who had it and when is '
+        + 'still answerable. One that is still out cannot be retired at all \u2014 it is in somebody\u2019s '
+        + 'van, and saying otherwise would lose the only record of that.'),
+    ),
+  },
+
+  {
     id: 'mx-schedule',
     title: 'Counting on a schedule',
     permission: 'mx_stock',

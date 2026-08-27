@@ -159,6 +159,8 @@ const OTHER_STORES = new Set([
   // Products group the parts store's items, and alter mx_items with them.
   // Neither exists in a housekeeping database.
   '0018_mx_product_variants.sql',
+  // The tool store, which references mx_areas and mx_categories from 0005.
+  '0019_mx_tools.sql',
 ]);
 
 // The whole database a housekeeping-only site needs.
