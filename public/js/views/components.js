@@ -260,3 +260,34 @@ export function modal(title, fields, save, { saveLabel = 'Save', width = '460px'
   dialog.showModal();
   return dialog;
 }
+
+/**
+ * A card that folds away once it has been answered.
+ *
+ * Built on <details> rather than a class and a click handler: the browser
+ * already knows how to open and close one, keyboards and screen readers
+ * already know what it is, and it survives a repaint of its contents without
+ * any state of ours to keep in step.
+ *
+ * The summary is the point. A folded step has to say what it was answered
+ * with — "Where · Room 214" — or folding it just hides information.
+ */
+export function stepCard(title, { summary, open = true, note } = {}, ...children) {
+  const line = h('span.step-summary', summary ?? '');
+  const el = h('details.card.step', { open },
+    h('summary.step-head',
+      h('span.step-title', title),
+      line,
+      note ? h('span.card-note', note) : null,
+    ),
+    h('div.step-body', ...children),
+  );
+  return {
+    el,
+    /** Say what it now holds, and fold it if that answer is a complete one. */
+    set(text, { fold } = {}) {
+      line.textContent = text ?? '';
+      if (fold !== undefined) el.open = !fold;
+    },
+  };
+}

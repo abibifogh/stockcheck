@@ -886,9 +886,11 @@ const SECTIONS = [
       h('p', 'You cannot stop bulbs failing. You can find out that one room gets through four times '
         + 'its share of them, and go and look at why.'),
       readings(
-        ['Store — the opening screen',
-          'This month\u2019s spend, what the shelf is worth, how much needs ordering, and how much has '
-          + 'not moved in three months.',
+        ['Store \u2014 one screen, with a period at the top',
+          'What is true right now sits above the dates: what the shelf is worth, how much needs '
+          + 'ordering, how much has not moved in three months. Everything below the period picker '
+          + 'moves with it \u2014 what was issued, to which rooms, and how that compares with the same '
+          + 'length of time before.',
           'Read the alerts. Everything else on that screen is context for them.'],
         ['Heavy places',
           'A room or area consuming far more than the others, judged against the typical place rather '

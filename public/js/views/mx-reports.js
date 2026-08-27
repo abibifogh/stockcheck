@@ -1,10 +1,10 @@
 import { api } from '../api.js';
-import { navigate, replaceParams, routeParams } from '../app.js';
+import { navigate, replaceParams } from '../app.js';
 import {
   fmtDay, fmtDayShort, fmtMoney, fmtNum, fmtQty, h, mount, shiftDay, todayISO,
 } from '../util.js';
-import { barChart, donutChart, lineChart, rankedBars } from '../charts.js';
-import { alertList, card, exportButton, pctCell, statTile, table } from './components.js';
+import { donutChart, lineChart, rankedBars } from '../charts.js';
+import { alertList, card, pctCell, statTile, stepCard, table } from './components.js';
 import { printButton } from '../print.js';
 
 /**
@@ -15,120 +15,33 @@ import { printButton } from '../print.js';
  * bulbs failing, but you can find out that one wing eats four times its share
  * of them and go and look at the wiring.
  */
-export async function renderMxOverview() {
-  const data = await api.mxOverview();
-  const host = h('div');
-
-  const money = (v) => fmtMoney(v, { compact: true });
-
-  mount(host,
-    h('div.page-head',
-      h('div',
-        h('h1', 'Maintenance store'),
-        h('div.sub', `Where things stand · ${fmtDay(data.today, { withYear: true })}`),
-      ),
-      h('div.btn-row',
-        printButton({ title: 'Maintenance — where things stand', subtitle: fmtDay(data.today, { withYear: true }) }),
-        h('button.btn-sm', { onclick: () => navigate('mx-report') }, 'Full report'),
-        h('button.btn-primary.btn-sm', { onclick: () => navigate('mx-issue') }, 'Issue parts'),
-      ),
-    ),
-
-    h('div.grid.grid-4', { style: { marginBottom: '1rem' } },
-      statTile({
-        label: 'This month',
-        value: money(data.headline.monthCost),
-        sub: `${fmtNum(data.headline.monthIssues, 0)} issues across ${fmtNum(data.headline.monthAreas, 0)} places`,
-        delta: data.headline.monthDelta,
-      }),
-      statTile({
-        label: 'Parts on the shelf',
-        value: money(data.headline.stockValue),
-        sub: 'book value of the store',
-        accent: 'var(--c2)',
-      }),
-      statTile({
-        label: 'Needs restocking',
-        value: fmtNum(data.headline.reorderCount, 0),
-        sub: data.headline.reorderValue
-          ? `about ${money(data.headline.reorderValue)} to bring back to level`
-          : 'nothing below its level',
-        accent: data.headline.reorderCount ? 'var(--warn)' : undefined,
-      }),
-      statTile({
-        label: 'Not moved in 90 days',
-        value: money(data.headline.idleValue),
-        sub: 'money sitting still on the shelf',
-        accent: 'var(--text-dim)',
-      }),
-    ),
-
-    card('Needs your attention', { wide: true, note: `As at ${fmtDay(data.today)}` },
-      alertList(data.alerts, { empty: 'Nothing is out of line. The store is behaving.' })),
-
-    h('div.grid.grid-2',
-      card('Where the money went this month', { note: 'Top places by cost' },
-        data.topAreas.length
-          ? rankedBars({
-            rows: data.topAreas.map((a) => ({ label: a.name, value: a.cost })),
-            format: (v) => fmtMoney(v, { withSymbol: false }),
-            colorFor: (row) => (data.topAreas.find((a) => a.name === row.label)?.heavy
-              ? 'var(--bad)' : 'var(--c1)'),
-          })
-          : h('p.muted', 'Nothing issued yet this month.'),
-        h('p.muted', { style: { fontSize: '.82rem', marginTop: '.6rem', marginBottom: 0 } },
-          'A bar in red is consuming far more than the others. Click through on the full report '
-          + 'to see what keeps going in there.'),
-      ),
-      card('What was used most', { note: 'Top parts by cost this month' },
-        data.topItems.length
-          ? rankedBars({
-            rows: data.topItems.map((i) => ({ label: i.name, value: i.cost })),
-            format: (v) => fmtMoney(v, { withSymbol: false }),
-          })
-          : h('p.muted', 'Nothing issued yet this month.'),
-      ),
-    ),
-
-    card('The last 30 days', { wide: true, note: 'What left the store each day' },
-      lineChart({
-        labels: data.series.map((d) => fmtDayShort(d.day)),
-        series: [{ name: 'Cost issued', values: data.series.map((d) => d.cost), color: 'var(--c1)', area: true }],
-        format: (v) => fmtMoney(v),
-        height: 200,
-      })),
-
-    card('Just issued', { wide: true, note: 'The most recent releases from the store' },
-      table([
-        { key: 'day', label: 'Date', format: (v) => fmtDay(v) },
-        { key: 'item', label: 'Part' },
-        { key: 'qty', label: 'Qty', align: 'right', format: (v, r) => fmtQty(v, r.unit) },
-        { key: 'area', label: 'Where' },
-        { key: 'cost', label: 'Cost', align: 'right', format: (v) => fmtMoney(v, { withSymbol: false }) },
-        { key: 'by', label: 'By', format: (v) => h('span.muted', v || '—') },
-        { key: 'jobRef', label: 'Job', format: (v) => (v ? h('span.muted', v) : '—') },
-      ], data.recent, { empty: 'Nothing issued yet.' })),
-  );
-
-  return host;
-}
-
-// ---------------------------------------------------------------------------
-// The full report
-// ---------------------------------------------------------------------------
-
-export async function renderMxReport(params = {}) {
+/**
+ * The store: where it stands now, and what happened over a period.
+ *
+ * These were two screens, and the second was very nearly the first with more
+ * rows. Both opened with four tiles, an alert list and a line chart of what
+ * left the store; the overview then showed the top areas and top parts as
+ * bars, which the report showed again underneath as full tables. Somebody
+ * wanting the detail read the same findings twice, in two shapes, and had to
+ * know that "Full report" was where the tables lived.
+ *
+ * So one screen, with the period at the top. What is true right now — what the
+ * shelf is worth, what needs ordering, what has not moved — does not belong to
+ * a period and sits above the picker. Everything below it moves with the dates.
+ */
+export async function renderMxStore(params = {}) {
   const to = params.to || todayISO();
   const from = params.from || shiftDay(to, -29);
 
   const host = h('div');
-  const data = await api.mxReport(from, to);
+  const [now, data] = await Promise.all([api.mxOverview(), api.mxReport(from, to)]);
 
   const reload = (next) => {
-    replaceParams('mx-report', next);
-    renderMxReport(next).then((view) => mount(host, view));
+    replaceParams('mx-store', next);
+    renderMxStore(next).then((view) => mount(host, view));
   };
 
+  const money = (v) => fmtMoney(v, { compact: true });
   const fromInput = h('input', { type: 'date', value: from });
   const toInput = h('input', { type: 'date', value: to });
 
@@ -136,7 +49,10 @@ export async function renderMxReport(params = {}) {
     onclick: () => reload({ from: shiftDay(todayISO(), -(days - 1)), to: todayISO() }),
   }, label);
 
-  const picker = card('Which period?', { note: 'Compared against the same length of time immediately before' },
+  const picker = card('Which period?', {
+    wide: true,
+    note: 'Compared against the same length of time immediately before',
+  },
     h('div.btn-row', { style: { marginBottom: '.8rem' } },
       preset('Last 7 days', 7),
       preset('Last 30 days', 30),
@@ -160,6 +76,16 @@ export async function renderMxReport(params = {}) {
     ),
   );
 
+  // Both endpoints raise findings and some are the same finding. Shown twice
+  // under two headings, an alert reads as two problems.
+  const seen = new Set();
+  const alerts = [...(now.alerts ?? []), ...(data.alerts ?? [])].filter((a) => {
+    const key = `${a.level}|${a.title}|${a.detail ?? ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
   const areaRows = data.areas.rows;
 
   // Built up front so the click-through can be wired to these rows only —
@@ -169,6 +95,7 @@ export async function renderMxReport(params = {}) {
     {
       key: 'name',
       label: 'Where',
+      cls: 'wrap',
       format: (v, r) => h('div',
         h('div', v, r.heavy ? h('span.pill.bad', { style: { marginLeft: '.4rem' } }, 'heavy') : null),
         h('small.muted', r.kind === 'room' ? (r.block || 'Room') : (r.block || 'Area')),
@@ -186,6 +113,7 @@ export async function renderMxReport(params = {}) {
     {
       key: 'topItems',
       label: 'Mostly',
+      cls: 'wrap',
       format: (v) => (v?.length
         ? h('span.muted', v.slice(0, 2).map((t) => t.name).join(', '))
         : '—'),
@@ -207,18 +135,48 @@ export async function renderMxReport(params = {}) {
   mount(host,
     h('div.page-head',
       h('div',
-        h('h1', 'Maintenance report'),
+        h('h1', 'Maintenance store'),
         h('div.sub', `${fmtDay(from, { withYear: true })} to ${fmtDay(to, { withYear: true })} · ${data.days} days`),
       ),
       h('div.btn-row',
         printButton({
-          title: 'Maintenance report',
+          title: 'Maintenance store',
           subtitle: `${fmtDay(from, { withYear: true })} to ${fmtDay(to, { withYear: true })}`,
           note: `Compared against ${fmtDay(data.previous.from)} to ${fmtDay(data.previous.to)}.`,
         }),
         h('button.btn-sm', { onclick: () => navigate('mx-compare', { aFrom: from, aTo: to }) }, '⇄ Compare with…'),
+        h('button.btn-primary.btn-sm', { onclick: () => navigate('mx-issue') }, 'Issue parts'),
       ),
     ),
+
+    // Above the picker on purpose: none of it belongs to a period. What the
+    // shelf is worth is what it is worth today, whatever dates are chosen.
+    h('div.stat-label', { style: { marginBottom: '.4rem' } }, `Right now · ${fmtDay(now.today)}`),
+    h('div.grid.grid-4', { style: { marginBottom: '1rem' } },
+      statTile({
+        label: 'Parts on the shelf',
+        value: money(now.headline.stockValue),
+        sub: 'book value of the store',
+        accent: 'var(--c2)',
+      }),
+      statTile({
+        label: 'Needs restocking',
+        value: fmtNum(now.headline.reorderCount, 0),
+        sub: now.headline.reorderValue
+          ? `about ${money(now.headline.reorderValue)} to bring back to level`
+          : 'nothing below its level',
+        accent: now.headline.reorderCount ? 'var(--warn)' : undefined,
+      }),
+      statTile({
+        label: 'Not moved in 90 days',
+        value: money(now.headline.idleValue),
+        sub: 'money sitting still on the shelf',
+        accent: 'var(--text-dim)',
+      }),
+    ),
+
+    card('Needs your attention', { wide: true },
+      alertList(alerts, { empty: 'Nothing is out of line. The store is behaving.' })),
 
     picker,
 
@@ -250,10 +208,6 @@ export async function renderMxReport(params = {}) {
       }),
     ),
 
-    data.alerts.length
-      ? card('What needs a decision', { wide: true }, alertList(data.alerts))
-      : null,
-
     card('Day by day', { wide: true, note: 'What left the store' },
       lineChart({
         labels: data.series.map((d) => fmtDayShort(d.day)),
@@ -262,6 +216,8 @@ export async function renderMxReport(params = {}) {
         height: 220,
       })),
 
+    // The full table, rather than the top-five bars this screen used to show
+    // above it. The bars were the first five rows of this, drawn differently.
     card('Every room and area', {
       wide: true,
       note: 'Click a row to see everything that has ever gone into that place',
@@ -326,7 +282,7 @@ export async function renderMxReport(params = {}) {
 
     card('Every part used', { wide: true },
       table([
-        { key: 'name', label: 'Part', format: (v, r) => h('div', h('div', v), h('small.muted', r.categoryName)) },
+        { key: 'name', label: 'Part', cls: 'wrap', format: (v, r) => h('div', h('div', v), h('small.muted', r.categoryName)) },
         { key: 'qty', label: 'Quantity', align: 'right', format: (v, r) => fmtQty(v, r.unit) },
         { key: 'cost', label: 'Cost', align: 'right', format: (v) => fmtMoney(v, { withSymbol: false }) },
         { key: 'areas', label: 'Places', align: 'right' },
@@ -337,7 +293,25 @@ export async function renderMxReport(params = {}) {
           format: (v, r) => (v == null ? '—' : fmtQty(v, r.unit)),
         },
       ], data.items.rows, { empty: 'Nothing issued in this period.' })),
+
+    // Folded: it is what you look at to check a specific entry went in, not
+    // something you read down the page every time.
+    stepCard('Just issued', {
+      open: false,
+      note: 'The most recent releases from the store',
+      summary: `${(now.recent ?? []).length} entries`,
+    },
+      table([
+        { key: 'day', label: 'Date', format: (v) => fmtDay(v) },
+        { key: 'item', label: 'Part', cls: 'wrap' },
+        { key: 'qty', label: 'Qty', align: 'right', format: (v, r) => fmtQty(v, r.unit) },
+        { key: 'area', label: 'Where', cls: 'wrap' },
+        { key: 'cost', label: 'Cost', align: 'right', format: (v) => fmtMoney(v, { withSymbol: false }) },
+        { key: 'by', label: 'By', format: (v) => h('span.muted', v || '—') },
+        { key: 'jobRef', label: 'Job', format: (v) => (v ? h('span.muted', v) : '—') },
+      ], now.recent ?? [], { empty: 'Nothing issued yet.' })).el,
   );
 
   return host;
 }
+

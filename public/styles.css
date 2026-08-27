@@ -815,6 +815,28 @@ body:has(.entry-footer) .toasts[popover] { bottom: calc(4.75rem + env(safe-area-
   background: var(--surface-2); color: var(--text); font-size: .92rem;
 }
 
+/* ------------------------------------------------------- folding steps --
+   A card that collapses once answered. On a phone the issue screen is a
+   column of these, so the parts are a thumb's reach from the top rather than
+   below forty room chips. */
+details.card.step { padding: 0; }
+.step-head {
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  padding: .8rem 1rem; cursor: pointer; list-style: none;
+  font-weight: 650; user-select: none;
+}
+.step-head::-webkit-details-marker { display: none; }
+.step-head::after {
+  content: '\203a'; margin-left: auto; color: var(--text-faint);
+  font-size: 1.2rem; line-height: 1; transition: transform .15s;
+}
+details[open] > .step-head::after { transform: rotate(90deg); }
+.step-head:hover { background: var(--surface-2); }
+.step-title { font-size: 1rem; }
+.step-summary { font-size: .85rem; font-weight: 500; color: var(--accent); }
+.step-summary:empty { display: none; }
+.step-body { padding: 0 1rem 1rem; }
+
 .mx-chips { display: flex; flex-wrap: wrap; gap: .4rem; }
 .mx-chip {
   padding: .5rem .8rem; border-radius: 999px;

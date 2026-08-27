@@ -35,7 +35,7 @@ export async function renderMxArea(params = {}) {
       ),
       h('div.btn-row',
         printButton({ title: `Maintenance — ${data.area.name}`, subtitle: 'Everything ever issued here' }),
-        h('button.btn-sm', { onclick: () => navigate('mx-report') }, '← Back to the report'),
+        h('button.btn-sm', { onclick: () => navigate('mx-store') }, '← Back to the store'),
       ),
     ),
 

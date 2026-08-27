@@ -16,7 +16,7 @@ import { renderGuide } from './views/guide.js';
 import { renderCompare } from './views/compare.js';
 import { renderMxIssue } from './views/mx-issue.js';
 import { renderMxTools } from './views/mx-tools.js';
-import { renderMxOverview, renderMxReport } from './views/mx-reports.js';
+import { renderMxStore } from './views/mx-reports.js';
 import { renderMxStock } from './views/mx-stock.js';
 import { renderMxPurchases } from './views/mx-purchases.js';
 import { renderMxSetup } from './views/mx-setup.js';
@@ -58,8 +58,13 @@ const ROUTES = [
   // A second store with its own screens. Grouped in the menu so somebody who
   // works in both does not have to hunt for which "Stock" is which.
   { path: 'mx-issue', label: 'Issue parts', permission: 'mx_issue', render: renderMxIssue, group: 'Maintenance', site: 'full' },
-  { path: 'mx-overview', label: 'Store', permission: 'mx_reports', render: renderMxOverview, group: 'Maintenance', site: 'full' },
-  { path: 'mx-report', label: 'Report', permission: 'mx_reports', render: renderMxReport, group: 'Maintenance', site: 'full' },
+  { path: 'mx-store', label: 'Store', permission: 'mx_reports', render: renderMxStore, group: 'Maintenance', site: 'full' },
+  // The two screens this replaced. Kept as routes with no menu entry of their
+  // own, because a bookmark, a link in an email alert and a notice in the bell
+  // all still say mx-overview or mx-report, and a dead link is a worse outcome
+  // than a spare line in a table.
+  { path: 'mx-overview', permission: 'mx_reports', render: renderMxStore, site: 'full', hidden: true },
+  { path: 'mx-report', permission: 'mx_reports', render: renderMxStore, site: 'full', hidden: true },
   { path: 'mx-compare', label: 'Compare', permission: 'mx_reports', render: renderMxCompare, group: 'Maintenance', site: 'full' },
   { path: 'mx-stock', label: 'Parts', permission: 'mx_stock', render: renderMxStock, group: 'Maintenance', site: 'full' },
   { path: 'mx-tools', label: 'Tools', permission: 'mx_issue', render: renderMxTools, group: 'Maintenance', site: 'full' },
@@ -130,8 +135,8 @@ function defaultRoute() {
   // arrive at the breakfast overview.
   const preferred = BRAND.app === 'housekeeping'
     ? ['hk-overview', 'hk-check', 'hk-roster', 'hk-setup', 'overview', 'entry',
-      'mx-overview', 'mx-issue', 'stock', 'purchases', 'setup', 'admin', 'guide']
-    : ['overview', 'entry', 'mx-overview', 'mx-issue', 'production',
+      'mx-store', 'mx-issue', 'stock', 'purchases', 'setup', 'admin', 'guide']
+    : ['overview', 'entry', 'mx-store', 'mx-issue', 'production',
       'stock', 'purchases', 'setup', 'admin', 'guide'];
 
   // The fallback matters as much as the list. Naming a specific route here
