@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { can } from '../app.js';
 import { fmtDay, h, mount, toast } from '../util.js';
-import { card, nextSort, sortHeader, sorted, statTile, table } from './components.js';
+import { card, modal, nextSort, sortHeader, sorted, statTile, table } from './components.js';
 
 /**
  * The tool store: what is out, with whom, and where.
@@ -27,15 +27,20 @@ export async function renderMxTools() {
           h('div',
             h('div.alert-title', 'This part of the site is ready, its tables are not'),
             h('div.alert-detail',
-              'Run 0019_mx_tools.sql from migrations/console/ against the database, and the tool '
-              + 'register will start working. Nothing else is affected.'),
+              'Run 0019_mx_tools.sql and 0020_tool_accessories.sql from migrations/console/ against '
+              + 'the database, and the tool store will start working. Nothing else is affected.'),
           )),
       ));
     return host;
   }
 
   const tools = data.tools ?? [];
-  const out = tools.filter((t) => t.out);
+  // Accessories are nested under their parent for display and counted in the
+  // flat list for everything else — "3 of 11 out" means eleven things that can
+  // go missing, not eleven drills.
+  const flat = data.all ?? tools;
+  const byId = new Map(flat.map((t) => [t.id, t]));
+  const out = flat.filter((t) => t.out);
   const now = Date.now();
   const isLate = (t) => t.out && new Date(`${t.out.dueBackAt.replace(' ', 'T')}Z`).getTime() < now;
   const late = out.filter(isLate);
@@ -43,43 +48,8 @@ export async function renderMxTools() {
   let sort = { key: null, dir: 'asc' };
   const onSort = (key) => { sort = nextSort(sort, key, { numeric: [] }); paint(); };
 
-  const issueTool = (tool) => async () => {
-    const who = prompt(`Who is taking ${tool.name}?`);
-    if (who === null || !who.trim()) return;
-
-    const list = (areas.areas ?? []).filter((a) => a.active);
-    const where = list.length
-      ? prompt(`Where are they working?\n\n${list.slice(0, 30).map((a) => a.name).join(', ')}`
-        + '\n\nType the room or area, or leave blank if it is not on site.')
-      : null;
-    if (where === null && list.length) return;
-
-    const match = list.find((a) => a.name.toLowerCase() === String(where ?? '').trim().toLowerCase());
-    if (where && where.trim() && !match) {
-      toast(`No room or area called “${where.trim()}”`, 'bad');
-      return;
-    }
-
-    try {
-      const result = await api.mxIssueTool(tool.id, {
-        issuedTo: who.trim(),
-        areaId: match?.id ?? null,
-      });
-      toast(`${tool.name} out to ${who.trim()} — due back ${String(result.dueBackAt).slice(0, 16)}`, 'good');
-      reload();
-    } catch (err) { toast(err.message, 'bad'); }
-  };
-
-  const returnTool = (tool) => async () => {
-    const note = prompt(`Take ${tool.name} back from ${tool.out.issuedTo}?\n\n`
-      + 'Anything worth noting about its condition (optional):');
-    if (note === null) return;
-    try {
-      const result = await api.mxReturnTool(tool.id, { returnNote: note.trim() || null });
-      toast(result.wasOverdue ? `${tool.name} back — it had been chased` : `${tool.name} back`, 'good');
-      reload();
-    } catch (err) { toast(err.message, 'bad'); }
-  };
+  const issueTool = (tool) => () => openIssue(tool, areas.areas ?? [], reload);
+  const returnTool = (tool) => () => openReturn(tool, byId, reload);
 
   const showHistory = (tool) => async () => {
     try {
@@ -95,15 +65,20 @@ export async function renderMxTools() {
     : h('span.muted', 'in the store'));
 
   const paint = () => {
+    // Sorting flattens the tree deliberately: "show me everything overdue"
+    // is a question about tools, and hiding a late charger under a drill that
+    // came back on time would be answering a different one.
     const rows = sort.key
-      ? sorted(tools, sort, {
+      ? sorted(flat, sort, {
         value: (t, k) => {
           if (k === 'who') return t.out?.issuedTo ?? '';
           if (k === 'since') return t.out?.issuedAt ?? '';
           return t[k];
         },
       })
-      : [...out.filter(isLate), ...out.filter((t) => !isLate(t)), ...tools.filter((t) => !t.out)];
+      : [...tools.filter((t) => t.out && isLate(t)), ...tools.filter((t) => t.out && !isLate(t)),
+        ...tools.filter((t) => !t.out)]
+        .flatMap((t) => [t, ...(t.accessories ?? [])]);
 
     mount(host,
       h('div.page-head',
@@ -114,14 +89,14 @@ export async function renderMxTools() {
       ),
 
       h('div.grid.grid-4', { style: { marginBottom: '1rem' } },
-        statTile({ label: 'Out now', value: String(out.length), sub: `of ${tools.length} tools` }),
+        statTile({ label: 'Out now', value: String(out.length), sub: `of ${flat.length} tools` }),
         statTile({
           label: 'Overdue',
           value: String(late.length),
           sub: late.length ? `past ${data.graceHours} hours` : 'nothing late',
           accent: late.length ? 'var(--bad)' : 'var(--good)',
         }),
-        statTile({ label: 'In the store', value: String(tools.length - out.length), sub: 'on the shelf' }),
+        statTile({ label: 'In the store', value: String(flat.length - out.length), sub: 'on the shelf' }),
       ),
 
       late.length
@@ -138,7 +113,18 @@ export async function renderMxTools() {
         note: 'Unsorted shows the late ones first, then what else is out',
       },
         table([
-          { key: 'name', label: sortHeader('Tool', 'name', sort, onSort), cls: 'wrap' },
+          {
+            key: 'name',
+            label: sortHeader('Tool', 'name', sort, onSort),
+            cls: 'wrap',
+            format: (v, t) => (t.parentToolId == null
+              ? h('span', v, (t.accessories ?? []).length
+                ? h('span.muted', { style: { fontWeight: '400' } },
+                  ` +${t.accessories.length}`)
+                : null)
+              : h('span', { style: { paddingLeft: '1.1rem' } },
+                h('span.muted', '\u21b3 '), v)),
+          },
           { key: 'tag', label: sortHeader('Tag', 'tag', sort, onSort), format: (v) => (v ? h('code.mono', v) : h('span.muted', '—')) },
           { key: 'who', label: sortHeader('With', 'who', sort, onSort), cls: 'wrap', format: whoCell },
           {
@@ -237,4 +223,137 @@ function openHistory(tool, movements) {
   dialog.addEventListener('close', () => dialog.remove());
   document.body.append(dialog);
   dialog.showModal();
+}
+
+/**
+ * Hand a tool over, and whatever goes with it.
+ *
+ * A form rather than the chain of prompts this used to be. The reason is the
+ * accessories: "does the case go too" is a question with tick boxes, and three
+ * prompts in a row is how somebody cancels half way and leaves a drill issued
+ * to nobody.
+ *
+ * An accessory already out with somebody else is shown, ticked off and
+ * explained, rather than hidden. Hiding it would make the case look like it had
+ * never existed on the day somebody needs to know where it went.
+ */
+function openIssue(tool, areas, reload) {
+  const who = h('input', { type: 'text', placeholder: 'Name of whoever is taking it', maxlength: 80 });
+  const live = areas.filter((a) => a.active);
+  const where = h('select',
+    h('option', { value: '' }, 'Not on site / not recorded'),
+    ...live.map((a) => h('option', { value: String(a.id) }, a.block ? `${a.name} — ${a.block}` : a.name)));
+  const note = h('input', { type: 'text', placeholder: 'Anything worth noting (optional)', maxlength: 300 });
+  const error = h('p.form-error');
+
+  const spare = (tool.accessories ?? []).filter((a) => !a.out);
+  const gone = (tool.accessories ?? []).filter((a) => a.out);
+  const boxes = spare.map((a) => ({
+    id: a.id,
+    box: h('input', { type: 'checkbox', checked: true }),
+    name: a.name,
+  }));
+
+  const save = async (event, dialog) => {
+    if (!who.value.trim()) { error.textContent = 'Say who is taking it'; return; }
+    event.target.disabled = true;
+    try {
+      const result = await api.mxIssueTool(tool.id, {
+        issuedTo: who.value.trim(),
+        areaId: where.value || null,
+        note: note.value.trim() || null,
+        accessoryIds: boxes.filter((b) => b.box.checked).map((b) => b.id),
+      });
+      const went = result.accessories?.length
+        ? ` with ${result.accessories.length} ${result.accessories.length === 1 ? 'accessory' : 'accessories'}`
+        : '';
+      toast(`${tool.name}${went} out to ${who.value.trim()} — due back ${String(result.dueBackAt).slice(0, 16)}`, 'good');
+      // Said separately and after, because it is the part somebody has to act
+      // on: they are standing at the counter one item short.
+      if (result.missed?.length) toast(result.missed.join('; '), 'bad');
+      dialog.close();
+      reload();
+    } catch (err) {
+      error.textContent = err.message;
+      event.target.disabled = false;
+    }
+  };
+
+  modal(`Issue ${tool.name}`, [
+    h('label.field', h('span', 'Who is taking it'), who),
+    h('label.field', h('span', 'Where they are working'), where),
+    h('label.field', h('span', 'Note'), note),
+
+    boxes.length
+      ? h('div', { style: { marginTop: '.8rem' } },
+        h('div.stat-label', { style: { marginBottom: '.4rem' } }, 'Goes with it'),
+        ...boxes.map((b) => h('label.field.field-inline', b.box, h('span', b.name))),
+        h('p.muted', { style: { fontSize: '.8rem', margin: '.4rem 0 0' } },
+          'Each one is recorded as its own journey, so anything that does not come back with the '
+          + 'tool can still be found.'))
+      : null,
+
+    gone.length
+      ? h('p.muted', { style: { fontSize: '.82rem', marginTop: '.6rem' } },
+        `${gone.map((a) => `${a.name} is already out with ${a.out.issuedTo}`).join('; ')}.`)
+      : null,
+
+    error,
+  ], save, { saveLabel: 'Issue' });
+}
+
+/**
+ * Take it back in, and by default whatever went out on the same trip.
+ *
+ * Default, not forced. A charger left on a job overnight while the drill comes
+ * back is an ordinary Tuesday, and the store keeper is the one who can see
+ * which it is.
+ */
+function openReturn(tool, byId, reload) {
+  const note = h('input', { type: 'text', placeholder: 'Condition, damage, anything owed (optional)', maxlength: 300 });
+  const error = h('p.form-error');
+
+  // What went out on this trip and is still out. Worked out here rather than
+  // asked of the server, because the screen already knows.
+  const alongside = (tool.accessories ?? [])
+    .filter((a) => a.out && a.out.withMovementId === tool.out.movementId);
+  const together = h('input', { type: 'checkbox', checked: true });
+
+  const save = async (event, dialog) => {
+    event.target.disabled = true;
+    try {
+      const result = await api.mxReturnTool(tool.id, {
+        returnNote: note.value.trim() || null,
+        withAccessories: alongside.length ? together.checked : undefined,
+      });
+      const also = result.accessories?.length ? ` and ${result.accessories.length} with it` : '';
+      toast(result.wasOverdue
+        ? `${tool.name} back${also} — it had been chased`
+        : `${tool.name} back${also}`, 'good');
+      if (result.stillOut?.length) toast(`Still out: ${result.stillOut.join(', ')}`, 'warn');
+      dialog.close();
+      reload();
+    } catch (err) {
+      error.textContent = err.message;
+      event.target.disabled = false;
+    }
+  };
+
+  modal(`Take ${tool.name} back`, [
+    h('p.muted', { style: { marginTop: 0 } },
+      `Out with ${tool.out.issuedTo}${tool.out.areaName ? ` at ${tool.out.areaName}` : ''} since `
+      + `${String(tool.out.issuedAt).slice(0, 16)}.`),
+    h('label.field', h('span', 'Note'), note),
+
+    alongside.length
+      ? h('div', { style: { marginTop: '.6rem' } },
+        h('label.field.field-inline', together,
+          h('span', `Take back the ${alongside.length === 1 ? 'accessory' : `${alongside.length} accessories`} `
+            + 'that went out with it')),
+        h('p.muted', { style: { fontSize: '.8rem', margin: '.3rem 0 0' } },
+          alongside.map((a) => a.name).join(', ')))
+      : null,
+
+    error,
+  ], save, { saveLabel: 'Take back' });
 }

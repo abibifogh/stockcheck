@@ -201,6 +201,7 @@ const ROUTES = [
   ['POST', '/api/mx/tools/:id/return', 'mx_issue', mxTools.markReturned],
   ['POST', '/api/mx/tools', 'mx_setup', mxTools.create],
   ['PUT', '/api/mx/tools/:id', 'mx_setup', mxTools.update],
+  ['PUT', '/api/mx/tools/:id/parent', 'mx_setup', mxTools.setParent],
   ['DELETE', '/api/mx/tools/:id', 'mx_setup', mxTools.retire],
 
   ['POST', '/api/mx/categories', 'mx_setup', mx.createCategory],

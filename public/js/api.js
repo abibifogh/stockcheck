@@ -184,6 +184,7 @@ export const api = {
   mxIssueTool: (id, body) => request(`/api/mx/tools/${id}/issue`, { method: 'POST', body }),
   mxReturnTool: (id, body) => request(`/api/mx/tools/${id}/return`, { method: 'POST', body }),
   mxCreateTool: (body) => request('/api/mx/tools', { method: 'POST', body }),
+  mxSetToolParent: (id, body) => request(`/api/mx/tools/${id}/parent`, { method: 'PUT', body }),
   mxUpdateTool: (id, body) => request(`/api/mx/tools/${id}`, { method: 'PUT', body }),
   mxRetireTool: (id) => request(`/api/mx/tools/${id}`, { method: 'DELETE' }),
 

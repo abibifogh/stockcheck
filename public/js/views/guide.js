@@ -1038,6 +1038,13 @@ const SECTIONS = [
           + 'while somebody is standing there \u2014 a loose chuck written down is a repair; a loose '
           + 'chuck remembered is an argument next month.'),
       ),
+      note('A drill and everything in its case.',
+        'Some tools come with things \u2014 a charger, a case, a set of bits. Say so under '
+        + 'Maintenance setup with Belongs to, and issuing the drill offers them as tick boxes, so '
+        + 'the whole lot goes out on one signature. Each one is still its own journey: a charger '
+        + 'that does not come back with the drill can be found, because the system never stopped '
+        + 'tracking it separately. Taking the drill back offers to take them back too, and you can '
+        + 'say no \u2014 a charger left on a job overnight is an ordinary Tuesday.'),
       note('A tool cannot be in two places.',
         'Issuing one that is already out is refused, and it names who has it. That is not a rule '
         + 'the screen remembers to apply \u2014 the database itself will not hold two open journeys '
