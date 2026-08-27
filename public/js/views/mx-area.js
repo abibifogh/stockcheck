@@ -70,7 +70,7 @@ export async function renderMxArea(params = {}) {
         { key: 'qty', label: 'Total quantity', align: 'right', format: (v, r) => fmtQty(v, r.unit) },
         { key: 'occasions', label: 'Occasions', align: 'right' },
         { key: 'cost', label: 'Cost', align: 'right', format: (v) => fmtMoney(v, { withSymbol: false }) },
-      ], data.items, { empty: 'Nothing has been issued here yet.' }),
+      ], data.items, { sortable: true, empty: 'Nothing has been issued here yet.' }),
       h('p.muted', { style: { fontSize: '.82rem', marginTop: '.6rem', marginBottom: 0 } },
         'A part with several occasions is the one to look at. Replacing the same thing repeatedly '
         + 'in the same place usually means the cause has not been dealt with.'),
@@ -85,7 +85,7 @@ export async function renderMxArea(params = {}) {
         { key: 'by', label: 'Issued by', format: (v) => h('span.muted', v || '—') },
         { key: 'jobRef', label: 'Job', format: (v) => (v ? h('span.muted', v) : '—') },
         { key: 'note', label: 'Note', format: (v) => (v ? h('span.muted', v) : '—') },
-      ], data.issues, { empty: 'Nothing has been issued here yet.' })),
+      ], data.issues, { sortable: true, empty: 'Nothing has been issued here yet.' })),
   );
 
   return host;

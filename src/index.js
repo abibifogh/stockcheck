@@ -158,7 +158,7 @@ const ROUTES = [
 
   ['GET', '/api/mx/stock', 'mx_stock', mx.stock],
   ['POST', '/api/mx/counts', 'mx_stock', mx.saveCounts],
-  ['GET', '/api/mx/counts/pending', 'mx_stock', mx.pendingCounts],
+  ['GET', '/api/mx/counts/pending', ['mx_stock', 'users'], mx.pendingCounts],
   ['GET', '/api/mx/counts/history', 'mx_stock', mx.countHistory],
   // Accepting a count rewrites the shelf, so it is an administrator's call —
   // never the same person who did the counting.
@@ -166,7 +166,11 @@ const ROUTES = [
 
   // Anybody who can see the store can see what is waiting; only an
   // administrator decides — the same split as a count.
-  ['GET', '/api/mx/adjustments', 'mx_stock', mx.pendingAdjustments],
+  // Readable by whoever runs the shelf and by whoever decides. Reviewing needs
+  // 'users', so gating the list on 'mx_stock' alone meant a manager who could
+  // accept a request could not open the screen that shows it — the queue was
+  // invisible to exactly the person it was waiting on.
+  ['GET', '/api/mx/adjustments', ['mx_stock', 'users'], mx.pendingAdjustments],
   ['POST', '/api/mx/adjustments/review', 'users', mx.reviewAdjustments],
 
   ['GET', '/api/mx/overview', 'mx_reports', mx.overview],

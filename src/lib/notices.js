@@ -56,24 +56,36 @@ export async function createNotice(db, {
  */
 export async function listNotices(db, userId, limit = 20, permissions = null) {
   try {
+    const want = Math.min(limit, 100);
     const [rows, seen] = await Promise.all([
-      db.prepare('SELECT * FROM app_notices ORDER BY id DESC LIMIT ?').bind(Math.min(limit, 100)).all(),
+      // Deliberately over-fetched. The audience filter runs below rather than
+      // in SQL, because `audience` may not exist yet on a database that has
+      // not run the upgrade and a query naming a missing column fails outright
+      // where a missing property simply reads undefined.
+      //
+      // That means the filter comes after the query, so the query cannot ask
+      // for exactly what it needs: taking the newest twenty and then filtering
+      // handed somebody nothing at all when the twenty were addressed
+      // elsewhere. An approval waiting on an administrator would fall off the
+      // bell behind a day of hourly tool sweeps, which is the one notice that
+      // must not go quiet.
+      db.prepare('SELECT * FROM app_notices ORDER BY id DESC LIMIT ?').bind(want * 10).all(),
       db.prepare('SELECT last_id FROM app_notice_reads WHERE user_id = ?').bind(userId ?? 0).first(),
     ]);
 
     const lastSeen = Number(seen?.last_id ?? 0);
-    // Filtered here rather than in SQL: `audience` may not exist yet on a
-    // database that has not run the upgrade, and a query naming a missing
-    // column fails outright where a missing property simply reads undefined.
     // An unaddressed notice is for everybody, which is what every row written
     // before this existed is.
-    const notices = (rows.results ?? []).filter(
+    const mine = (rows.results ?? []).filter(
       (n) => !n.audience || !permissions || permissions.includes(n.audience),
     );
+    const notices = mine.slice(0, want);
 
     return {
       notices: notices.map((n) => ({ ...n, unread: n.id > lastSeen })),
-      unread: notices.filter((n) => n.id > lastSeen).length,
+      // Counted over everything addressed to them rather than over the page,
+      // so the badge does not disagree with the list it opens.
+      unread: mine.filter((n) => n.id > lastSeen).length,
       // The newest id on the list, so marking read cannot acknowledge something
       // that arrived after the page was drawn.
       latestId: notices[0]?.id ?? lastSeen,

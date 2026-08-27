@@ -34,7 +34,14 @@ export async function renderMxStore(params = {}) {
   const from = params.from || shiftDay(to, -29);
 
   const host = h('div');
-  const [now, data] = await Promise.all([api.mxOverview(), api.mxReport(from, to)]);
+  const [now, data, counts, adjustments] = await Promise.all([
+    api.mxOverview(),
+    api.mxReport(from, to),
+    // Both may be refused for somebody who can read the reports but decides
+    // nothing, which is fine — they simply see no approvals banner.
+    api.mxPendingCounts().catch(() => ({ counts: [] })),
+    api.mxPendingAdjustments().catch(() => ({ adjustments: [] })),
+  ]);
 
   const reload = (next) => {
     replaceParams('mx-store', next);
@@ -122,14 +129,16 @@ export async function renderMxStore(params = {}) {
   ], areaRows, {
     empty: 'Nothing was issued in this period.',
     rowClass: (r) => (r.heavy ? 'row-bad' : ''),
-  });
-
-  areaTable.querySelectorAll('tbody tr').forEach((row, index) => {
-    const area = areaRows[index];
-    if (!area?.areaId) return;
-    row.style.cursor = 'pointer';
-    row.title = `See everything ever issued to ${area.name}`;
-    row.addEventListener('click', () => navigate('mx-area', { id: area.areaId }));
+    sortable: true,
+    // Wired as the row is built rather than by walking the table afterwards.
+    // The old way matched rows to data by position, which a sort quietly
+    // invalidates — clicking "Room 214" would have opened whichever room
+    // happened to be in that position before.
+    onRowClick: (row, el) => {
+      if (!row.areaId) return false;
+      el.addEventListener('click', () => navigate('mx-area', { id: row.areaId }));
+      return `See everything ever issued to ${row.name}`;
+    },
   });
 
   mount(host,
@@ -174,6 +183,11 @@ export async function renderMxStore(params = {}) {
         accent: 'var(--text-dim)',
       }),
     ),
+
+    // Above the findings, because it is the only thing on this screen that is
+    // waiting on the reader personally. An analysis can be read tomorrow; a
+    // request sitting unanswered is somebody blocked.
+    waitingBanner(counts, adjustments),
 
     card('Needs your attention', { wide: true },
       alertList(alerts, { empty: 'Nothing is out of line. The store is behaving.' })),
@@ -292,7 +306,7 @@ export async function renderMxStore(params = {}) {
           align: 'right',
           format: (v, r) => (v == null ? '—' : fmtQty(v, r.unit)),
         },
-      ], data.items.rows, { empty: 'Nothing issued in this period.' })),
+      ], data.items.rows, { sortable: true, empty: 'Nothing issued in this period.' })),
 
     // Folded: it is what you look at to check a specific entry went in, not
     // something you read down the page every time.
@@ -309,9 +323,38 @@ export async function renderMxStore(params = {}) {
         { key: 'cost', label: 'Cost', align: 'right', format: (v) => fmtMoney(v, { withSymbol: false }) },
         { key: 'by', label: 'By', format: (v) => h('span.muted', v || '—') },
         { key: 'jobRef', label: 'Job', format: (v) => (v ? h('span.muted', v) : '—') },
-      ], now.recent ?? [], { empty: 'Nothing issued yet.' })).el,
+      ], now.recent ?? [], { sortable: true, empty: 'Nothing issued yet.' })).el,
   );
 
   return host;
 }
 
+
+/**
+ * What is waiting on whoever is reading this.
+ *
+ * The bell carries it too, but a bell is read once and dismissed. A request to
+ * remove an issue moves no stock until somebody decides, so it can sit for a
+ * week without anything looking wrong anywhere — which is precisely how it
+ * gets forgotten. This says so on the screen people open every day, and links
+ * to the one that can act on it.
+ */
+function waitingBanner(counts, adjustments) {
+  const nCounts = (counts?.counts ?? []).length;
+  const nChanges = (adjustments?.adjustments ?? []).length;
+  if (!nCounts && !nChanges) return null;
+
+  const parts = [];
+  if (nCounts) parts.push(`${nCounts} counted ${nCounts === 1 ? 'part' : 'parts'}`);
+  if (nChanges) parts.push(`${nChanges} ${nChanges === 1 ? 'change' : 'changes'} to what was recorded`);
+
+  return h('div.alert.warn', { style: { marginBottom: '1rem' } },
+    h('span.alert-icon', '\u23f3'),
+    h('div',
+      h('div.alert-title', `${parts.join(' and ')} waiting for your decision`),
+      h('div.alert-detail',
+        'Nothing has moved on the shelf until you accept it. ',
+        h('a', { href: '#/mx-stock' }, 'Review them now')),
+    ),
+  );
+}

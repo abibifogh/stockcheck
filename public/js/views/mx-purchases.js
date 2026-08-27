@@ -185,7 +185,7 @@ export async function renderMxPurchases() {
             }, 'Remove'),
           ),
         },
-      ], purchases.purchases, { empty: 'Nothing bought yet.' })),
+      ], purchases.purchases, { sortable: true, empty: 'Nothing bought yet.' })),
   );
 
   return host;

@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import {
   attributeSearchText, attributeSummary, fmtMoney, fmtQty, h, mount, parseAttributes, toast,
 } from '../util.js';
-import { card, modal, nextSort, sortHeader, sorted, table } from './components.js';
+import { card, groupBar, groupFn, modal, nextSort, sortHeader, sorted, table } from './components.js';
 import { schedulesCard } from './mx-schedules.js';
 
 /**
@@ -21,6 +21,16 @@ import { schedulesCard } from './mx-schedules.js';
  * setup screen feel like it is fighting you.
  */
 let openTab = 'places';
+
+/**
+ * How the two long lists on this screen are banded.
+ *
+ * Module-level for the same reason the open tab is: every save rebuilds the
+ * whole screen, and a list that silently un-groups itself each time you add a
+ * room is one nobody would use twice.
+ */
+let areaGroup = '';
+let productGroup = '';
 
 const TABS = [
   { key: 'places', label: 'Rooms & areas' },
@@ -257,6 +267,54 @@ function roomsCard(areas, reload) {
     },
   });
 
+  // What a hotel wants to see the list banded by depends on the hotel: by
+  // floor for a tower, by kind for somewhere with a lot of plant rooms, by
+  // whether a place is still in service when something is being closed down.
+  const AREA_GROUPS = [
+    { key: 'kind', label: 'Room or area', of: (r) => (r.kind === 'room' ? 'Rooms' : 'Areas') },
+    { key: 'block', label: 'Block or floor', of: (r) => r.block },
+    { key: 'active', label: 'In use', of: (r) => (r.active ? 'In use' : 'Retired') },
+  ];
+
+  const areaTableHost = h('div');
+  const paintAreas = () => mount(areaTableHost, areaTable());
+
+  const areaTable = () => table([
+    { key: 'id', label: picked.headerBox(), cls: 'tick', sortable: false, format: (_v, row) => picked.rowBox(row) },
+    { key: 'name', label: 'Name', cls: 'wrap' },
+    { key: 'kind', label: 'Kind', format: (v) => h(`span.pill.${v === 'room' ? 'info' : ''}`, v) },
+    { key: 'block', label: 'Block', format: (v) => v || h('span.muted', '—') },
+    {
+      key: 'active',
+      label: 'In use',
+      format: (v) => (v ? h('span.pill.good', 'yes') : h('span.pill', 'retired')),
+    },
+    {
+      key: 'id',
+      label: '',
+      sortable: false,
+      format: (id, row) => h('div.btn-row',
+        h('button.btn-sm.btn-ghost', { onclick: () => editArea(row, reload) }, 'Edit'),
+        h('button.btn-sm.btn-ghost', {
+          onclick: async () => {
+            if (!confirm(`Remove ${row.name}? If parts were issued to it, it is retired instead of deleted.`)) return;
+            try {
+              const result = await api.mxDeleteArea(id);
+              toast(result.retired ? `${row.name} retired — its history is kept` : 'Removed');
+              reload();
+            } catch (err) { toast(err.message, 'bad'); }
+          },
+        }, 'Remove'),
+      ),
+    },
+  ], areas, {
+    empty: 'No rooms or areas yet.',
+    sortable: true,
+    groupBy: groupFn(AREA_GROUPS, areaGroup),
+  });
+
+  paintAreas();
+
   return card('Rooms and areas', {
     wide: true,
     note: `${rooms.length} rooms · ${places.length} other areas`,
@@ -282,34 +340,12 @@ function roomsCard(areas, reload) {
 
     h('div', { style: { marginTop: '1.2rem' } },
       bar.el,
-      table([
-        { key: 'id', label: picked.headerBox(), cls: 'tick', format: (_v, row) => picked.rowBox(row) },
-        { key: 'name', label: 'Name', cls: 'wrap' },
-        { key: 'kind', label: 'Kind', format: (v) => h(`span.pill.${v === 'room' ? 'info' : ''}`, v) },
-        { key: 'block', label: 'Block', format: (v) => v || h('span.muted', '—') },
-        {
-          key: 'active',
-          label: 'In use',
-          format: (v) => (v ? h('span.pill.good', 'yes') : h('span.pill', 'retired')),
-        },
-        {
-          key: 'id',
-          label: '',
-          format: (id, row) => h('div.btn-row',
-            h('button.btn-sm.btn-ghost', { onclick: () => editArea(row, reload) }, 'Edit'),
-            h('button.btn-sm.btn-ghost', {
-              onclick: async () => {
-                if (!confirm(`Remove ${row.name}? If parts were issued to it, it is retired instead of deleted.`)) return;
-                try {
-                  const result = await api.mxDeleteArea(id);
-                  toast(result.retired ? `${row.name} retired — its history is kept` : 'Removed');
-                  reload();
-                } catch (err) { toast(err.message, 'bad'); }
-              },
-            }, 'Remove'),
-          ),
-        },
-      ], areas, { empty: 'No rooms or areas yet.' })),
+      groupBar({
+        options: AREA_GROUPS,
+        selected: areaGroup,
+        onChange: (key) => { areaGroup = key; paintAreas(); },
+      }),
+      areaTableHost),
   );
 }
 
@@ -1006,13 +1042,24 @@ function productsCard(loaded, data, reload) {
     } catch (err) { toast(err.message, 'bad'); }
   };
 
-  return card('Products and their variants', {
-    wide: true,
-    note: 'For parts kept in more than one size, colour or rating',
-  },
-    products.length
-      ? h('div', { style: { display: 'grid', gap: '.7rem', marginBottom: '1.1rem' } },
-        products.map((p) => h('div', {
+  const categoryName = (id) => data.categories.find((c) => c.id === id)?.name || null;
+
+  const PRODUCT_GROUPS = [
+    { key: 'category', label: 'Category', of: (p) => categoryName(p.categoryId) },
+    {
+      key: 'variants',
+      label: 'How many variants',
+      of: (p) => {
+        const n = p.variants.length;
+        if (!n) return 'No variants yet';
+        return n === 1 ? 'One variant' : `${n} variants`;
+      },
+    },
+  ];
+
+  const listHost = h('div', { style: { display: 'grid', gap: '.7rem', marginBottom: '1.1rem' } });
+
+  const block = (p) => h('div', {
           style: {
             border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
             padding: '.6rem .7rem', background: 'var(--surface-2)',
@@ -1037,7 +1084,49 @@ function productsCard(loaded, data, reload) {
               : h('span.muted', { style: { fontSize: '.82rem' } }, 'no variants yet')),
           h('p.muted', { style: { fontSize: '.78rem', margin: '.4rem 0 0' } },
             'Click a variant to rename it.'),
-        )))
+        );
+
+  // Banded into headed sections when a grouping is chosen, and left as one
+  // list when it is not. The uncategorised band sinks to the bottom, matching
+  // what the tables do — a product nobody has filed should not head the page.
+  const paintList = () => {
+    const by = groupFn(PRODUCT_GROUPS, productGroup);
+    if (!by) { mount(listHost, ...products.map(block)); return; }
+
+    const bands = new Map();
+    for (const p of products) {
+      const label = by(p) || 'Uncategorised';
+      if (!bands.has(label)) bands.set(label, []);
+      bands.get(label).push(p);
+    }
+    const labels = [...bands.keys()].sort((a, b) => {
+      if (a === 'Uncategorised') return 1;
+      if (b === 'Uncategorised') return -1;
+      return a.localeCompare(b, undefined, { numeric: true });
+    });
+
+    mount(listHost, ...labels.flatMap((label) => [
+      h('div.row-group-name', { style: { marginTop: '.3rem' } },
+        label,
+        h('span.row-group-meta', `${bands.get(label).length}`)),
+      ...bands.get(label).map(block),
+    ]));
+  };
+
+  paintList();
+
+  return card('Products and their variants', {
+    wide: true,
+    note: 'For parts kept in more than one size, colour or rating',
+  },
+    products.length
+      ? h('div',
+        groupBar({
+          options: PRODUCT_GROUPS,
+          selected: productGroup,
+          onChange: (key) => { productGroup = key; paintList(); },
+        }),
+        listHost)
       : null,
 
     h('div.field-row',
@@ -1087,6 +1176,10 @@ function toolsCard(loaded, data, reload) {
 
   const tools = loaded.tools ?? [];
   const flat = loaded.all ?? tools;
+  // Sorting reorders the whole register, so an accessory can end up nowhere
+  // near its parent. Naming the parent on the row rather than relying on it
+  // sitting underneath keeps the row true whatever order it is in.
+  const nameOf = new Map(flat.map((t) => [t.id, t.name]));
   const name = h('input', { type: 'text', placeholder: 'e.g. Impact drill', maxlength: 100 });
   const tag = h('input', { type: 'text', placeholder: 'Asset tag (optional)', maxlength: 40 });
   const category = h('select',
@@ -1146,7 +1239,9 @@ function toolsCard(loaded, data, reload) {
                 ? h('span.muted', { style: { fontWeight: '400' } },
                   ` \u00b7 ${t.accessories.length} ${t.accessories.length === 1 ? 'accessory' : 'accessories'}`)
                 : null)
-              : h('span', { style: { paddingLeft: '1.1rem' } }, h('span.muted', '\u21b3 '), v)),
+              : h('div',
+                h('div', h('span.muted', '\u21b3 '), v),
+                h('small.muted', `with ${nameOf.get(t.parentToolId) ?? 'another tool'}`))),
           },
           { key: 'tag', label: 'Tag', format: (v) => (v ? h('code.mono', v) : h('span.muted', '—')) },
           { key: 'categoryName', label: 'Category', cls: 'wrap', format: (v) => v || h('span.muted', '—') },
@@ -1168,7 +1263,7 @@ function toolsCard(loaded, data, reload) {
               h('button.btn-sm.btn-ghost', { onclick: retire(t) }, 'Retire'),
             ),
           },
-        ], tools.flatMap((t) => [t, ...(t.accessories ?? [])])))
+        ], tools.flatMap((t) => [t, ...(t.accessories ?? [])]), { sortable: true }))
       : null,
 
     h('p.muted', { style: { fontSize: '.82rem', marginTop: '.9rem', marginBottom: 0 } },

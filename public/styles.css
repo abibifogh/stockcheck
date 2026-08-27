@@ -302,6 +302,15 @@ tbody tr.row-group td, tbody tr.row-group:hover td {
 }
 .row-group-meta { font-size: .75rem; color: var(--text-faint); margin-left: .6rem; }
 
+/* The same banding outside a table, for the product list — which is a column
+   of cards rather than rows, and would otherwise have no heading to sit the
+   band under. */
+div.row-group-name {
+  display: flex; align-items: baseline;
+  padding: .45rem .6rem; border-radius: var(--radius-sm);
+  background: var(--surface-2); color: var(--text-dim);
+}
+
 /* ------------------------------------------------------------- controls -- */
 button, .btn {
   font: inherit; font-weight: 600; font-size: .88rem;
@@ -836,6 +845,12 @@ details[open] > .step-head::after { transform: rotate(90deg); }
 .step-summary { font-size: .85rem; font-weight: 500; color: var(--accent); }
 .step-summary:empty { display: none; }
 .step-body { padding: 0 1rem 1rem; }
+
+.group-bar {
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  margin-bottom: .7rem;
+}
+.group-bar select { width: auto; min-width: 11rem; }
 
 .mx-chips { display: flex; flex-wrap: wrap; gap: .4rem; }
 .mx-chip {
