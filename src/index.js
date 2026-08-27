@@ -187,9 +187,11 @@ const ROUTES = [
   // their own stock — a product is a heading, never a balance.
   ['GET', '/api/mx/products', 'mx_issue', mx.listProducts],
   ['POST', '/api/mx/products', 'mx_setup', mx.createProduct],
+  ['PUT', '/api/mx/products/:id', 'mx_setup', mx.updateProduct],
   ['POST', '/api/mx/products/:id/variants', 'mx_setup', mx.addVariant],
   ['DELETE', '/api/mx/products/:id', 'mx_setup', mx.deleteProduct],
   ['PUT', '/api/mx/items/:id/product', 'mx_setup', mx.attachToProduct],
+  ['PUT', '/api/mx/items/:id/variant', 'mx_setup', mx.renameVariant],
 
   // Tools go out and come back. Issuing and returning is the technician's
   // counter, so it sits with mx_issue; the register itself is setup.

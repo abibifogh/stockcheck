@@ -255,6 +255,12 @@ a { color: var(--accent); }
 .pill.bad  { background: var(--bad-soft);  color: var(--bad);  border-color: transparent; }
 .pill.info { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
 
+/* A pill that does something. Inherits the shape and says so on hover, rather
+   than looking identical to the ones that are only labels. */
+.pill-btn { cursor: pointer; font-family: inherit; }
+.pill-btn:hover { border-color: var(--accent); color: var(--accent); }
+.pill-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
 /* --------------------------------------------------------------- alerts -- */
 .alert {
   display: flex; gap: .7rem; align-items: flex-start;

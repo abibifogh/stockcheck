@@ -240,19 +240,107 @@ function roomsCard(areas, reload) {
         {
           key: 'id',
           label: '',
-          format: (id, row) => h('button.btn-sm.btn-ghost', {
-            onclick: async () => {
-              if (!confirm(`Remove ${row.name}? If parts were issued to it, it is retired instead of deleted.`)) return;
-              try {
-                const result = await api.mxDeleteArea(id);
-                toast(result.retired ? `${row.name} retired — its history is kept` : 'Removed');
-                reload();
-              } catch (err) { toast(err.message, 'bad'); }
-            },
-          }, 'Remove'),
+          format: (id, row) => h('div.btn-row',
+            h('button.btn-sm.btn-ghost', { onclick: () => editArea(row, reload) }, 'Edit'),
+            h('button.btn-sm.btn-ghost', {
+              onclick: async () => {
+                if (!confirm(`Remove ${row.name}? If parts were issued to it, it is retired instead of deleted.`)) return;
+                try {
+                  const result = await api.mxDeleteArea(id);
+                  toast(result.retired ? `${row.name} retired — its history is kept` : 'Removed');
+                  reload();
+                } catch (err) { toast(err.message, 'bad'); }
+              },
+            }, 'Remove'),
+          ),
         },
       ], areas, { empty: 'No rooms or areas yet.' })),
   );
+}
+
+/**
+ * Correct a room or area already on the list.
+ *
+ * A room mistyped in a range of forty, or a store that has been called the
+ * wrong thing since setup, was previously fixable only by removing it and
+ * adding it again — which is not the same thing at all: anything ever issued
+ * to it points at the row, so removing it retires it and the new one starts
+ * with no history.
+ *
+ * Retiring is offered here too, as a switch rather than a second button. A
+ * place that is out of service for a season should stop being offered on the
+ * issue screen without its past disappearing from the reports.
+ */
+function editArea(area, reload) {
+  const name = h('input', { type: 'text', value: area.name, maxlength: 80 });
+  const kind = h('select',
+    h('option', { value: 'area', selected: area.kind !== 'room' }, 'Area'),
+    h('option', { value: 'room', selected: area.kind === 'room' }, 'Room'));
+  const block = h('input', { type: 'text', value: area.block ?? '', maxlength: 60 });
+  const order = h('input', { type: 'number', min: '0', value: String(area.sort_order ?? 100) });
+  const active = h('input', { type: 'checkbox', checked: area.active !== 0 });
+  const error = h('p.form-error');
+
+  const save = async (event, dialog) => {
+    if (!name.value.trim()) { error.textContent = 'Give it a name'; return; }
+    event.target.disabled = true;
+    try {
+      await api.mxUpdateArea(area.id, {
+        name: name.value.trim(),
+        kind: kind.value,
+        block: block.value.trim() || null,
+        sortOrder: order.value || 100,
+        active: active.checked,
+      });
+      toast('Saved', 'good');
+      dialog.close();
+      reload();
+    } catch (err) {
+      error.textContent = err.message;
+      event.target.disabled = false;
+    }
+  };
+
+  modal('Edit room or area', [
+    h('label.field', h('span', 'Name'), name),
+    h('label.field', h('span', 'Kind'), kind),
+    h('label.field', h('span', 'Block or floor'), block),
+    h('label.field', h('span', 'Order in the list'), order),
+    h('label.field', h('span', 'Still in use'), active),
+    h('p.muted', { style: { fontSize: '.82rem' } },
+      'Renaming keeps everything ever issued here. Turning off “still in use” takes it off the '
+      + 'issue screen and leaves the reports alone.'),
+    error,
+  ], save);
+}
+
+/**
+ * The frame the edit forms share: same size, same buttons, same closing.
+ *
+ * `dialog` is referenced by the buttons it contains, which reads circular and
+ * is not: the closures run on a click, long after the assignment.
+ */
+function modal(title, fields, save) {
+  const dialog = h('dialog', {
+    style: {
+      border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+      background: 'var(--surface)', color: 'var(--text)',
+      maxWidth: '460px', width: '92vw', padding: '1.2rem',
+    },
+  },
+    h('div.card-head', h('h2', title),
+      h('button.btn-sm.btn-ghost', { onclick: () => dialog.close() }, '✕')),
+    ...fields,
+    h('div.btn-row', { style: { justifyContent: 'flex-end', marginTop: '.8rem' } },
+      h('button', { onclick: () => dialog.close() }, 'Cancel'),
+      h('button.btn-primary', { onclick: (event) => save(event, dialog) }, 'Save'),
+    ),
+  );
+
+  document.body.append(dialog);
+  dialog.addEventListener('close', () => dialog.remove());
+  dialog.showModal();
+  return dialog;
 }
 
 // ---------------------------------------------------------------------------
@@ -909,14 +997,20 @@ function productsCard(loaded, data, reload) {
             h('span.muted', { style: { fontSize: '.82rem' } },
               `${p.variants.length} ${p.variants.length === 1 ? 'variant' : 'variants'}`),
             h('div.btn-row', { style: { marginLeft: 'auto' } },
+              h('button.btn-sm.btn-ghost', { onclick: () => editProduct(p, data.categories, reload) }, 'Edit'),
               h('button.btn-sm.btn-ghost', { onclick: addOne(p) }, '+ Variant'),
               h('button.btn-sm.btn-ghost', { onclick: remove(p) }, 'Remove'),
             ),
           ),
           h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '.3rem', marginTop: '.4rem' } },
             p.variants.length
-              ? p.variants.map((v) => h('span.pill', v.variant ?? v.name))
+              ? p.variants.map((v) => h('button.pill.pill-btn', {
+                title: `Rename this variant of ${p.name}`,
+                onclick: () => renameVariant(p, v, reload),
+              }, v.variant ?? v.name))
               : h('span.muted', { style: { fontSize: '.82rem' } }, 'no variants yet')),
+          h('p.muted', { style: { fontSize: '.78rem', margin: '.4rem 0 0' } },
+            'Click a variant to rename it.'),
         )))
       : null,
 
@@ -1039,4 +1133,85 @@ function toolsCard(loaded, data, reload) {
       + 'retired until it comes back, and retiring keeps every journey it has made \u2014 who had it, '
       + 'where, and for how long.'),
   );
+}
+
+/**
+ * Rename a product, or move it to another category.
+ *
+ * What makes this more than an UPDATE is the names underneath. A variant is a
+ * part called "LED bulb — 40W warm", composed when it was created, so renaming
+ * only the heading would leave every parts screen and every order list still
+ * saying the old thing. The server carries them, and says how many it moved —
+ * which will be fewer than the total where somebody has renamed one by hand,
+ * because those are decisions this rename was never asked about.
+ */
+function editProduct(product, categories, reload) {
+  const name = h('input', { type: 'text', value: product.name, maxlength: 100 });
+  const category = h('select',
+    h('option', { value: '', selected: !product.categoryId }, 'Uncategorised'),
+    ...categories.map((c) => h('option', {
+      value: String(c.id), selected: c.id === product.categoryId,
+    }, c.name)));
+  const note = h('input', { type: 'text', value: product.note ?? '', maxlength: 300 });
+  const error = h('p.form-error');
+
+  const save = async (event, dialog) => {
+    if (!name.value.trim()) { error.textContent = 'Give the product a name'; return; }
+    event.target.disabled = true;
+    try {
+      const result = await api.mxUpdateProduct(product.id, {
+        name: name.value.trim(),
+        categoryId: category.value || null,
+        note: note.value.trim() || null,
+      });
+      toast(result.carried
+        ? `Saved — ${result.carried} ${result.carried === 1 ? 'variant' : 'variants'} renamed with it`
+        : 'Saved', 'good');
+      dialog.close();
+      reload();
+    } catch (err) {
+      error.textContent = err.message;
+      event.target.disabled = false;
+    }
+  };
+
+  modal('Edit product', [
+    h('label.field', h('span', 'Product name'), name),
+    h('label.field', h('span', 'Category'), category),
+    h('label.field', h('span', 'Note'), note),
+    h('p.muted', { style: { fontSize: '.82rem' } },
+      `${product.variants.length} ${product.variants.length === 1 ? 'variant hangs' : 'variants hang'} `
+      + 'off this. Renaming carries the ones still using the name they were given, and leaves any '
+      + 'you have renamed yourself. Nothing about their stock, their history or their counts moves.'),
+    error,
+  ], save);
+}
+
+/** Change the label that tells one variant from its siblings. */
+function renameVariant(product, variant, reload) {
+  const label = h('input', { type: 'text', value: variant.variant ?? '', maxlength: 60 });
+  const error = h('p.form-error');
+
+  const save = async (event, dialog) => {
+    if (!label.value.trim()) { error.textContent = 'Give the variant a label'; return; }
+    event.target.disabled = true;
+    try {
+      await api.mxRenameVariant(variant.id, { variant: label.value.trim() });
+      toast('Renamed', 'good');
+      dialog.close();
+      reload();
+    } catch (err) {
+      error.textContent = err.message;
+      event.target.disabled = false;
+    }
+  };
+
+  modal(`Variant of ${product.name}`, [
+    h('label.field', h('span', 'What tells it apart'), label),
+    h('p.muted', { style: { fontSize: '.82rem' } },
+      `The part is called “${variant.name}”. Change the label and the part name follows it, so the `
+      + 'two cannot end up saying different things. Its stock, its history and its counts stay '
+      + 'exactly where they are.'),
+    error,
+  ], save);
 }
