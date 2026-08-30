@@ -71,7 +71,7 @@ export async function renderMxSetup() {
   const body = h('div');
   const paint = () => mount(body, ...(sections[openTab] ?? sections.places)());
 
-  const tabs = h('div.seg.seg-wrap', { style: { marginBottom: '1rem' } },
+  const tabs = h('div.seg.seg-fill', { style: { marginBottom: '1rem' } },
     ...TABS.map((t) => h(`button${t.key === openTab ? '.active' : ''}`, {
       onclick: () => {
         openTab = t.key;

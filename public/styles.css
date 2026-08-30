@@ -365,11 +365,30 @@ label.field.field-inline > span {
 }
 label.field.field-inline > input[type="checkbox"] { flex: none; width: auto; }
 
-.seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 2px; }
-.seg button { border: none; background: transparent; border-radius: 999px; padding: .32rem .8rem; font-size: .82rem; color: var(--text-dim); }
+/* A row of tabs.
+   Wrapping is the default rather than an opt-in. A non-wrapping inline-flex
+   was fine at desk width and clipped four tabs off the edge of a 390px phone —
+   and a tab you cannot see is a section of the app you cannot reach. */
+.seg {
+  display: inline-flex; flex-wrap: wrap; max-width: 100%;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 2px; gap: 2px;
+}
+.seg button {
+  border: none; background: transparent; border-radius: 999px;
+  padding: .32rem .8rem; font-size: .82rem; color: var(--text-dim);
+}
 .seg button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
 
-/* Many categories will not fit on one line of a phone, so this variant wraps. */
+/* Tabs that divide a screen, as opposed to chips that filter a list. These
+   share the width so every one is the same size, which is what makes a row of
+   them read as a tab bar rather than as a sentence of buttons. */
+.seg.seg-fill { display: flex; width: 100%; }
+.seg.seg-fill button { flex: 1 1 auto; text-align: center; }
+
+/* Marks a row of filter chips rather than a tab bar. Wrapping is now the
+   default for every .seg; this is what stops the phone rules stretching each
+   chip to share the width. */
 .seg.seg-wrap { flex-wrap: wrap; max-width: 100%; }
 .seg-count {
   margin-left: .35rem; font-size: .72rem; font-variant-numeric: tabular-nums;
@@ -555,6 +574,20 @@ td.wrap, th.wrap { white-space: normal; min-width: 10rem; }
    name is the thing that can go — anyone holding the phone knows which hotel
    they work at, and the buttons are the part that has to stay reachable. */
 @media (max-width: 560px) {
+  /* Tabs at phone width. Two changes, both about the thumb: the buttons grow
+     to something you can hit without aiming, and the container squares off —
+     a pill border drawn around two wrapped rows reads as a mistake rather
+     than as a control. */
+  .seg { width: 100%; border-radius: var(--radius); padding: 3px; }
+  .seg button {
+    padding: .5rem .7rem; font-size: .86rem; min-height: 40px;
+    border-radius: calc(var(--radius) - 4px);
+  }
+  .seg.seg-fill button { flex: 1 1 40%; }
+  /* Category chips stay their own width: a dozen of them share nothing, and
+     stretching each to 40% would give one chip a line to itself. */
+  .seg.seg-wrap button { flex: 0 1 auto; }
+
   .topbar { gap: .35rem; padding-inline: .5rem; }
   .brand { font-size: .92rem; min-width: 0; }
   .brand > div {

@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import { navigate } from '../app.js';
-import { fmtDay, fmtNum, h, mount, toast } from '../util.js';
+import { fmtDay, fmtMoney, fmtNum, h, mount, toast } from '../util.js';
 import { card, table } from './components.js';
 
 /**
@@ -15,7 +15,7 @@ export async function renderApprovals(params) {
   const host = h('div');
   const reload = async () => mount(host, await renderApprovals({ status }));
 
-  const tabs = h('div.seg',
+  const tabs = h('div.seg.seg-fill',
     ...['pending', 'approved', 'rejected', 'all'].map((key) => h('button', {
       class: key === status ? 'active' : '',
       onclick: () => navigate('approvals', { status: key }),
@@ -106,13 +106,20 @@ function revisionCard(rev, reload) {
         : null,
     ),
   },
+    headline(rev.summary),
+
     rev.changes.length
       ? table([
         {
           key: 'label',
           label: 'What changes',
+          cls: 'wrap',
           format: (v, r) => h('div',
-            h('div', v),
+            h('div', v,
+              // An item appearing or disappearing is a different claim from a
+              // figure moving, and the numbers alone do not say which it is.
+              r.change === 'added' ? h('span.pill.good', { style: { marginLeft: '.4rem' } }, 'added') : null,
+              r.change === 'removed' ? h('span.pill.bad', { style: { marginLeft: '.4rem' } }, 'removed') : null),
             h('small.muted', r.kind === 'usage' ? 'quantity used' : r.kind === 'guests' ? 'headcount' : 'note'),
           ),
         },
@@ -126,7 +133,16 @@ function revisionCard(rev, reload) {
             ? h('span.muted', '—')
             : h(`span.delta.${v > 0 ? 'up' : v < 0 ? 'down' : 'flat'}`, `${v > 0 ? '+' : ''}${fmtNum(v, 2)}`)),
         },
-      ], rev.changes)
+        {
+          key: 'costDelta',
+          label: 'Cost effect',
+          align: 'right',
+          format: (v) => (v == null
+            ? h('span.muted', '—')
+            : h(`span.delta.${v > 0 ? 'up' : v < 0 ? 'down' : 'flat'}`,
+              `${v > 0 ? '+' : v < 0 ? '−' : ''}${fmtMoney(Math.abs(v), { withSymbol: false })}`)),
+        },
+      ], rev.changes, { sortable: true })
       : h('p.muted', 'Nothing actually differs from what is already recorded.'),
 
     rev.reviewNote
@@ -167,5 +183,45 @@ function revisionCard(rev, reload) {
         'This was rejected, and can still be accepted. The day has not moved since it was '
         + 'proposed, so the comparison above is current.')
       : null,
+  );
+}
+
+/**
+ * The one line an approver reads before deciding.
+ *
+ * A table of before-and-after says what moved and leaves the reviewer to add
+ * it up. Whether accepting this makes the day cost more or less, and whether
+ * anything appeared or disappeared, are the two facts the decision turns on —
+ * so they are stated rather than derivable.
+ */
+function headline(summary) {
+  if (!summary) return null;
+
+  const bits = [];
+  if (summary.changed) bits.push(`${summary.changed} ${summary.changed === 1 ? 'figure' : 'figures'} changed`);
+  if (summary.added) bits.push(`${summary.added} added`);
+  if (summary.removed) bits.push(`${summary.removed} removed`);
+  if (summary.guestDelta) {
+    bits.push(`${summary.guestDelta > 0 ? '+' : '−'}${Math.abs(summary.guestDelta)} guests`);
+  }
+  if (summary.noteChanged) bits.push('note reworded');
+  if (!bits.length) return null;
+
+  const cost = summary.costDelta;
+  const money = cost == null || cost === 0
+    ? null
+    : `${cost > 0 ? 'Raises' : 'Lowers'} the day by ${fmtMoney(Math.abs(cost))}`;
+
+  return h(`div.alert.${cost > 0 ? 'warn' : 'info'}`, { style: { marginBottom: '.8rem' } },
+    h('span.alert-icon', cost > 0 ? '↑' : cost < 0 ? '↓' : '≡'),
+    h('div',
+      h('div.alert-title', money ?? 'No effect on what the day cost'),
+      h('div.alert-detail', bits.join(' · '),
+        cost != null
+          ? h('span.muted', { style: { display: 'block', marginTop: '.2rem', fontSize: '.82rem' } },
+            'Cost worked out at the last price paid for each item, so treat it as a guide to the '
+            + 'size of the change rather than as the figure the reports will show.')
+          : null),
+    ),
   );
 }
