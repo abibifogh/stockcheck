@@ -122,7 +122,7 @@ export async function renderMxCompare(params = {}) {
             `${v > 0 ? '+' : ''}${fmtMoney(v, { withSymbol: false })}`),
         },
         { key: 'deltaPct', label: '%', align: 'right', format: pctCell },
-      ], data.areas, { empty: 'Nothing issued in either period.' })),
+      ], data.areas, { sortable: true, empty: 'Nothing issued in either period.' })),
 
     card('Part by part', { wide: true },
       table([
@@ -138,7 +138,7 @@ export async function renderMxCompare(params = {}) {
           format: (v) => h(`span.delta.${v > 0 ? 'up' : v < 0 ? 'down' : 'flat'}`,
             `${v > 0 ? '+' : ''}${fmtMoney(v, { withSymbol: false })}`),
         },
-      ], data.items, { empty: 'Nothing issued in either period.' })),
+      ], data.items, { sortable: true, empty: 'Nothing issued in either period.' })),
   );
 
   return host;

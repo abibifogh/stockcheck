@@ -116,3 +116,57 @@ test('a resubmitted round says so, so nobody reads it as a second check', () => 
   });
   assert.match(notice.title, /submitted again/);
 });
+
+// --------------------------------------------------- addressed notices --
+
+/**
+ * The audience filter runs in JavaScript, because `audience` may not exist on
+ * a database that has not run the upgrade and a query naming a missing column
+ * fails outright. That is fine; what was not fine was asking SQL for the
+ * newest twenty and filtering afterwards, so a notice addressed to somebody
+ * fell off the end behind twenty addressed elsewhere.
+ *
+ * An approval waiting on an administrator is exactly the notice that goes
+ * quiet that way, and nothing looks wrong while it does.
+ */
+test('an addressed notice is not pushed off the bell by unrelated ones', async () => {
+  const db = database();
+
+  // One approval, then a day of hourly sweeps addressed to somebody else.
+  await createNotice(db, {
+    kind: 'mx_adjustment',
+    audience: 'users',
+    title: 'A part issue is waiting to be removed',
+  });
+  for (let i = 0; i < 40; i += 1) {
+    await createNotice(db, { kind: 'tool_overdue', audience: 'tools', title: `Drill ${i} is late` });
+  }
+
+  const { notices, unread } = await listNotices(db, 7, 20, ['users']);
+
+  assert.equal(notices.length, 1, 'the one addressed to them');
+  assert.equal(notices[0].title, 'A part issue is waiting to be removed');
+  assert.equal(unread, 1, 'and the badge agrees with the list it opens');
+});
+
+test('an unaddressed notice still reaches everybody', async () => {
+  // Every row written before audiences existed has none, and those were for
+  // the whole hotel.
+  const db = database();
+  await createNotice(db, { kind: 'hk_round', title: 'Morning check submitted' });
+
+  const { notices } = await listNotices(db, 7, 20, ['tools']);
+  assert.equal(notices.length, 1);
+});
+
+test('the badge counts what is addressed to them, not what fits on the page', async () => {
+  const db = database();
+  for (let i = 0; i < 30; i += 1) {
+    await createNotice(db, { kind: 'mx_adjustment', audience: 'users', title: `Request ${i}` });
+  }
+
+  const { notices, unread } = await listNotices(db, 7, 10, ['users']);
+
+  assert.equal(notices.length, 10, 'a page of ten');
+  assert.equal(unread, 30, 'but thirty are waiting, and the bell says so');
+});

@@ -1,4 +1,4 @@
-import { deltaBadge, fmtMoney, fmtNum, h } from '../util.js';
+import { deltaBadge, fmtMoney, fmtNum, h, mount } from '../util.js';
 import { sparkline } from '../charts.js';
 
 export function statTile({ label, value, sub, delta, higherIsBetter = false, spark, accent }) {
@@ -98,24 +98,73 @@ export function sorted(rows, { key, dir }, { value = (r, k) => r[k] } = {}) {
 
 export function table(columns, rows, {
   rowClass = null, empty = 'No data yet.', groupBy = null, groupSummary = null,
+  sortable = false, sort: initialSort = null, onRowClick = null,
 } = {}) {
   if (!rows?.length) return h('div.empty', h('p', empty));
 
-  const rowEl = (row) => h('tr', { class: rowClass ? rowClass(row) : '' },
-    columns.map((c) => {
-      const value = row[c.key];
-      const content = c.format ? c.format(value, row) : (value ?? '—');
-      return h(`td${c.align === 'right' ? '.num' : ''}${c.cls ? `.${c.cls}` : ''}`, content);
-    }));
+  // Sorting lives inside the table rather than in each screen that draws one.
+  // Wiring it by hand meant every table either had it or did not, depending on
+  // whether anybody had got round to that one — and a column you can sort in
+  // one list and not in the next reads as a bug wherever it is missing.
+  let state = initialSort ?? { key: null, dir: 'asc' };
+  const host = h('div.table-wrap');
 
-  return h('div.table-wrap',
-    h('table',
-      h('thead', h('tr', columns.map((c) =>
-        h(`th${c.align === 'right' ? '.num' : ''}`, c.label)))),
-      h('tbody', groupBy ? groupedBody(rows, groupBy, groupSummary, columns.length, rowEl)
-        : rows.map(rowEl)),
-    ),
-  );
+  const numericKeys = columns
+    .filter((c) => c.align === 'right' || c.numeric)
+    .map((c) => c.key);
+
+  const paint = () => {
+    const ordered = state.key
+      ? sorted(rows, state, { value: (r, k) => {
+        const col = columns.find((c) => c.key === k);
+        return col?.sortValue ? col.sortValue(r[k], r) : r[k];
+      } })
+      : rows;
+
+    const rowEl = (row) => {
+      const el = h('tr', { class: rowClass ? rowClass(row) : '' },
+        columns.map((c) => {
+          const value = row[c.key];
+          const content = c.format ? c.format(value, row) : (value ?? '—');
+          return h(`td${c.align === 'right' ? '.num' : ''}${c.cls ? `.${c.cls}` : ''}`, content);
+        }));
+      if (onRowClick) {
+        const hint = onRowClick(row, el);
+        if (hint !== false) {
+          el.style.cursor = 'pointer';
+          if (typeof hint === 'string') el.title = hint;
+        }
+      }
+      return el;
+    };
+
+    // A column is sortable when it has a key and its label is plain text. A
+    // label that is already an element is somebody's own heading — usually a
+    // sort button of its own — and wrapping it would nest two.
+    const heading = (c) => {
+      if (!sortable || !c.key || (c.label && typeof c.label !== 'string')) return c.label;
+      if (c.sortable === false) return c.label;
+      return sortHeader(c.label, c.key, state, (key) => {
+        state = nextSort(state, key, { numeric: numericKeys });
+        paint();
+      });
+    };
+
+    mount(host,
+      h('table',
+        h('thead', h('tr', columns.map((c) =>
+          h(`th${c.align === 'right' ? '.num' : ''}`, heading(c))))),
+        // Grouping bands the rows; sorting orders them inside each band, which
+        // is the only combination that makes sense. Sorting across the bands
+        // would take the rows out of the groups they were put in.
+        h('tbody', groupBy ? groupedBody(ordered, groupBy, groupSummary, columns.length, rowEl)
+          : ordered.map(rowEl)),
+      ),
+    );
+  };
+
+  paint();
+  return host;
 }
 
 function groupedBody(rows, groupBy, groupSummary, span, rowEl) {
@@ -290,4 +339,35 @@ export function stepCard(title, { summary, open = true, note } = {}, ...children
       if (fold !== undefined) el.open = !fold;
     },
   };
+}
+
+/**
+ * A "group by" picker above a list.
+ *
+ * The options are given as {key, label, of} where `of` turns a row into the
+ * heading it belongs under. Returning null or '' puts a row in the
+ * uncategorised band, which `table` already sinks to the bottom — a room with
+ * no block should not sit above the rooms that have one.
+ *
+ * Kept separate from the table so the same control can band a list of cards,
+ * which is what the products list is.
+ */
+export function groupBar({ options, selected = '', onChange, label = 'Group by' }) {
+  const select = h('select',
+    h('option', { value: '', selected: !selected }, 'Nothing — one flat list'),
+    ...options.map((o) => h('option', {
+      value: o.key, selected: o.key === selected,
+    }, o.label)));
+
+  select.addEventListener('change', () => onChange(select.value));
+
+  return h('div.group-bar',
+    h('span.stat-label', label),
+    select,
+  );
+}
+
+/** The `of` function for a chosen key, or null for "no grouping". */
+export function groupFn(options, key) {
+  return options.find((o) => o.key === key)?.of ?? null;
 }

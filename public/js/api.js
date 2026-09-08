@@ -163,6 +163,10 @@ export const api = {
   mxAreaDetail: (id) => request(`/api/mx/areas/${id}/detail`),
 
   mxAreas: () => request('/api/mx/areas'),
+  // Downloads, so these are addresses rather than calls — the browser fetches
+  // them itself and the file lands where downloads land.
+  mxItemsExportUrl: () => '/api/mx/items/export',
+  mxAreasExportUrl: () => '/api/mx/areas/export',
   mxCreateArea: (body) => request('/api/mx/areas', { method: 'POST', body }),
   mxCreateAreaRange: (body) => request('/api/mx/areas/range', { method: 'POST', body }),
   mxUpdateArea: (id, body) => request(`/api/mx/areas/${id}`, { method: 'PUT', body }),

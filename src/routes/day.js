@@ -2,7 +2,7 @@ import { HttpError, badRequest, bool, int, isMissingTable, json, num, readJson, 
 import { entryHints, loadDataset } from '../lib/analytics.js';
 import { notifyDaySubmitted } from '../lib/email.js';
 import { pingDaySubmitted } from '../lib/push.js';
-import { notify } from '../lib/notify.js';
+import { announce, notify, readSettings } from '../lib/notify.js';
 import { assertDayWritable, lockCovering, locksFor } from '../lib/locks.js';
 import { isDay, todayIn } from '../util/dates.js';
 
@@ -223,6 +223,24 @@ export async function saveDay(ctx, day) {
       ),
     ]);
 
+    // Nobody was told. A proposal moves nothing until it is accepted, so it can
+    // sit for a week with every screen looking correct and the cook assuming it
+    // went through — which is exactly how a corrected sheet gets forgotten.
+    const settings = await readSettings(db).catch(() => ({}));
+    if (settings.notify_count_pending !== '0') {
+      const task = announce(db, ctx.env, {
+        kind: 'day_revision',
+        audience: 'approvals',
+        title: `${day}: ${describeAmendment(previous, payload)}`,
+        body: `${session.user.name} amended the sheet for ${day}. `
+          + 'The recorded figures stay exactly as they are until somebody accepts it.',
+        link: '#/approvals',
+        linkLabel: 'Review the change',
+      });
+      if (ctx.executionContext?.waitUntil) ctx.executionContext.waitUntil(task);
+      else await task.catch(() => {});
+    }
+
     return json({
       ok: true,
       day,
@@ -347,4 +365,41 @@ export async function deleteDay(ctx, day) {
   ]);
 
   return json({ ok: true, day, removedLines: lines?.n ?? 0 });
+}
+
+/**
+ * A title that says what kind of amendment this is, not merely that there was
+ * one.
+ *
+ * "A sheet was changed" tells an approver nothing they can weigh; the counts
+ * tell them whether this is a typo or a rewritten day, which is what decides
+ * how carefully to look. Deliberately no cost figure — that needs prices, and
+ * this runs on the write path where a slow query would sit between a cook and
+ * their save button.
+ */
+function describeAmendment(previous, payload) {
+  const before = previous.usage ?? {};
+  const after = payload.usage ?? {};
+  const ids = new Set([...Object.keys(before), ...Object.keys(after)]);
+
+  let added = 0;
+  let removed = 0;
+  let changed = 0;
+  for (const id of ids) {
+    const a = before[id];
+    const b = after[id];
+    if (a == null && b != null) added += 1;
+    else if (a != null && b == null) removed += 1;
+    else if (Number(a) !== Number(b)) changed += 1;
+  }
+
+  const guests = (Number(payload.inhouse_guests) || 0) + (Number(payload.outside_guests) || 0)
+    - ((Number(previous.inhouse_guests) || 0) + (Number(previous.outside_guests) || 0));
+
+  const bits = [];
+  if (changed) bits.push(`${changed} ${changed === 1 ? 'figure' : 'figures'} changed`);
+  if (added) bits.push(`${added} added`);
+  if (removed) bits.push(`${removed} removed`);
+  if (guests) bits.push(`${guests > 0 ? '+' : '\u2212'}${Math.abs(guests)} guests`);
+  return bits.length ? bits.join(', ') : 'an amendment is waiting';
 }

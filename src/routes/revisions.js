@@ -1,5 +1,6 @@
 import { badRequest, bool, json, notFound, readJson, str } from '../lib/http.js';
 import { assertDayWritable } from '../lib/locks.js';
+import { lastUnitCosts } from './catalog.js';
 
 /**
  * Approving changes to a day that was already submitted.
@@ -17,8 +18,18 @@ function parse(value, fallback = {}) {
   }
 }
 
-/** Build a readable comparison so a reviewer is not diffing raw JSON. */
-function buildDiff(proposed, previous, ingredientsById) {
+/**
+ * Build a readable comparison so a reviewer is not diffing raw JSON.
+ *
+ * Three things an approver needs that a bare before/after table does not give
+ * them. Which rows are an item appearing or disappearing rather than a figure
+ * moving — an ingredient nobody recorded on the day is a different kind of
+ * claim from one recorded slightly differently. What it does to the day's
+ * cost, since that is the thing being approved and the only figure comparable
+ * across kilograms and eggs. And a headline, so the answer to "what am I
+ * looking at" does not require reading every row.
+ */
+function buildDiff(proposed, previous, ingredientsById, costOf) {
   const changes = [];
 
   const guestFields = [
@@ -28,11 +39,19 @@ function buildDiff(proposed, previous, ingredientsById) {
   for (const [key, label] of guestFields) {
     const before = Number(previous[key]) || 0;
     const after = Number(proposed[key]) || 0;
-    if (before !== after) changes.push({ kind: 'guests', label, before, after, unit: 'guests' });
+    if (before !== after) {
+      changes.push({
+        kind: 'guests', change: 'changed', label, before, after,
+        delta: after - before, unit: 'guests',
+      });
+    }
   }
 
   if ((previous.note ?? '') !== (proposed.note ?? '')) {
-    changes.push({ kind: 'note', label: 'Note', before: previous.note ?? '—', after: proposed.note ?? '—' });
+    changes.push({
+      kind: 'note', change: 'changed', label: 'Note',
+      before: previous.note ?? '—', after: proposed.note ?? '—',
+    });
   }
 
   const ids = new Set([
@@ -48,19 +67,55 @@ function buildDiff(proposed, previous, ingredientsById) {
     if (beforeNum === afterNum) continue;
 
     const ing = ingredientsById.get(id);
+    const rate = costOf(id);
+    // Absent and zero are the same amount of stock and a different claim: one
+    // says "we did not use this", the other says "nobody wrote it down". The
+    // reviewer is deciding about the claim.
+    const change = beforeNum == null ? 'added' : afterNum == null ? 'removed' : 'changed';
+
     changes.push({
       kind: 'usage',
+      change,
       ingredientId: id,
       label: ing?.name ?? `Ingredient ${id}`,
       unit: ing?.unit ?? '',
       before: beforeNum,
       after: afterNum,
-      delta: afterNum != null && beforeNum != null ? Math.round((afterNum - beforeNum) * 1000) / 1000 : null,
+      delta: afterNum != null && beforeNum != null
+        ? Math.round((afterNum - beforeNum) * 1000) / 1000
+        : null,
+      // What the day's cost does if this is accepted, at the last price paid.
+      // Rounded to money rather than carried at full precision: it is a figure
+      // somebody reads, not one anything is reconciled against.
+      costDelta: rate == null
+        ? null
+        : Math.round((((afterNum ?? 0) - (beforeNum ?? 0)) * rate) * 100) / 100,
     });
   }
 
-  changes.sort((a, b) => Math.abs(b.delta ?? 0) - Math.abs(a.delta ?? 0));
+  // Sorted by what it does to the money, which is the one measure that means
+  // the same thing across kilograms, litres and eggs. Sorting by raw quantity
+  // put two hundred eggs above five kilograms of beef.
+  changes.sort((a, b) => Math.abs(b.costDelta ?? 0) - Math.abs(a.costDelta ?? 0));
   return changes;
+}
+
+/** The one-line answer to "what am I looking at", built from the rows. */
+function summarise(changes) {
+  const usage = changes.filter((c) => c.kind === 'usage');
+  const guests = changes.filter((c) => c.kind === 'guests');
+  return {
+    added: usage.filter((c) => c.change === 'added').length,
+    removed: usage.filter((c) => c.change === 'removed').length,
+    changed: usage.filter((c) => c.change === 'changed').length,
+    noteChanged: changes.some((c) => c.kind === 'note'),
+    guestDelta: guests.reduce((n, c) => n + (c.delta ?? 0), 0),
+    // Null where nothing carries a price, so the screen can say nothing rather
+    // than claim a confident zero.
+    costDelta: usage.some((c) => c.costDelta != null)
+      ? Math.round(usage.reduce((n, c) => n + (c.costDelta ?? 0), 0) * 100) / 100
+      : null,
+  };
 }
 
 export async function listRevisions(ctx) {
@@ -74,8 +129,19 @@ export async function listRevisions(ctx) {
     : await ctx.db.prepare('SELECT * FROM day_revisions WHERE status = ? ORDER BY submitted_at DESC LIMIT 100')
       .bind(status).all();
 
-  const ingredients = await ctx.db.prepare('SELECT id, name, unit FROM ingredients').all();
+  const [ingredients, lastCosts] = await Promise.all([
+    ctx.db.prepare('SELECT id, name, unit, default_unit_cost FROM ingredients').all(),
+    // The price the reports use where there is purchase history, and the
+    // ingredient's own fallback where there is not.
+    lastUnitCosts(ctx.db).catch(() => ({})),
+  ]);
   const byId = new Map((ingredients.results ?? []).map((i) => [i.id, i]));
+  const costOf = (id) => {
+    const paid = lastCosts?.[id]?.unitCost;
+    if (Number.isFinite(paid) && paid > 0) return paid;
+    const fallback = Number(byId.get(id)?.default_unit_cost);
+    return Number.isFinite(fallback) && fallback > 0 ? fallback : null;
+  };
 
   // A rejected request can still be accepted, so the two things that would make
   // that a bad idea are worked out here rather than left for somebody to notice.
@@ -86,6 +152,7 @@ export async function listRevisions(ctx) {
       const proposed = parse(r.payload);
       const previous = parse(r.previous);
       const flags = r.status === 'rejected' ? context(r) : {};
+      const changes = buildDiff(proposed, previous, byId, costOf);
       return {
         id: r.id,
         day: r.day,
@@ -95,7 +162,8 @@ export async function listRevisions(ctx) {
         reviewedBy: r.reviewed_by,
         reviewedAt: r.reviewed_at,
         reviewNote: r.review_note,
-        changes: buildDiff(proposed, previous, byId),
+        changes,
+        summary: summarise(changes),
         ...flags,
       };
     }),

@@ -1476,6 +1476,168 @@ export async function partsTemplate(ctx) {
 }
 
 /**
+ * The parts list as it stands, for a spreadsheet.
+ *
+ * Deliberately not the import template, which is the same list without the
+ * derived half. A template exists to be written on and handed back, so it
+ * carries only what the importer can accept — put a live balance in it and
+ * somebody edits the balance, uploads it, and is surprised that nothing moved.
+ * An export exists to be read, so it carries what the screens work out: what
+ * is on the shelf now, what that is worth, and what is below its level.
+ *
+ * Retired parts come too, marked as retired. They hold stock and history, and
+ * leaving them out of a stock list would understate what the store is worth.
+ */
+export async function exportItems(ctx) {
+  const ds = await loadDataset(ctx.db);
+  const asOf = ctx.url.searchParams.get('asOf') || todayIn(ds.timezone);
+  if (!isDay(asOf)) throw badRequest('That date is not valid.');
+
+  const report = stockReport(ds, asOf);
+  const products = await ctx.db.prepare('SELECT id, name FROM mx_products').all()
+    .catch(() => ({ results: [] }));
+  const productName = new Map((products.results ?? []).map((p) => [p.id, p.name]));
+
+  const STATUS = {
+    negative: 'negative — a purchase was never recorded',
+    below_par: 'below its restock level',
+    low_cover: 'running low',
+    ok: '',
+  };
+
+  const rows = [[
+    'Part', 'Product', 'Variant', 'Category', 'Unit', 'On shelf', 'Restock level',
+    'Suggested order', 'Price each', 'Value on shelf', 'Used in 90 days',
+    'Days of cover', 'Status', 'Last counted', 'Everyday part', 'Note', 'Details',
+  ]];
+
+  for (const r of report.rows) {
+    const item = ds.itemById.get(r.itemId);
+    rows.push([
+      r.name,
+      productName.get(r.productId) ?? '',
+      r.variant ?? '',
+      r.categoryName,
+      r.unit,
+      r.stock,
+      r.parLevel,
+      r.suggestedOrder || '',
+      r.unitCost,
+      r.value,
+      r.used90,
+      r.daysCover ?? '',
+      STATUS[r.status] ?? r.status,
+      r.lastCountDay ?? '',
+      item?.is_common ? 'yes' : '',
+      item?.note ?? '',
+      attributeText(item?.attributes),
+    ]);
+  }
+
+  // Retired parts are not in stockReport — it answers "what should I order",
+  // and nobody orders a discontinued fitting. A stock list is a different
+  // question: one still holding six on a shelf is six the store owns, and
+  // leaving it out understates what the store is worth.
+  const counted = new Set(report.rows.map((r) => r.itemId));
+  for (const item of ds.items) {
+    if (counted.has(item.id)) continue;
+    const stock = to(ds.ledger.stockOn(item.id, asOf), 3);
+    const unitCost = to(ds.ledger.unitCostOn(item.id, asOf), 2);
+    rows.push([
+      item.name,
+      productName.get(item.product_id) ?? '',
+      item.variant ?? '',
+      ds.categoryById.get(item.category_id)?.name ?? 'Uncategorised',
+      item.unit,
+      stock,
+      item.par_level,
+      '',
+      unitCost,
+      to(stock * unitCost, 2),
+      '', '',
+      'retired',
+      '',
+      '',
+      item.note ?? '',
+      attributeText(item.attributes),
+    ]);
+  }
+
+  return csvResponse(`maintenance-parts-${asOf}.csv`, rows);
+}
+
+/** Rounding for a spreadsheet cell. The lib keeps its own copy unexported,
+ *  and this is a display concern rather than a costing one. */
+function to(value, places) {
+  const n = Number(value) || 0;
+  const f = 10 ** places;
+  return Math.round(n * f) / f;
+}
+
+/** "Size: 15W · Colour: Warm", or nothing. One cell, because a spreadsheet
+ *  column per detail is a shape that changes every time somebody adds one. */
+function attributeText(raw) {
+  if (!raw) return '';
+  let parsed = {};
+  try { parsed = JSON.parse(raw); } catch { return ''; }
+  return Object.entries(parsed).map(([k, v]) => `${k}: ${v}`).join(' \u00b7 ');
+}
+
+/**
+ * Rooms and areas, with what each has actually consumed.
+ *
+ * The bare list — name, kind, block — is what somebody re-importing wants, and
+ * it is also almost useless on its own: a hotel already knows it has rooms 101
+ * to 140. What makes the export worth opening is the cost beside each one,
+ * which is the whole question the parts store exists to answer.
+ */
+export async function exportAreas(ctx) {
+  const ds = await loadDataset(ctx.db);
+
+  const perArea = new Map();
+  for (const issue of ds.issues) {
+    const key = issue.area_id ?? 0;
+    if (!perArea.has(key)) perArea.set(key, { issues: 0, qty: 0, cost: 0, last: null });
+    const rec = perArea.get(key);
+    rec.issues += 1;
+    rec.qty += Number(issue.qty || 0);
+    rec.cost += Number(issue.qty || 0) * ds.ledger.unitCostOn(issue.item_id, issue.day);
+    if (!rec.last || issue.day > rec.last) rec.last = issue.day;
+  }
+
+  const rows = [[
+    'Name', 'Kind', 'Block or floor', 'Order in list', 'In use',
+    'Issues recorded', 'Cost to date', 'Last issue',
+  ]];
+
+  for (const area of ds.areas) {
+    const rec = perArea.get(area.id);
+    rows.push([
+      area.name,
+      area.kind === 'room' ? 'Room' : 'Area',
+      area.block ?? '',
+      area.sort_order,
+      area.active ? 'yes' : 'retired',
+      rec?.issues ?? 0,
+      rec ? to(rec.cost, 2) : 0,
+      rec?.last ?? '',
+    ]);
+  }
+
+  // Anything issued without a place lands nowhere in the list above, and a
+  // total that does not add up is worse than a row admitting the gap.
+  const loose = perArea.get(0);
+  if (loose) {
+    rows.push([
+      'Not recorded against a place', '', '', '', '',
+      loose.issues, to(loose.cost, 2), loose.last ?? '',
+    ]);
+  }
+
+  return csvResponse(`maintenance-rooms-and-areas-${todayIn(ds.timezone)}.csv`, rows);
+}
+
+/**
  * Read a filled-in spreadsheet.
  *
  * Nothing is written unless `apply` is set, so the preview and the real import
