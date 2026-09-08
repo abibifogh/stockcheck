@@ -210,6 +210,11 @@ const ROUTES = [
 
   ['POST', '/api/mx/categories', 'mx_setup', mx.createCategory],
   ['GET', '/api/mx/items/template', 'mx_setup', mx.partsTemplate],
+  // Exports rather than templates: the same lists with the derived half, for
+  // reading rather than for handing back. Readable by whoever the figures are
+  // for, which is not only whoever maintains the list.
+  ['GET', '/api/mx/items/export', ['mx_setup', 'mx_stock'], mx.exportItems],
+  ['GET', '/api/mx/areas/export', ['mx_setup', 'mx_reports'], mx.exportAreas],
   ['POST', '/api/mx/items/import', 'mx_setup', mx.importParts],
   ['POST', '/api/mx/items/remove', 'mx_setup', mx.removeItems],
   ['POST', '/api/mx/areas/remove', 'mx_setup', mx.removeAreas],

@@ -2,7 +2,9 @@ import { api } from '../api.js';
 import {
   attributeSearchText, attributeSummary, fmtMoney, fmtQty, h, mount, parseAttributes, toast,
 } from '../util.js';
-import { card, groupBar, groupFn, modal, nextSort, sortHeader, sorted, table } from './components.js';
+import {
+  card, exportButton, groupBar, groupFn, modal, nextSort, sortHeader, sorted, table,
+} from './components.js';
 import { schedulesCard } from './mx-schedules.js';
 
 /**
@@ -318,6 +320,7 @@ function roomsCard(areas, reload) {
   return card('Rooms and areas', {
     wide: true,
     note: `${rooms.length} rooms · ${places.length} other areas`,
+    actions: exportButton(api.mxAreasExportUrl(), 'Export CSV'),
   },
     h('h3', { style: { marginBottom: '.5rem' } }, 'Add a whole floor at once'),
     h('div.field-row',
@@ -682,6 +685,7 @@ function itemsCard(data, reload) {
   const el = card('The parts list', {
     wide: true,
     note: 'Everyday parts appear on the issue screen without searching',
+    actions: exportButton(api.mxItemsExportUrl(), 'Export CSV'),
   },
     h('div.field-row',
       h('label.field', h('span', 'Name'), name),

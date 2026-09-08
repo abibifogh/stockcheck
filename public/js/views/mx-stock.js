@@ -4,7 +4,7 @@ import {
   attributeSummary, fmtDay, fmtMoney, fmtNum, fmtQty, h, mount, toast, todayISO,
 } from '../util.js';
 import {
-  card, categoryBar, inCategory, nextSort, sortHeader, sorted, statTile, table,
+  card, categoryBar, exportButton, inCategory, nextSort, sortHeader, sorted, statTile, table,
 } from './components.js';
 import { printButton } from '../print.js';
 
@@ -102,6 +102,10 @@ export async function renderMxStock() {
             title: 'Maintenance store — stock',
             subtitle: `As at ${data.asOf}${category ? ` · ${category}` : ''}`,
           }),
+          // The whole list rather than the category being viewed. A filtered
+          // export is the one people forget they filtered, and a stock figure
+          // that quietly covers a third of the store is worse than none.
+          exportButton(api.mxItemsExportUrl(), 'Export CSV'),
           h('button.btn-sm', { onclick: () => navigate('mx-purchases') }, 'Record a delivery'),
         ),
       ),
