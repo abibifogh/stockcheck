@@ -2,7 +2,7 @@
  * Which site this Worker is running as.
  *
  * One codebase serves two deployments, and each carries its own work and only
- * its own. The breakfast site has the morning sheet and the parts store; the
+ * its own. The breakfast site has the morning sheet and the bakery; the
  * housekeeping site has the bed check. Neither carries the other.
  *
  * The bed check was briefly on both. It reads its own database on its own
@@ -20,7 +20,7 @@ export function siteOf(env) {
 }
 
 /**
- * The API belonging to the breakfast unit and the parts store.
+ * The API belonging to the breakfast unit.
  *
  * Listed as prefixes, so `/api/purchases/last-costs` travels with
  * `/api/purchases`. A housekeeping deployment answers 404 to all of it — not
@@ -40,7 +40,6 @@ export const FULL_SITE_PATHS = [
   '/api/categories',
   '/api/ingredients',
   '/api/suppliers',
-  '/api/mx',
   // The bakery and its public link. Same reasoning: a hostel deployment has no
   // oven, and an endpoint that exists is a promise.
   '/api/bakery',

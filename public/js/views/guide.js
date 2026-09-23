@@ -151,10 +151,10 @@ function keepInView(toc, link) {
 /**
  * The sections a housekeeping-only site keeps.
  *
- * Everything else in this guide explains the breakfast unit or the parts store,
- * and on that site they do not exist. Filtering by permission is not enough:
- * an administrator holds every permission, and would otherwise be handed a
- * manual for two systems they cannot open.
+ * Everything else in this guide explains the breakfast unit, and on that site it
+ * does not exist. Filtering by permission is not enough: an administrator holds
+ * every permission, and would otherwise be handed a manual for a system they
+ * cannot open.
  */
 const HOUSEKEEPING_SECTIONS = new Set([
   'hk-check', 'hk-roster', 'hk-reports', 'hk-setup', 'account', 'people', 'problems',
@@ -175,7 +175,6 @@ function onThisSite(id) {
 function greeting() {
   if (can('users')) return 'Everything, including setting the system up and looking after it';
   if (can('reports')) return 'Recording the morning, and reading what it tells you';
-  if (can('mx_issue') && !can('entry')) return 'Issuing parts, and what the store holds';
   if (can('bakery') && !can('entry')) return 'Reporting what came out of the oven';
   // Somebody who only walks the dorms should not be greeted with a page about
   // the kitchen. Only on the site that has dorms: a stale hk_check left on a
@@ -761,7 +760,7 @@ const SECTIONS = [
       warn('Whoever counts is never whoever decides.',
         'Recounting a store is exactly the moment a shortfall could be quietly written off, so the '
         + 'two jobs are kept apart. Anybody with the stock screen can record a count and see the '
-        + 'queue; only an administrator can accept one. The parts store works the same way.'),
+        + 'queue; only an administrator can accept one.'),
       note('An accepted count wins from its date onwards.',
         'Usage and deliveries after that date carry on from the counted figure. A delivery keyed in '
         + 'late, dated before the count, does not unsettle it — you counted what was actually there, '
@@ -851,358 +850,6 @@ const SECTIONS = [
     ),
   },
 
-  // ---------------------------------------------------------------- maintenance --
-
-  {
-    id: 'mx-issue',
-    title: 'Issuing parts to a room',
-    permission: 'mx_issue',
-    lead: 'Three taps. Do it as you fit the part, not at the end of the day.',
-    render: () => h('div',
-      steps(
-        h('span', h('strong', 'Tap where you are working.'), ' Rooms and areas are listed; type in the '
-          + 'box to jump straight to one. If you are not working in a particular room, skip it.'),
-        h('span', h('strong', 'Tap each part you used.'), ' Tapping the same part again makes it two, '
-          + 'then three. For anything not on the everyday list, type in the search box — the size, '
-          + 'colour or fitting works as well as the name, so “9W” finds the right bulb.'),
-        h('span', h('strong', 'Tap Record issue.'), ' That is it. The room stays selected so the next '
-          + 'thing you fit in the same room is two taps.'),
-      ),
-      note('Quantities start at one.', 'Use the − and + buttons in the bar at the bottom, or type '
-        + 'straight into the box, only when it is not one.'),
-      note('The job number and note are optional.', 'They help later when somebody asks why a room '
-        + 'cost what it did, but a record with neither still tells the store what left the shelf.'),
-      warn('Record it when you fit it.', 'A part fitted on Tuesday and recorded on Friday makes the '
-        + 'stock figures wrong for three days, and by then nobody remembers which room it went to.'),
-    ),
-  },
-
-  {
-    id: 'mx-reports',
-    title: 'What the maintenance reports tell you',
-    permission: 'mx_reports',
-    lead: 'The kitchen reports ask what a guest cost. These ask what a place cost.',
-    render: () => h('div',
-      h('p', 'You cannot stop bulbs failing. You can find out that one room gets through four times '
-        + 'its share of them, and go and look at why.'),
-      readings(
-        ['Store \u2014 one screen, with a period at the top',
-          'What is true right now sits above the dates: what the shelf is worth, how much needs '
-          + 'ordering, how much has not moved in three months. Everything below the period picker '
-          + 'moves with it \u2014 what was issued, to which rooms, and how that compares with the same '
-          + 'length of time before.',
-          'Read the alerts. Everything else on that screen is context for them.'],
-        ['Heavy places',
-          'A room or area consuming far more than the others, judged against the typical place rather '
-          + 'than against a budget. One expensive refurbishment does not make every other room look fine.',
-          'This is the finding. Open the room to see what keeps going into it.'],
-        ['“Went to the same place N times”',
-          'The same part issued to the same room on three or more separate days in the period.',
-          'Repeatedly replacing a part is patching, not fixing. It usually means a cause nobody has '
-          + 'dealt with — a socket that keeps blowing, a pipe that keeps leaking.'],
-        ['A room\u2019s own page',
-          'Everything ever issued to that one place: what, how often, and what it has cost month by month.',
-          'A part with several occasions is the one to look at first.'],
-        ['Store movement',
-          'What you bought in the period against what you actually issued.',
-          'Buying much more than you use is cash going onto a shelf. Month after month, it is worth '
-          + 'asking whether the order quantities are right.'],
-        ['Counts waiting for approval',
-          'Physical counts somebody has recorded, with what the book says, what was counted, and what '
-          + 'accepting each one would be worth. Only an administrator sees the buttons.',
-          'Read the money column before accepting. Accepting corrects the book to match the shelf from '
-          + 'that date on; rejecting leaves everything as it was. Either way the decision is kept with '
-          + 'the count, alongside who did the counting.'],
-        ['Order list',
-          'Everything below its restock level, with how much to order and roughly what it will cost.',
-          'Negative stock never means the shelf is negative — it means a delivery was never recorded. '
-          + 'Add it under Bought and the figure corrects itself.'],
-        ['Not touched in three months',
-          'Parts sitting on the shelf that nothing has been done with.',
-          'Not necessarily wrong; some spares exist so you never need them urgently. But it tells you '
-          + 'how much cash is tied up in them.'],
-        ['Compare',
-          'Any two periods side by side — the rains against the dry months, before and after a rewiring.',
-          'If the two periods are different lengths the screen says so. Read the per-day figures then, '
-          + 'not the totals.'],
-      ),
-      note('Narrowing the shelf to one kind of part.', 'The chips at the top of Parts on the shelf pick '
-        + 'a category — Electrical, Plumbing — and the whole page narrows to it, the figures included. '
-        + '“Group by category” instead keeps everything and bands the tables, with each band’s value on '
-        + 'its heading. Counts you have typed are kept while you move between categories, so one Save '
-        + 'records the lot.'),
-    ),
-  },
-
-  {
-    id: 'mx-counting',
-    title: 'Counting the store',
-    permission: 'mx_stock',
-    lead: 'A count is a claim about the shelf. Accepting it is what makes it true.',
-    render: () => h('div',
-      h('p', 'The book works out what should be on the shelf: what you bought, less what was issued. '
-        + 'Reality drifts from that — things get taken without being recorded, a delivery is keyed in '
-        + 'twice, something breaks in the store. Counting is how you put it right.'),
-      note('Count one shelf at a time.',
-        'The parts list has a row of categories above it. Tap Plumbing and you get the plumbing, '
-        + 'which is usually one shelf — or press “Group by category” to keep everything on screen '
-        + 'in sections, each with how many parts it holds and what they are worth. Figures you have '
-        + 'already typed are kept when you switch between categories, so you can work round the '
-        + 'store and submit once at the end.'),
-      steps(
-        h('span', h('strong', 'Count the shelf'), ' and type the figures into the “Counted” column on '
-          + 'the Parts screen. You do not have to do the whole store; count what you counted.'),
-        h('span', h('strong', 'Save the count.'), ' Nothing moves yet. It goes into a queue with what '
-          + 'the book says beside it, and what the difference is worth.'),
-        h('span', h('strong', 'An administrator accepts or rejects it.'), ' Accepting corrects the book '
-          + 'to the counted figure. Rejecting leaves everything alone.'),
-      ),
-      warn('Whoever counts is never whoever decides.',
-        'Recounting a store is exactly the moment a shortfall could be quietly written off, so the two '
-        + 'jobs are deliberately kept apart. Anybody with the stock screen can record a count and see '
-        + 'the queue; only an administrator can accept one.'),
-      note('An accepted count wins from its date onwards.',
-        'Issues and deliveries after that date carry on from the counted figure. A delivery keyed in '
-        + 'late, dated before the count, does not unsettle it — you counted what was actually there, '
-        + 'and that stands.'),
-      note('Re-counting starts the decision again.',
-        'Changing a count for the same item on the same day puts it back in the queue, even if it had '
-        + 'already been accepted. An agreed figure cannot be edited underneath somebody.'),
-      can('users')
-        ? note('What you are agreeing to.', 'The confirmation says what the change is worth across '
-          + 'everything selected. A large shortfall is worth asking about before you accept it — '
-          + 'accepting is how it stops being a question and becomes the new truth.')
-        : null,
-    ),
-  },
-
-  {
-    id: 'mx-changes',
-    title: 'Correcting something already recorded',
-    permission: 'mx_issue',
-    lead: 'Entries do not move on their own. You ask, and an administrator decides.',
-    render: () => h('div',
-      h('p', 'Recording an issue or a delivery is immediate — a technician handing out parts in a '
-        + 'corridor is not asking anybody\u2019s permission, and never was. Changing one afterwards is '
-        + 'different. Removing an issue puts those parts back on the shelf; removing a delivery '
-        + 'takes them off it. Either can undo an agreed count as quietly as a bad recount could, so '
-        + 'either goes to an administrator first.'),
-      steps(
-        h('span', h('strong', 'Press Correct or Remove'), ' on the entry \u2014 on the deliveries list, '
-          + 'or on \u201cJust recorded\u201d after issuing.'),
-        h('span', h('strong', 'Say why.'), ' One line is enough. It is what the administrator reads '
-          + 'when deciding, and it is kept with the decision afterwards.'),
-        h('span', h('strong', 'Nothing changes yet.'), ' The entry stays exactly as it is, and so do '
-          + 'stock and costs, until somebody accepts the request.'),
-      ),
-      note('The part itself cannot be changed.',
-        'Only the date, the quantity, the cost, the room and the note. An entry against the wrong '
-        + 'part is not a correction but a different entry: remove that one and record the right '
-        + 'one, so the two decisions are separate.'),
-      note('One request at a time per entry.',
-        'If somebody has already asked to change the same delivery, you are told so rather than '
-        + 'queueing a second one behind it. An administrator decides on that one first.'),
-      can('users')
-        ? note('Accepting is what finally moves it.',
-          'The requests sit under Parts \u2192 Stock, beside the counts waiting there, and each shows '
-          + 'the entry as it stands and what it would become. If the entry has since gone \u2014 '
-          + 'another request removed it \u2014 accepting says so rather than pretending it worked.')
-        : note('You will not see the decision on this screen.',
-          'It goes to whoever manages people. The entry simply changes, or does not, and the bell '
-          + 'tells them there is something waiting.'),
-      can('users')
-        ? note('Rejecting is not final.',
-          'Most rejections mean \u201cI do not believe this yet\u201d, and the answer turns up afterwards \u2014 '
-          + 'the technician explains, or the delivery note is found. Turned-down requests stay on '
-          + 'the same screen under \u201cTurned down earlier\u201d, and accepting one there applies it just '
-          + 'as it would have first time. Nobody has to re-file it, so who asked and why is kept.')
-        : note('A rejection can be revisited.',
-          'If you think it was turned down in error, say so \u2014 an administrator can accept the same '
-          + 'request later without you having to send it again.'),
-    ),
-  },
-
-  {
-    id: 'mx-tools',
-    title: 'Tools that go out and come back',
-    permission: 'mx_issue',
-    lead: 'Where a tool is, who has it, and what to do when it does not come back.',
-    render: () => h('div',
-      h('p', 'A part is used up; a tool is borrowed. So tools are not on the parts list and have '
-        + 'no quantity \u2014 one drill is one drill, and the question is never how many are left but '
-        + 'where this one is.'),
-      steps(
-        h('span', h('strong', 'Press Issue'), ' against the tool, say who is taking it and which '
-          + 'room or area they are working in. Leave the place blank if it is going off site.'),
-        h('span', h('strong', 'It is due back within a day.'), ' The clock starts when you issue '
-          + 'it, and the screen shows when each one is due.'),
-        h('span', h('strong', 'Press Take back'), ' when it returns. Note anything wrong with it '
-          + 'while somebody is standing there \u2014 a loose chuck written down is a repair; a loose '
-          + 'chuck remembered is an argument next month.'),
-      ),
-      note('A drill and everything in its case.',
-        'Some tools come with things \u2014 a charger, a case, a set of bits. Say so under '
-        + 'Maintenance setup with Belongs to, and issuing the drill offers them as tick boxes, so '
-        + 'the whole lot goes out on one signature. Each one is still its own journey: a charger '
-        + 'that does not come back with the drill can be found, because the system never stopped '
-        + 'tracking it separately. Taking the drill back offers to take them back too, and you can '
-        + 'say no \u2014 a charger left on a job overnight is an ordinary Tuesday.'),
-      note('A tool cannot be in two places.',
-        'Issuing one that is already out is refused, and it names who has it. That is not a rule '
-        + 'the screen remembers to apply \u2014 the database itself will not hold two open journeys '
-        + 'for one tool, so it cannot be got round.'),
-      note('Not back after a day, and somebody is told.',
-        'Every hour the system looks for tools that are out past their time and tells whoever '
-        + 'runs the store, once. Not once an hour until it reappears \u2014 being told the same thing '
-        + 'twelve times is how people learn to ignore the bell.'),
-      note('Every journey is kept.',
-        'Press History against a tool to see everywhere it has been: who took it, where they were '
-        + 'working, when it came back and who received it. A tool chased every single time it goes '
-        + 'out is telling you something about a habit rather than about one afternoon.'),
-      warn('Retiring keeps the history.',
-        'A tool that is broken or lost is retired rather than deleted, so who had it and when is '
-        + 'still answerable. One that is still out cannot be retired at all \u2014 it is in somebody\u2019s '
-        + 'van, and saying otherwise would lose the only record of that.'),
-    ),
-  },
-
-  {
-    id: 'mx-schedule',
-    title: 'Counting on a schedule',
-    permission: 'mx_stock',
-    lead: 'A count that happens when somebody remembers is a count that stops happening.',
-    render: () => h('div',
-      h('p', 'A schedule is a standing arrangement — count the store every month, and ask these '
-        + 'people. When the day comes round the system opens the count and tells them, by email and '
-        + 'in the bell at the top of the screen. Nobody has to keep a date in their head.'),
-      points(
-        h('span', h('strong', 'The parts screen tells you when one is yours.'), ' A band appears at '
-          + 'the top saying which count is due and whether it is late.'),
-        h('span', h('strong', 'Recording the count closes it.'), ' There is no separate box to tick — '
-          + 'counting was the whole point, so doing it is what finishes it.'),
-        h('span', h('strong', 'The next date is worked out from the date that was due,'), ' not from '
-          + 'the day you got round to it. A count done three days late does not push every future '
-          + 'count three days later.'),
-      ),
-      note('It still goes to an administrator afterwards.',
-        'A scheduled count is an ordinary count: the figures wait for approval exactly as they would '
-        + 'if somebody had counted off their own bat. The schedule decides when, not whether.'),
-      can('mx_setup')
-        ? h('div',
-          h('h3', { style: { marginTop: '1.1rem' } }, 'Setting one up'),
-          steps(
-            h('span', 'Open ', h('strong', 'Maintenance → Setup'), ' and find ',
-              h('strong', '“Scheduled stock counts”'), '.'),
-            h('span', h('strong', 'Name it and choose how often'), ' — weekly through to yearly. '
-              + 'The first date decides the rhythm from then on.'),
-            h('span', h('strong', 'Tick who is asked.'), ' Those people get it personally. Leave '
-              + 'everybody unticked and it goes to whoever runs the store.'),
-            h('span', h('strong', '“Ask now”'), ' asks for a count today without waiting for the '
-              + 'date, for when something has gone missing and you want to know where you stand.'),
-          ),
-          note('“Counts asked for” is the record.',
-            'Every occurrence, when it was due, who did it and how many items they counted. A count '
-            + 'that is not going to happen can be cancelled — it will be asked for again on the next '
-            + 'due date, and the cancellation stays visible.'),
-          warn('The due date fires once a day, early.',
-            'If nothing has been announced by the time you look, opening the parts screen or the '
-            + 'setup screen also notices an overdue count and announces it there and then. You '
-            + 'cannot miss one by being early.'),
-        )
-        : null,
-    ),
-  },
-
-  {
-    id: 'mx-setup',
-    title: 'Setting up the parts store',
-    permission: 'mx_setup',
-    lead: 'Two lists: the parts you keep, and the places you keep them for.',
-    render: () => h('div',
-      points(
-        h('span', h('strong', 'Add rooms a floor at a time.'), ' Give the first and last number and '
-          + 'they are all created at once. Running it twice is safe — rooms that already exist are '
-          + 'left alone.'),
-        h('span', h('strong', 'Mark the everyday parts.'), ' Those appear on the issue screen without '
-          + 'searching. Keep the list to the dozen or so things that genuinely go out every week, or '
-          + 'the screen stops being fast.'),
-        h('span', h('strong', 'Restock level'), ' is the point at which you want to be told to order '
-          + 'more. Leave it at zero for anything you buy only when a job needs it.'),
-        h('span', h('strong', 'On the shelf now'), ' is what is there the day you start. Get this '
-          + 'roughly right and the stock figures are useful from week one.'),
-        h('span', h('strong', 'Details'), ' are the variables that tell two similar parts apart — size, '
-          + 'colour, fitting, material, whatever you actually use. Add as many as a part needs. They '
-          + 'show under its name on the issue screen and in the stock list, and searching matches '
-          + 'them, so somebody can type “9W” or “chrome” instead of hunting through the list.'),
-      ),
-      note('Finding one part in a long list.',
-        'The parts list has a search box that matches the name, the category and the details \u2014 '
-        + 'so \u201c9W\u201d or \u201cchrome\u201d finds it without scrolling. Narrow to one category, or to '
-        + 'everyday parts only, and click any column heading to sort by it. Headings sort A\u2013Z the '
-        + 'first time for text and largest-first for numbers, because \u201csort by price\u201d nearly '
-        + 'always means \u201cwhat are the expensive ones\u201d. Clicking the same heading again '
-        + 'reverses it. The store list on Parts \u2192 Stock sorts the same way, and keeps any count '
-        + 'already typed while it reorders.'),
-
-      h('h3', { style: { marginTop: '1.1rem' } }, 'Parts you keep in more than one kind'),
-      h('p', 'A bulb you stock in 40W warm, 40W white and 60W is three parts, not one. They sit in '
-        + 'different boxes and run out on different days, so a single figure covering all three '
-        + 'tells nobody when to order any of them. Products are how you say the three belong '
-        + 'together without pretending they are one thing.'),
-      steps(
-        h('span', h('strong', 'Name the product'), ' \u2014 what everybody calls it. \u201cLED bulb\u201d.'),
-        h('span', h('strong', 'List the variants,'), ' each with its own restock level. The 60W may '
-          + 'go slower than the others, and it is not held to their level.'),
-        h('span', h('strong', 'Create it,'), ' and each variant becomes a part in its own right.'),
-      ),
-      note('Counting is where this pays.',
-        'Every variant gets its own line on a count, its own balance and its own restock alert \u2014 '
-        + 'because every one of them is an ordinary part. Nothing about counting changed to make '
-        + 'that work; the variants simply are the parts.'),
-      note('The product is only a heading.',
-        'It never holds stock of its own, so there is no figure on it to go wrong. Removing a '
-        + 'product later leaves every part exactly where it is, with everything ever recorded '
-        + 'against it \u2014 they go back to being ordinary parts under their own names.'),
-      note('Details are still the right answer for one part.',
-        'Use variants when you genuinely stock several and count them apart. If you keep only '
-        + 'one and just want its size written down, that is a detail on the part, not a product.'),
-
-      h('h3', { style: { marginTop: '1.1rem' } }, 'Loading the whole list from a spreadsheet'),
-      h('p', 'Adding thirty parts one form at a time is how a store ends up with eight of them. '
-        + 'Download the template, fill it in, upload it, and check the preview before anything is '
-        + 'written.'),
-      steps(
-        h('span', h('strong', 'Download the template.'), ' It comes down with the parts you already '
-          + 'have, so the same file works whether you are setting up from nothing, correcting prices '
-          + 'across the board, or re-levelling after a stocktake.'),
-        h('span', h('strong', 'Product and Variant group a part with its siblings.'), ' Fill both '
-          + 'and the part is one kind of that product — counted separately, restocked separately. '
-          + 'Leave the Name column blank on those rows and it is made from the two. A part that '
-          + 'already exists joins its product keeping everything ever recorded against it, and a '
-          + 'row that names no product leaves any grouping alone.'),
-        h('span', h('strong', 'Sizes and colours are just columns.'), ' Any column that is not one of '
-          + 'the standard ones becomes a detail: put “15W” under a Size column and “Chrome” under a '
-          + 'Colour column and that is exactly what you get. A blank cell means that part has no such '
-          + 'detail. Add your own columns for anything you need.'),
-        h('span', h('strong', 'Upload it and read the preview.'), ' It tells you how many will be '
-          + 'added, how many updated, which detail columns it found, and any new categories it will '
-          + 'create. Nothing is written until you press Import.'),
-        h('span', h('strong', 'Choose what happens to parts already on the list.'), ' Skipped by '
-          + 'default, so an accidental re-upload changes nothing. Switch to “Update” when you mean '
-          + 'to correct them.'),
-      ),
-      warn('Mistakes stop the whole file.', 'A price that is not a number or a name that appears '
-        + 'twice is listed with its row number, and nothing imports until it is fixed. That is '
-        + 'deliberate — a half-imported list is harder to sort out than one that never went in.'),
-      note('Removing several at once.', 'Tick the boxes down the left of either list and a bar '
-        + 'appears with “Remove selected”. The box in the heading takes the lot. Useful after a '
-        + 'bulk upload with a mistake in it, or when a floor closes.'),
-      note('Removing something keeps its history.', 'A part or a room that has been used is retired '
-        + 'rather than deleted, so past months still add up to what they actually cost. Remove a '
-        + 'mixed batch and it tells you how many of each: “4 removed, 1 retired”.'),
-    ),
-  },
-
   {
     id: 'bell',
     title: 'The bell, and what rings it',
@@ -1215,12 +862,12 @@ const SECTIONS = [
       points(
         h('span', h('strong', 'A breakfast sheet was submitted —'), ' who recorded it, how many '
           + 'guests, and how many items. Goes to everybody who can read reports.'),
-        h('span', h('strong', 'A stock count is waiting for approval —'), ' from the kitchen or the '
-          + 'parts store. Goes to administrators, because they are the only people who '
-          + 'can accept one — not to the daily email list, unless an administrator has '
-          + 'deliberately widened it under Users & data → Email alerts.'),
-        h('span', h('strong', 'A scheduled stock count has come round —'), ' goes to whoever was '
-          + 'asked to do it, and to whoever runs the parts store.'),
+        h('span', h('strong', 'A stock count is waiting for approval —'), ' goes to '
+          + 'administrators, because they are the only people who can accept one — not to the '
+          + 'daily email list, unless an administrator has deliberately widened it under '
+          + 'Users & data → Email alerts.'),
+        h('span', h('strong', 'A submitted day was amended —'), ' with what changed and what it '
+          + 'does to the cost, to whoever can approve it.'),
         h('span', h('strong', 'The bakery reported a bake —'), ' goes to whoever can '
           + 'see stock, since that is what it changes.'),
       ),

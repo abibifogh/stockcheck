@@ -1,24 +1,23 @@
-# Nice Operation
+# Breakfast Control
 
-Three rounds a hotel runs every day, each recorded in a few taps by somebody
-with no time, and the analysis derived from them.
+Two rounds a hotel runs every day, each recorded in a few taps by somebody with
+no time, and the analysis derived from them.
 
 - **The breakfast unit** — what was used each morning, and what it cost per
   guest.
-- **The maintenance parts store** — what was issued, to which room, and what
-  the shelf holds.
 - **The bakery** — what came out of the oven, straight onto the breakfast
   shelf.
 
 Plus a **dorm bed check** for hostel rooms, which runs as its own site.
 
-It started as the breakfast sheet and was named for it. It is named for the
-property now, because a technician issuing a tap washer was never cooking.
+It carried a maintenance parts store for a while — parts issued to rooms, tools
+signed in and out — and was renamed for the property to cover both. That store
+has been removed and its tables dropped, so the name it started with fits again.
 
 Everything after the recording is derived: cost per guest, week-on-week
 comparisons, monthly reporting, stock levels, reorder lists. Each round has its
-own screens and its own permissions, so a technician's PIN opens the parts store
-and nothing else.
+own screens and its own permissions, so a baker's PIN opens the oven form and
+nothing else.
 
 Runs entirely on Cloudflare: a Worker serves both the app and the API, with a
 D1 (SQLite) database behind it. Deploys from GitHub on every push to `main`.
@@ -158,13 +157,8 @@ unresolved rather than quietly clearing itself.
 | **Bulk entry** | Download a spreadsheet template, fill in a backlog, upload it. Always previews before it writes. |
 | **Daily email** | A summary of each submitted day, with the analysis, to whichever addresses you choose. |
 | **Erase data** | Clear a trial run before going live, with a typed confirmation. Keeps people, settings and the ingredient list. |
-| **Approving counts** | A physical count in either store is a claim about the shelf; accepting it is what corrects the book. Whoever counts is never whoever decides. |
-| **Approving corrections** | In the parts store, changing or removing an issue or a delivery is a request rather than an act — it moves nothing until an administrator accepts it. Recording a *new* one stays immediate. Closes the way round a count: an agreed figure could otherwise be undone by deleting the delivery behind it. |
-| **Exports** | The parts list and the room list download as CSV. Not the import template, which carries only what the importer accepts — these carry the derived half: what is on the shelf now, what it is worth, what each room has cost. Retired parts are included and marked, since one still holding stock is stock the store owns. |
-| **Maintenance store** | One screen rather than two. What is true right now — shelf value, what needs ordering, what has not moved in 90 days — sits above a period picker; everything below it moves with the dates, down to the full room-by-room and part-by-part tables. It was an overview and a report that showed the same findings in two shapes. |
-| **Tools** | Things that come back, tracked separately from parts. Issue a tool to somebody at a room or area, take it back in, and read every journey it has made. A tool cannot be issued while it is already out — the database refuses it — and one still out cannot be retired. Anything not returned within 24 hours is chased once, hourly sweep, to whoever runs the store. A tool can have accessories — a charger, a case — which are tools with a parent, so they go out on one signature and keep their own history each. |
-| **Products and variants** | A part kept in several sizes, colours or ratings is several parts, grouped under one name. Each variant has its own balance, its own restock level and its own line on a count — the product above them is a heading and never holds stock. Attaching an existing part to one keeps its id and its whole history. |
-| **Rejections are reversible** | A rejection usually means "not yet" rather than "never", so a turned-down request stays on the same screen and can be accepted later — keeping who asked, when and why, instead of making somebody re-file it. Blocked only where a newer request is open on the same entry. |
+| **Approving counts** | A physical count is a claim about the shelf; accepting it is what corrects the book. Whoever counts is never whoever decides. |
+| **Rejections are reversible** | A rejection usually means "not yet" rather than "never", so a turned-down amendment stays on the same screen and can be accepted later — keeping who asked, when and why, instead of making somebody re-file it. Blocked only where a newer request is open on the same day. |
 | **Email alerts** | A summary of each submitted day sheet, and of each submitted bed check, to whichever addresses you choose — two separate lists, one sender. |
 | **Erase a period** | Delete everything recorded between two dates, with a typed confirmation. The panel counts what falls inside the dates first — so many checks, so many beds answered for — and that count comes from the same columns the delete uses, so it cannot promise one thing and do another. Only activity goes: people, settings, the ingredient list and the dorm layout are never touched by a period. |
 
@@ -342,12 +336,10 @@ If the custom domain is not ready yet, comment out the `[[routes]]` block in
 `wrangler.toml` for this first deploy — Cloudflare rejects a route for a
 hostname it cannot resolve yet. You will get a `*.workers.dev` URL to test on.
 
-Deploying also registers the Cron Trigger in `wrangler.toml` (`0 6 * * *`).
-That daily tick is what notices a scheduled maintenance stock count has come
-round and tells the people asked to do it. Cron Triggers are included on the
-free plan. If it is ever removed or fails, nothing is lost: opening the parts
-screen or the maintenance setup screen also notices an overdue count and
-announces it then.
+There is no Cron Trigger. The hourly tick existed for the maintenance store —
+opening scheduled counts and chasing tools that had not come back — and went
+with it. Nothing in the breakfast unit happens on a clock rather than when
+somebody presses a button.
 
 ### 6. Point the domain at it
 
@@ -443,7 +435,7 @@ deploy and test on the `*.workers.dev` address it prints.
 
 Both sites serve the same screens and the same permissions decide what anybody
 can open; what the housekeeping address changes is what it calls itself. It is
-titled **Bed Check**, carries a 🛏 rather than a 📦, installs to a phone's home
+titled **Bed Check**, carries a 🛏 rather than a 🍳, installs to a phone's home
 screen under its own name and icon, and opens on the bed check rather than the
 breakfast overview. A housekeeper never has to know the other site exists.
 
@@ -455,14 +447,14 @@ housekeeper there cannot affect the breakfast site, and the two lists of staff
 never have to agree.
 
 `APP_SITE = "housekeeping"` is what makes that deployment housekeeping-only.
-The breakfast and maintenance screens are absent from its menu, absent from its
+The breakfast screens are absent from its menu, absent from its
 guide, absent from the roles you can hand out on it — and their API answers 404
 there rather than quietly operating on an empty database. `test/site.test.js`
 holds that line.
 
 To set up its database, paste `seed/housekeeping-database.sql` into the new
 database's console. It is every migration that site needs, comments stripped,
-without the parts store it does not serve — and safe to run twice.
+without the breakfast unit it does not serve — and safe to run twice.
 
 ### 7. Automatic deploys from GitHub
 
@@ -585,7 +577,6 @@ src/
   lib/
     ledger.js         Weighted-average costing and book stock, shared by both stores
     analytics.js      Breakfast: daily / weekly / monthly / stock analysis
-    maintenance.js    Parts store: cost by room and area
     auth.js           PIN login, signed session cookies
     http.js           JSON responses, input validation
     housekeeping.js   The dorm bed check: findings, coverage, room-by-day

@@ -443,7 +443,7 @@ function peopleFrom(checks) {
 
 /**
  * Everything for a range of days, with the range immediately before it for
- * comparison — the same shape the maintenance report uses, so a manager who
+ * comparison — the same shape the breakfast report uses, so a manager who
  * reads one already knows how to read the other.
  */
 export function periodReport(ds, from, to) {

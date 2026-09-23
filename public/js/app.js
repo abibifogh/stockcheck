@@ -14,14 +14,6 @@ import { renderApprovals } from './views/approvals.js';
 import { openAccountDialog } from './views/account.js';
 import { renderGuide } from './views/guide.js';
 import { renderCompare } from './views/compare.js';
-import { renderMxIssue } from './views/mx-issue.js';
-import { renderMxTools } from './views/mx-tools.js';
-import { renderMxStore } from './views/mx-reports.js';
-import { renderMxStock } from './views/mx-stock.js';
-import { renderMxPurchases } from './views/mx-purchases.js';
-import { renderMxSetup } from './views/mx-setup.js';
-import { renderMxArea } from './views/mx-area.js';
-import { renderMxCompare } from './views/mx-compare.js';
 import { renderBakeryLink, renderProduction } from './views/bakery.js';
 import { renderHkCheck } from './views/hk-check.js';
 import { renderHkOverview, renderHkReport } from './views/hk-reports.js';
@@ -54,24 +46,6 @@ const ROUTES = [
   { path: 'purchases', label: 'Purchases', permission: 'purchases', render: renderPurchases, group: 'Breakfast', site: 'full' },
   { path: 'setup', label: 'Setup', permission: 'setup', render: renderSetup, group: 'Breakfast', site: 'full' },
   { path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin },
-  // ------------------------------------------------------------ maintenance --
-  // A second store with its own screens. Grouped in the menu so somebody who
-  // works in both does not have to hunt for which "Stock" is which.
-  { path: 'mx-issue', label: 'Issue parts', permission: 'mx_issue', render: renderMxIssue, group: 'Maintenance', site: 'full' },
-  { path: 'mx-store', label: 'Store', permission: 'mx_reports', render: renderMxStore, group: 'Maintenance', site: 'full' },
-  // The two screens this replaced. Kept as routes with no menu entry of their
-  // own, because a bookmark, a link in an email alert and a notice in the bell
-  // all still say mx-overview or mx-report, and a dead link is a worse outcome
-  // than a spare line in a table.
-  { path: 'mx-overview', permission: 'mx_reports', render: renderMxStore, site: 'full', hidden: true },
-  { path: 'mx-report', permission: 'mx_reports', render: renderMxStore, site: 'full', hidden: true },
-  { path: 'mx-compare', label: 'Compare', permission: 'mx_reports', render: renderMxCompare, group: 'Maintenance', site: 'full' },
-  { path: 'mx-stock', label: 'Parts', permission: 'mx_stock', render: renderMxStock, group: 'Maintenance', site: 'full' },
-  { path: 'mx-tools', label: 'Tools', permission: 'mx_issue', render: renderMxTools, group: 'Maintenance', site: 'full' },
-  { path: 'mx-purchases', label: 'Bought', permission: 'mx_purchases', render: renderMxPurchases, group: 'Maintenance', site: 'full' },
-  { path: 'mx-setup', label: 'Setup', permission: 'mx_setup', render: renderMxSetup, group: 'Maintenance', site: 'full' },
-  // Reached by clicking a room in the report rather than from the menu.
-  { path: 'mx-area', label: 'Room', permission: 'mx_reports', render: renderMxArea, hidden: true, site: 'full' },
 
   // ----------------------------------------------------------- housekeeping --
   // The bed check comes first in its section because it is the only screen a
@@ -99,9 +73,9 @@ export function can(permission) {
 /**
  * Reachable at all on this site.
  *
- * A route marked `site: 'full'` belongs to the breakfast unit or the parts
- * store, and the housekeeping deployment does not have them — not hidden behind
- * a permission, absent. The Worker refuses their API on that site too, so this
+ * A route marked `site: 'full'` belongs to the breakfast unit, and the
+ * housekeeping deployment does not have them — not hidden behind a permission,
+ * absent. The Worker refuses their API on that site too, so this
  * is the menu agreeing with the server rather than a second opinion.
  */
 function onThisSite(route) {
@@ -135,8 +109,8 @@ function defaultRoute() {
   // arrive at the breakfast overview.
   const preferred = BRAND.app === 'housekeeping'
     ? ['hk-overview', 'hk-check', 'hk-roster', 'hk-setup', 'overview', 'entry',
-      'mx-store', 'mx-issue', 'stock', 'purchases', 'setup', 'admin', 'guide']
-    : ['overview', 'entry', 'mx-store', 'mx-issue', 'production',
+      'stock', 'purchases', 'setup', 'admin', 'guide']
+    : ['overview', 'entry', 'production',
       'stock', 'purchases', 'setup', 'admin', 'guide'];
 
   // The fallback matters as much as the list. Naming a specific route here
@@ -184,7 +158,7 @@ export async function ensureCatalog(force = false) {
  * A single row of tabs stopped working the moment there were two stores: an
  * administrator had nineteen of them, wrapping onto three lines and burying
  * "Users & data" at the end. Down the side there is room for the sections to be
- * named, so "Stock" under Breakfast and "Parts" under Maintenance can never be
+ * named, so two sections that both have a "Setup" can never be
  * mistaken for each other.
  *
  * Sections collapse, and the one you are in is always open — closing the
@@ -421,8 +395,6 @@ const ROLE_LABELS = {
   cook: 'Kitchen',
   manager: 'Manager',
   baker: 'Bakery',
-  technician: 'Technician',
-  maintenance_manager: 'Maintenance',
   receptionist: 'Reception',
   housekeeper: 'Housekeeping',
   housekeeping_manager: 'Housekeeping manager',
