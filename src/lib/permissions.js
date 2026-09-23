@@ -13,15 +13,6 @@ export const PERMISSIONS = [
   { key: 'setup', label: 'Setup', detail: 'Ingredients, categories and property settings' },
   { key: 'users', label: 'Users & data', detail: 'Manage people, notifications, locks and erase data' },
 
-  // Maintenance stores. Kept separate from the kitchen permissions so a
-  // technician can be given the issue screen and nothing else, and a cook is
-  // never handed the parts store by accident.
-  { key: 'mx_issue', label: 'Issue parts', detail: 'Record parts released to a room or area' },
-  { key: 'mx_reports', label: 'Maintenance reports', detail: 'What each room and area is costing' },
-  { key: 'mx_stock', label: 'Maintenance stock', detail: 'Parts on hand, restock list, physical counts' },
-  { key: 'mx_purchases', label: 'Maintenance purchases', detail: 'Record parts bought, with cost' },
-  { key: 'mx_setup', label: 'Maintenance setup', detail: 'The parts list, and the rooms and areas' },
-
   // Housekeeping. Separate again, and for the same reason: the housekeeper who
   // walks the dorms every morning should be handed the bed check and nothing
   // else — not the roster she is checking against, and certainly not the costs.
@@ -56,18 +47,6 @@ export const ROLES = [
     label: 'Baker',
     detail: 'Reports what came out of the oven. Sees no costs and no other screen.',
     defaults: ['bakery'],
-  },
-  {
-    key: 'technician',
-    label: 'Technician',
-    detail: 'Issues parts to rooms. Sees no costs at all.',
-    defaults: ['mx_issue'],
-  },
-  {
-    key: 'maintenance_manager',
-    label: 'Maintenance manager',
-    detail: 'Runs the parts store: issues, stock, purchases and the room-by-room analysis.',
-    defaults: ['mx_issue', 'mx_reports', 'mx_stock', 'mx_purchases', 'mx_setup'],
   },
   {
     key: 'receptionist',

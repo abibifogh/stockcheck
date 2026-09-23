@@ -27,13 +27,12 @@ test('the housekeeping site serves the bed check and the things every site needs
   }
 });
 
-test('it does not serve the breakfast unit or the parts store', () => {
+test('it does not serve the breakfast unit', () => {
   for (const path of [
     '/api/days', '/api/days/2026-08-12', '/api/insights/overview', '/api/insights/stock',
     '/api/export', '/api/purchases', '/api/purchases/last-costs', '/api/deliveries',
     '/api/ingredients/4', '/api/categories', '/api/suppliers', '/api/stock-counts',
     '/api/revisions', '/api/import/days',
-    '/api/mx/bootstrap', '/api/mx/issues', '/api/mx/items/template',
   ]) {
     assert.equal(servesPath('housekeeping', path), false, `${path} should be absent`);
   }
@@ -84,7 +83,7 @@ test('and the full site offers everything except those', () => {
     assert.ok(!keys.includes(key), `${key} is the other site's, and must not be offered here`);
   }
   // The sections this site does run are all still there.
-  for (const key of ['entry', 'reports', 'stock', 'mx_issue', 'users']) {
+  for (const key of ['entry', 'reports', 'stock', 'bakery', 'users']) {
     assert.ok(keys.includes(key), `${key} belongs to this site`);
   }
 });
@@ -97,7 +96,7 @@ test('it offers only the roles built from those sections, plus administrator', (
   assert.ok(!keys.includes('cook'), 'a cook has nothing to do on this site');
   // Reception walk two of the three checks, so they are a role here.
   assert.deepEqual(roles.find((r) => r.key === 'receptionist').defaults, ['hk_check']);
-  assert.ok(!keys.includes('technician'));
+  assert.ok(!keys.includes('cook'), 'the kitchen is the other site\u2019s');
 
   // An administrator here administers this site, not a kitchen.
   const admin = roles.find((r) => r.key === 'admin');
@@ -115,7 +114,7 @@ test('the full site drops the roles whose whole job is the bed check', () => {
     assert.ok(!keys.includes(key), `${key} belongs to the housekeeping site`);
   }
   assert.equal(keys.length, ROLES.length - 3);
-  for (const key of ['cook', 'manager', 'baker', 'technician', 'admin']) {
+  for (const key of ['cook', 'manager', 'baker', 'admin']) {
     assert.ok(keys.includes(key), `${key} works here`);
   }
 

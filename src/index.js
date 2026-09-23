@@ -15,15 +15,9 @@ import * as catalog from './routes/catalog.js';
 import * as insights from './routes/insights.js';
 import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
-import * as mx from './routes/maintenance.js';
-import * as mxTools from './routes/mx-tools.js';
 import * as bakery from './routes/bakery.js';
-import * as stocktakes from './routes/stocktakes.js';
 import * as hk from './routes/housekeeping.js';
-import { openDueTasks } from './lib/stocktakes.js';
-import { chaseOverdueTools } from './lib/tools.js';
 import { handleSsoArrival } from './lib/sso-consumer.js';
-import { todayIn } from './util/dates.js';
 import { PIN_TAKEN } from './routes/admin.js';
 
 /**
@@ -133,101 +127,10 @@ const ROUTES = [
 
   // The bell. Open to anyone signed in, and what each person sees is decided
   // inside the query by the permissions they already hold — a housekeeper sees
-  // that reception submitted the morning check, and does not see that eight
-  // parts are waiting on an administrator.
+  // that reception submitted the morning check, and does not see that a day
+  // sheet is waiting on an administrator.
   ['GET', '/api/notices', null, admin.listNoticesRoute],
   ['POST', '/api/notices/seen', null, admin.markNoticesSeen],
-
-  // ------------------------------------------------------------ maintenance --
-  // A separate store with its own permissions, so a technician can be given the
-  // issue screen and nothing else.
-  ['GET', '/api/mx/bootstrap', 'mx_issue', mx.bootstrap],
-
-  ['GET', '/api/mx/issues', 'mx_issue', mx.listIssues],
-  ['POST', '/api/mx/issues', 'mx_issue', mx.createIssue],
-  // Both of these ask rather than act: what is already recorded moves only
-  // once an administrator accepts it.
-  ['PUT', '/api/mx/issues/:id', 'mx_issue', mx.updateIssue],
-  ['DELETE', '/api/mx/issues/:id', 'mx_issue', mx.deleteIssue],
-
-  ['GET', '/api/mx/purchases', 'mx_purchases', mx.listPurchases],
-  ['GET', '/api/mx/purchases/last-costs', 'mx_purchases', mx.lastCosts],
-  ['POST', '/api/mx/deliveries', 'mx_purchases', mx.createDelivery],
-  ['PUT', '/api/mx/purchases/:id', 'mx_purchases', mx.updatePurchase],
-  ['DELETE', '/api/mx/purchases/:id', 'mx_purchases', mx.deletePurchase],
-
-  ['GET', '/api/mx/stock', 'mx_stock', mx.stock],
-  ['POST', '/api/mx/counts', 'mx_stock', mx.saveCounts],
-  ['GET', '/api/mx/counts/pending', ['mx_stock', 'users'], mx.pendingCounts],
-  ['GET', '/api/mx/counts/history', 'mx_stock', mx.countHistory],
-  // Accepting a count rewrites the shelf, so it is an administrator's call —
-  // never the same person who did the counting.
-  ['POST', '/api/mx/counts/review', 'users', mx.reviewCounts],
-
-  // Anybody who can see the store can see what is waiting; only an
-  // administrator decides — the same split as a count.
-  // Readable by whoever runs the shelf and by whoever decides. Reviewing needs
-  // 'users', so gating the list on 'mx_stock' alone meant a manager who could
-  // accept a request could not open the screen that shows it — the queue was
-  // invisible to exactly the person it was waiting on.
-  ['GET', '/api/mx/adjustments', ['mx_stock', 'users'], mx.pendingAdjustments],
-  ['POST', '/api/mx/adjustments/review', 'users', mx.reviewAdjustments],
-
-  ['GET', '/api/mx/overview', 'mx_reports', mx.overview],
-  ['GET', '/api/mx/report', 'mx_reports', mx.report],
-  ['GET', '/api/mx/compare', 'mx_reports', mx.compare],
-  ['GET', '/api/mx/areas/:id/detail', 'mx_reports', mx.areaDetail],
-
-  ['GET', '/api/mx/areas', 'mx_issue', mx.listAreas],
-  ['POST', '/api/mx/areas', 'mx_setup', mx.createArea],
-  ['POST', '/api/mx/areas/range', 'mx_setup', mx.createAreaRange],
-  ['PUT', '/api/mx/areas/:id', 'mx_setup', mx.updateArea],
-  ['DELETE', '/api/mx/areas/:id', 'mx_setup', mx.deleteArea],
-
-  ['POST', '/api/mx/items', 'mx_setup', mx.createItem],
-  ['PUT', '/api/mx/items/:id', 'mx_setup', mx.updateItem],
-  ['DELETE', '/api/mx/items/:id', 'mx_setup', mx.deleteItem],
-  // Products group the parts that are variants of one thing. The parts keep
-  // their own stock — a product is a heading, never a balance.
-  ['GET', '/api/mx/products', 'mx_issue', mx.listProducts],
-  ['POST', '/api/mx/products', 'mx_setup', mx.createProduct],
-  ['PUT', '/api/mx/products/:id', 'mx_setup', mx.updateProduct],
-  ['POST', '/api/mx/products/:id/variants', 'mx_setup', mx.addVariant],
-  ['DELETE', '/api/mx/products/:id', 'mx_setup', mx.deleteProduct],
-  ['PUT', '/api/mx/items/:id/product', 'mx_setup', mx.attachToProduct],
-  ['PUT', '/api/mx/items/:id/variant', 'mx_setup', mx.renameVariant],
-
-  // Tools go out and come back. Issuing and returning is the technician's
-  // counter, so it sits with mx_issue; the register itself is setup.
-  ['GET', '/api/mx/tools', 'mx_issue', mxTools.list],
-  ['GET', '/api/mx/tools/:id/history', 'mx_issue', mxTools.history],
-  ['POST', '/api/mx/tools/:id/issue', 'mx_issue', mxTools.issue],
-  ['POST', '/api/mx/tools/:id/return', 'mx_issue', mxTools.markReturned],
-  ['POST', '/api/mx/tools', 'mx_setup', mxTools.create],
-  ['PUT', '/api/mx/tools/:id', 'mx_setup', mxTools.update],
-  ['PUT', '/api/mx/tools/:id/parent', 'mx_setup', mxTools.setParent],
-  ['DELETE', '/api/mx/tools/:id', 'mx_setup', mxTools.retire],
-
-  ['POST', '/api/mx/categories', 'mx_setup', mx.createCategory],
-  ['GET', '/api/mx/items/template', 'mx_setup', mx.partsTemplate],
-  // Exports rather than templates: the same lists with the derived half, for
-  // reading rather than for handing back. Readable by whoever the figures are
-  // for, which is not only whoever maintains the list.
-  ['GET', '/api/mx/items/export', ['mx_setup', 'mx_stock'], mx.exportItems],
-  ['GET', '/api/mx/areas/export', ['mx_setup', 'mx_reports'], mx.exportAreas],
-  ['POST', '/api/mx/items/import', 'mx_setup', mx.importParts],
-  ['POST', '/api/mx/items/remove', 'mx_setup', mx.removeItems],
-  ['POST', '/api/mx/areas/remove', 'mx_setup', mx.removeAreas],
-
-  // Scheduled counts. Anybody who can count sees what they have been asked to
-  // do; only setup can decide who is asked, and how often.
-  ['GET', '/api/mx/stocktakes/mine', 'mx_stock', stocktakes.myTasks],
-  ['GET', '/api/mx/stocktakes', 'mx_setup', stocktakes.list],
-  ['POST', '/api/mx/stocktakes', 'mx_setup', stocktakes.create],
-  ['PUT', '/api/mx/stocktakes/:id', 'mx_setup', stocktakes.update],
-  ['DELETE', '/api/mx/stocktakes/:id', 'mx_setup', stocktakes.remove],
-  ['POST', '/api/mx/stocktakes/:id/run', 'mx_setup', stocktakes.runNow],
-  ['POST', '/api/mx/stocktake-tasks/:id/cancel', 'mx_setup', stocktakes.cancelTask],
 
   // ----------------------------------------------------------- housekeeping --
   // The dorm bed check. `hk_check` reaches the round and nothing else, so a
@@ -318,38 +221,6 @@ export default {
       return json({ error: 'Something went wrong on the server' }, { status: 500 });
     }
   },
-
-  /**
-   * The hourly tick, from a Cron Trigger.
-   *
-   * Two jobs. A scheduled stock count that has come round is opened and its
-   * people told; a tool that has been out too long is chased.
-   *
-   * Hourly rather than daily because of the second one: "not back after 24
-   * hours" checked once a day means a tool issued at seven in the morning is
-   * chased at six the following evening, which is a day and a half. Both jobs
-   * are written to be idempotent — a task already opened is not opened again,
-   * and a tool already chased is not chased again — so running twelve times
-   * more often costs twelve near-empty queries and changes nothing else.
-   */
-  async scheduled(event, env, executionContext) {
-    if (!env.DB) return;
-    const run = (async () => {
-      const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'timezone'")
-        .first()
-        .catch(() => null);
-      const result = await openDueTasks(env.DB, env, todayIn(row?.value || 'UTC'));
-      if (result.opened) console.log(`Opened ${result.opened} stock count task(s)`);
-
-      const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
-      const chased = await chaseOverdueTools(env.DB, env, now)
-        .catch((err) => { console.error('Tool sweep failed', err); return { chased: 0 }; });
-      if (chased.chased) console.log(`Chased ${chased.chased} overdue tool(s)`);
-    })().catch((err) => console.error('Scheduled run failed', err));
-
-    if (executionContext?.waitUntil) executionContext.waitUntil(run);
-    else await run;
-  },
 };
 
 async function route(request, env, url, executionContext) {
@@ -364,8 +235,8 @@ async function route(request, env, url, executionContext) {
   }
 
   // A housekeeping deployment serves the bed check and the things every site
-  // needs — signing in, people, notifications. The breakfast and maintenance
-  // API is simply not there.
+  // needs — signing in, people, notifications. The breakfast API is simply
+  // not there.
   if (!servesPath(siteOf(env), url.pathname)) {
     return json({ error: 'Unknown endpoint' }, { status: 404 });
   }

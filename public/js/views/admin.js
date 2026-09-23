@@ -1030,7 +1030,7 @@ function inAppCard(data, reload) {
     h('p.muted', { style: { fontSize: '.87rem', marginTop: 0 } },
       'These need no email account and no setup. Everybody sees what their own access allows: '
       + 'a submitted breakfast sheet reaches whoever can read reports, a count waiting for '
-      + 'approval — in the kitchen or the parts store — reaches administrators, and a '
+      + 'approval reaches administrators, and a '
       + 'scheduled stock count that has come round reaches whoever was asked to do it.'),
     h('div.field-row',
       h('label.field', h('span', 'The bell'), inApp),

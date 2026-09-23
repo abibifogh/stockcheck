@@ -30,12 +30,10 @@ custom_domain = true
 
 # Once a day, early enough that a due stock count is announced before the shift
 # starts. 06:00 UTC is 06:00 in Accra — cron expressions are always UTC.
-[triggers]
-# Hourly. The stock-count opener only needs a day, but a tool that has not come
-# back is checked against a 24-hour clock, and a daily sweep would chase it up
-# to a day and a half late. Both jobs are idempotent, so the extra runs are
-# near-empty queries.
-crons = ["0 * * * *"]
+# No Cron Trigger. The hourly tick existed for the maintenance store — opening
+# scheduled counts and chasing tools that had not come back — and both went with
+# it. The breakfast unit has nothing that happens on a clock rather than when
+# somebody presses a button.
 
 [observability]
 enabled = true

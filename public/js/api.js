@@ -129,75 +129,6 @@ export const api = {
   reviewStockCounts: (body) => request('/api/stock-counts/review', { method: 'POST', body }),
   updateSettings: (body) => request('/api/settings', { method: 'PUT', body }),
 
-  // ------------------------------------------------------------ maintenance --
-  mxBootstrap: () => request('/api/mx/bootstrap'),
-  mxIssues: (params = {}) => request(`/api/mx/issues?${new URLSearchParams(params)}`),
-  mxCreateIssue: (body) => request('/api/mx/issues', { method: 'POST', body }),
-  // Both ask for a change rather than making one. What comes back says so.
-  mxUpdateIssue: (id, body) => request(`/api/mx/issues/${id}`, { method: 'PUT', body }),
-  mxDeleteIssue: (id, reason) => request(`/api/mx/issues/${id}`, { method: 'DELETE', body: { reason } }),
-
-  mxPurchases: (from, to) => request(`/api/mx/purchases?${new URLSearchParams({
-    ...(from ? { from } : {}), ...(to ? { to } : {}),
-  })}`),
-  mxLastCosts: () => request('/api/mx/purchases/last-costs'),
-  mxCreateDelivery: (body) => request('/api/mx/deliveries', { method: 'POST', body }),
-  mxUpdatePurchase: (id, body) => request(`/api/mx/purchases/${id}`, { method: 'PUT', body }),
-  mxDeletePurchase: (id, reason) => request(`/api/mx/purchases/${id}`, { method: 'DELETE', body: { reason } }),
-
-  mxStock: (asOf) => request(`/api/mx/stock${asOf ? `?asOf=${asOf}` : ''}`),
-  mxSaveCounts: (body) => request('/api/mx/counts', { method: 'POST', body }),
-  mxPendingCounts: () => request('/api/mx/counts/pending'),
-  mxCountHistory: () => request('/api/mx/counts/history'),
-  mxReviewCounts: (body) => request('/api/mx/counts/review', { method: 'POST', body }),
-  mxPendingAdjustments: () => request('/api/mx/adjustments'),
-  mxReviewAdjustments: (body) => request('/api/mx/adjustments/review', { method: 'POST', body }),
-
-  mxOverview: () => request('/api/mx/overview'),
-  mxReport: (from, to) => request(`/api/mx/report?${new URLSearchParams({
-    ...(from ? { from } : {}), ...(to ? { to } : {}),
-  })}`),
-  mxCompare: (a, b) => request(`/api/mx/compare?${new URLSearchParams({
-    aFrom: a.from, aTo: a.to, bFrom: b.from, bTo: b.to,
-  })}`),
-  mxAreaDetail: (id) => request(`/api/mx/areas/${id}/detail`),
-
-  mxAreas: () => request('/api/mx/areas'),
-  // Downloads, so these are addresses rather than calls — the browser fetches
-  // them itself and the file lands where downloads land.
-  mxItemsExportUrl: () => '/api/mx/items/export',
-  mxAreasExportUrl: () => '/api/mx/areas/export',
-  mxCreateArea: (body) => request('/api/mx/areas', { method: 'POST', body }),
-  mxCreateAreaRange: (body) => request('/api/mx/areas/range', { method: 'POST', body }),
-  mxUpdateArea: (id, body) => request(`/api/mx/areas/${id}`, { method: 'PUT', body }),
-  mxDeleteArea: (id) => request(`/api/mx/areas/${id}`, { method: 'DELETE' }),
-
-  mxCreateItem: (body) => request('/api/mx/items', { method: 'POST', body }),
-  mxUpdateItem: (id, body) => request(`/api/mx/items/${id}`, { method: 'PUT', body }),
-  mxDeleteItem: (id) => request(`/api/mx/items/${id}`, { method: 'DELETE' }),
-  mxProducts: () => request('/api/mx/products'),
-  mxCreateProduct: (body) => request('/api/mx/products', { method: 'POST', body }),
-  mxUpdateProduct: (id, body) => request(`/api/mx/products/${id}`, { method: 'PUT', body }),
-  mxAddVariant: (id, body) => request(`/api/mx/products/${id}/variants`, { method: 'POST', body }),
-  mxDeleteProduct: (id) => request(`/api/mx/products/${id}`, { method: 'DELETE' }),
-  mxSetItemProduct: (id, body) => request(`/api/mx/items/${id}/product`, { method: 'PUT', body }),
-  mxRenameVariant: (id, body) => request(`/api/mx/items/${id}/variant`, { method: 'PUT', body }),
-
-  mxTools: () => request('/api/mx/tools'),
-  mxToolHistory: (id) => request(`/api/mx/tools/${id}/history`),
-  mxIssueTool: (id, body) => request(`/api/mx/tools/${id}/issue`, { method: 'POST', body }),
-  mxReturnTool: (id, body) => request(`/api/mx/tools/${id}/return`, { method: 'POST', body }),
-  mxCreateTool: (body) => request('/api/mx/tools', { method: 'POST', body }),
-  mxSetToolParent: (id, body) => request(`/api/mx/tools/${id}/parent`, { method: 'PUT', body }),
-  mxUpdateTool: (id, body) => request(`/api/mx/tools/${id}`, { method: 'PUT', body }),
-  mxRetireTool: (id) => request(`/api/mx/tools/${id}`, { method: 'DELETE' }),
-
-  mxCreateCategory: (body) => request('/api/mx/categories', { method: 'POST', body }),
-  mxPartsTemplateUrl: () => '/api/mx/items/template',
-  mxImportParts: (body) => request('/api/mx/items/import', { method: 'POST', body }),
-  mxRemoveItems: (ids) => request('/api/mx/items/remove', { method: 'POST', body: { ids } }),
-  mxRemoveAreas: (ids) => request('/api/mx/areas/remove', { method: 'POST', body: { ids } }),
-
   // --------------------------------------------------------------- bakery --
   // The first two need no session: the token in the body is the whole gate.
   bakeryOpen: (token) => request('/api/bakery/open', { method: 'POST', body: { token } }),
@@ -217,15 +148,6 @@ export const api = {
   // ------------------------------------------------------ notifications --
   inbox: (limit) => request(`/api/inbox${limit ? `?limit=${limit}` : ''}`),
   markInboxRead: (ids) => request('/api/inbox/read', { method: 'POST', body: { ids: ids ?? null } }),
-
-  // -------------------------------------------------- scheduled counts --
-  mxStocktakes: () => request('/api/mx/stocktakes'),
-  mxMyStocktakes: () => request('/api/mx/stocktakes/mine'),
-  mxCreateStocktake: (body) => request('/api/mx/stocktakes', { method: 'POST', body }),
-  mxUpdateStocktake: (id, body) => request(`/api/mx/stocktakes/${id}`, { method: 'PUT', body }),
-  mxDeleteStocktake: (id) => request(`/api/mx/stocktakes/${id}`, { method: 'DELETE' }),
-  mxRunStocktake: (id) => request(`/api/mx/stocktakes/${id}/run`, { method: 'POST', body: {} }),
-  mxCancelStocktakeTask: (id) => request(`/api/mx/stocktake-tasks/${id}/cancel`, { method: 'POST', body: {} }),
 
   // ----------------------------------------------------------- housekeeping --
   hkBootstrap: (params = {}) => request(`/api/hk/bootstrap?${new URLSearchParams(params)}`),

@@ -164,6 +164,9 @@ const OTHER_STORES = new Set([
   // Accessories alter the tool store's own tables, which 0019 builds and this
   // seed does not. The ALTERs would fail with "no such table".
   '0020_tool_accessories.sql',
+  // Clears the parts store away. A housekeeping database never had it, so a
+  // fresh seed has nothing to drop and would only carry the statements about.
+  '0021_drop_maintenance.sql',
 ]);
 
 // The whole database a housekeeping-only site needs.
