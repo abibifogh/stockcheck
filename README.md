@@ -326,6 +326,54 @@ volume. Three steps:
 Without this the app works perfectly; it simply does not send email, and says
 so on that screen.
 
+### 4c. Importing purchase orders from Odoo (optional)
+
+With this on, **Purchases** has an **Import from Odoo** box: type or paste the
+PO numbers (`P02433`, `2433`, several at once, one per line or comma
+separated), check what comes up, and press Import. Nobody keys the delivery in
+by hand. It reads Odoo the same way the Insight application does — the JSON-2
+API with an API key — and it only ever reads; nothing here can change an order
+in Odoo.
+
+1. Run `migrations/0022_odoo_purchases.sql` in the D1 console (paste the copy
+   in `migrations/console/`).
+2. In Odoo, sign in as a user who can see purchase orders (a read-only user is
+   ideal), open **Preferences → Account Security → New API Key**, and copy the
+   key. The key Insight already uses works too, if that user can read
+   purchases.
+3. Give it to this Worker — never to the app, a chat or a spreadsheet:
+
+   ```bash
+   npx wrangler secret put ODOO_API_KEY
+   ```
+
+   or, in the Cloudflare dashboard, **Workers & Pages → niceoperation-breakfast
+   → Settings → Variables and Secrets → Add → Secret**, named `ODOO_API_KEY`.
+4. In the app, **Setup → Odoo purchase orders**: enter the Odoo address
+   (`https://yourcompany.odoo.com`) and, only if your Odoo serves several
+   databases on one address, the database name.
+
+How it behaves:
+
+- **Only confirmed orders import.** A quotation or an order waiting for
+  approval is shown with the reason and left alone.
+- **Each Odoo product is matched to an ingredient once.** The first time a
+  product turns up, the import asks which ingredient it is and how its unit
+  converts — a crate of 30 eggs into eggs counted in pieces is 30, and the
+  price is divided by the same number so the total still matches the PO.
+  Products that are not breakfast (dish soap on the grocery order) are marked
+  as such once and skipped from then on. The remembered matches are listed,
+  and can be forgotten, under **Setup → Odoo purchase orders**.
+- **The price is what was paid**: the line subtotal over the quantity, before
+  tax, so a discount on the line is included.
+- **The date** defaults to the order date in Odoo and can be changed per order
+  before importing. Closed periods are respected.
+- **Importing the same PO again is safe.** Lines already recorded are skipped,
+  so an order imported with two products still unmatched can be imported again
+  once they are, and only those two come across.
+- The supplier is the vendor's name as Odoo has it, and each line carries its
+  PO number — shown in the Purchases list and in the CSV export.
+
 ### 5. First deploy
 
 ```bash

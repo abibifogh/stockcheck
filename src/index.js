@@ -12,6 +12,7 @@ import { deleteDay, getDay, listDays, saveDay } from './routes/day.js';
 import * as revisions from './routes/revisions.js';
 import * as importing from './routes/importing.js';
 import * as catalog from './routes/catalog.js';
+import * as odoo from './routes/odoo.js';
 import * as insights from './routes/insights.js';
 import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
@@ -84,6 +85,15 @@ const ROUTES = [
   ['POST', '/api/purchases', 'purchases', catalog.createPurchase],
   ['POST', '/api/deliveries', 'purchases', catalog.createDelivery],
   ['DELETE', '/api/purchases/:id', 'purchases', catalog.deletePurchase],
+
+  // Purchases read out of Odoo by PO number. Reading Odoo and recording what it
+  // says is the same job as typing in a delivery, so it is the same permission.
+  ['GET', '/api/odoo/status', ['purchases', 'setup'], odoo.status],
+  ['POST', '/api/odoo/preview', 'purchases', odoo.preview],
+  ['POST', '/api/odoo/import', 'purchases', odoo.importOrders],
+  ['GET', '/api/odoo/mappings', ['purchases', 'setup'], odoo.listMappings],
+  ['PUT', '/api/odoo/mappings', 'purchases', odoo.saveMappings],
+  ['DELETE', '/api/odoo/mappings/:product/:uom', ['purchases', 'setup'], odoo.deleteMapping],
 
   ['POST', '/api/categories', 'setup', catalog.createCategory],
   ['PUT', '/api/categories/:id', 'setup', catalog.updateCategory],

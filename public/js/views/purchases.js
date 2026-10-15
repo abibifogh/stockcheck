@@ -2,6 +2,7 @@ import { api } from '../api.js';
 import { can, state } from '../app.js';
 import { fmtDay, fmtMoney, fmtNum, h, mount, shiftDay, toast, todayISO } from '../util.js';
 import { card, exportButton, statTile, table } from './components.js';
+import { odooImportCard } from './odoo-import.js';
 
 /**
  * Delivery log. Every delivery keyed here feeds the weighted average cost, so
@@ -25,6 +26,40 @@ export async function renderPurchases(params) {
   const supplierMode = state.settings.supplier_mode || 'select';
   const suppliers = (supplierData.suppliers || []).filter((s) => s.active);
 
+  // The figures and the list redraw on their own after an Odoo import, so the
+  // import panel — and the report of what it just did — stays where it is.
+  const dataHost = h('div');
+  const refresh = async () => {
+    try {
+      mount(dataHost, ...dataSection(await api.purchases(from, to), { from, to, suppliers, refresh }));
+    } catch (err) { toast(err.message, 'bad'); }
+  };
+  mount(dataHost, ...dataSection(data, { from, to, suppliers, refresh }));
+
+  mount(host,
+    h('div.page-head',
+      h('div',
+        h('h1', 'Purchases'),
+        h('div.sub', 'Recording deliveries keeps unit costs, stock levels and every money figure accurate'),
+      ),
+      exportButton(api.exportUrl('purchases', from, to), 'Export purchases'),
+    ),
+    h('div.toolbar',
+      h('input', { type: 'date', value: from, onchange: (e) => rerange(e.target.value, to) }),
+      h('span.muted', 'to'),
+      h('input', { type: 'date', value: to, onchange: (e) => rerange(from, e.target.value) }),
+    ),
+    await odooImportCard({ onImported: refresh }),
+    card('Record a delivery', { note: 'For anything not on an Odoo order — add every item, then save once', wide: true },
+      deliveryForm({ suppliers, supplierMode, lastCosts: data.lastCosts || {}, onSaved: reload }),
+    ),
+    dataHost,
+  );
+  return host;
+}
+
+/** The tiles and the delivery list for a range. */
+function dataSection(data, { from, to, suppliers, refresh }) {
   const total = data.purchases.reduce((a, p) => a + Number(p.qty) * Number(p.unit_cost), 0);
   const bySupplier = new Map();
   for (const p of data.purchases) {
@@ -51,17 +86,21 @@ export async function renderPurchases(params) {
       { key: 'unit_cost', label: 'Unit cost', align: 'right', format: (v) => fmtMoney(v, { withSymbol: false }) },
       { key: 'total', label: 'Total', align: 'right', format: (_, r) => h('b', fmtMoney(Number(r.qty) * Number(r.unit_cost), { withSymbol: false })) },
       { key: 'supplier', label: 'Supplier', format: (v) => v || h('span.muted', '—') },
+      { key: 'po_ref', label: 'PO', format: (v) => (v ? h('span.pill.info.po-ref', v) : h('span.muted', '—')) },
       { key: 'note', label: 'Note', format: (v) => v || h('span.muted', '—') },
       {
         key: 'id',
         label: '',
-        format: (id) => h('button.btn-sm.btn-danger', {
+        format: (id, row) => h('button.btn-sm.btn-danger', {
           onclick: async () => {
-            if (!confirm('Delete this line? Costs and stock will be recalculated.')) return;
+            const ask = row.po_ref
+              ? `Delete this line? Costs and stock will be recalculated. It came from ${row.po_ref}, so importing that PO again would bring it back.`
+              : 'Delete this line? Costs and stock will be recalculated.';
+            if (!confirm(ask)) return;
             try {
               await api.deletePurchase(id);
               toast('Line deleted', 'good');
-              reload();
+              refresh();
             } catch (err) { toast(err.message, 'bad'); }
           },
         }, 'Delete'),
@@ -69,26 +108,7 @@ export async function renderPurchases(params) {
     ], data.purchases, { empty: 'No deliveries recorded in this range.' }),
   );
 
-  mount(host,
-    h('div.page-head',
-      h('div',
-        h('h1', 'Purchases'),
-        h('div.sub', 'Recording deliveries keeps unit costs, stock levels and every money figure accurate'),
-      ),
-      exportButton(api.exportUrl('purchases', from, to), 'Export purchases'),
-    ),
-    h('div.toolbar',
-      h('input', { type: 'date', value: from, onchange: (e) => rerange(e.target.value, to) }),
-      h('span.muted', 'to'),
-      h('input', { type: 'date', value: to, onchange: (e) => rerange(from, e.target.value) }),
-    ),
-    tiles,
-    card('Record a delivery', { note: 'Add every item on the delivery note, then save once', wide: true },
-      deliveryForm({ suppliers, supplierMode, lastCosts: data.lastCosts || {}, onSaved: reload }),
-    ),
-    listCard,
-  );
-  return host;
+  return [tiles, listCard];
 }
 
 /**

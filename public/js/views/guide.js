@@ -683,6 +683,32 @@ const SECTIONS = [
   },
 
   {
+    id: 'odoo-import',
+    title: 'Importing purchase orders from Odoo',
+    permission: 'purchases',
+    lead: 'If the order was raised in Odoo, there is nothing to type: give the PO number and it comes across.',
+    render: () => h('div',
+      steps(
+        h('span', 'Go to ', h('strong', 'Purchases'), '. In ', h('strong', 'Import from Odoo'), ', type or paste '
+          + 'the PO numbers — as many as you have, one per line or separated by commas. ',
+        h('code', '2433'), ' and ', h('code', 'P02433'), ' are the same order.'),
+        h('span', 'Tap ', h('strong', 'Look up orders'), '. Each order shows its supplier, its status in Odoo '
+          + 'and every line on it.'),
+        h('span', 'A product seen for the first time says ', h('strong', 'not matched yet'), '. Choose which '
+          + 'ingredient it is, and how many of that ingredient one Odoo unit holds — a crate of 30 eggs is 30. '
+          + 'If it is not a breakfast item at all, tap ', h('strong', 'Not breakfast'), '. You are only ever '
+          + 'asked once per product.'),
+        h('span', 'Check the date each order will be recorded on, then tap ', h('strong', 'Import'), '.'),
+      ),
+      note('Safe to repeat.', 'Importing a PO that has already come across records nothing twice. Anything '
+        + 'you left unmatched is brought in the next time you import that PO, once it is matched.'),
+      warn('Only confirmed orders import.', 'A quotation, or an order still waiting for approval in Odoo, '
+        + 'is shown with the reason and left out. Confirm it in Odoo first.'),
+      note('Something not on an Odoo order?', 'Use “Record a delivery” underneath, exactly as before.'),
+    ),
+  },
+
+  {
     id: 'bakery-setup',
     title: 'Setting up the bakery link',
     permission: 'stock',
