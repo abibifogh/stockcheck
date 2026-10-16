@@ -620,6 +620,8 @@ const ALLOWED_SETTINGS = new Set([
   'outsider_fee', 'allow_fill_usual', 'supplier_mode',
   'require_complete_entry', 'require_resubmit_approval', 'allow_recovery_pin',
   'restrict_cooks_to_everyday',
+  // Where Odoo is, for importing purchase orders. The key is a Worker secret.
+  'odoo_base', 'odoo_db',
 ]);
 
 const SETTING_RULES = {
@@ -639,6 +641,17 @@ const SETTING_RULES = {
     return mode;
   },
   currency: (value) => str(value, 'Currency', { required: true, max: 8 }).toUpperCase(),
+  // The API key goes to this address in a header, so it has to be encrypted
+  // on the way. Blank is allowed: it switches the import off.
+  odoo_base: (value) => {
+    const text = (str(value, 'Odoo address', { max: 200, fallback: '' }) || '').trim().replace(/\/+$/, '');
+    if (!text) return '';
+    let url;
+    try { url = new URL(text); } catch { throw badRequest('The Odoo address is not a web address.'); }
+    if (url.protocol !== 'https:') throw badRequest('The Odoo address must start with https://.');
+    return url.origin;
+  },
+  odoo_db: (value) => (str(value, 'Odoo database', { max: 100, fallback: '' }) || '').trim(),
 };
 
 export async function updateSettings(ctx) {

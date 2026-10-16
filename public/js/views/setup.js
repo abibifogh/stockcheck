@@ -2,6 +2,7 @@ import { api } from '../api.js';
 import { ensureCatalog, state } from '../app.js';
 import { fmtMoney, fmtNum, h, mount, setCurrency, toast } from '../util.js';
 import { card, table } from './components.js';
+import { odooSetupCard } from './odoo-import.js';
 
 /** Manager admin: the ingredient catalogue, categories and property settings. */
 export async function renderSetup() {
@@ -99,6 +100,7 @@ export async function renderSetup() {
     ),
     h('div.grid.grid-2', settingsCard, categoryCard),
     supplierCard(supplierData.suppliers || [], settings, reload),
+    await odooSetupCard(settings, reload),
     ingredientCard,
   );
   return host;

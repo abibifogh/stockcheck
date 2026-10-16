@@ -55,13 +55,25 @@ UPDATE users
 -- permission list is filtered against the keys the code knows on every read, so
 -- a stale 'mx_stock' already grants nothing.
 
--- Bell entries whose links point at screens that no longer exist, so each one
--- is a dead end in somebody's inbox.
+-- Nothing here touches app_notices.
 --
--- Matched on kind and on the link, never on kind alone: 'count_pending' is
--- raised by the kitchen's stock count as well as the parts store's, and the
--- kitchen's are still live. The link is what tells them apart.
-DELETE FROM app_notices
- WHERE kind IN ('mx_adjustment', 'tool_overdue')
-    OR (kind = 'count_pending' AND link LIKE '#/mx-%')
-    OR audience IN ('mx_issue', 'mx_reports', 'mx_stock', 'mx_purchases', 'mx_setup');
+-- The bell's table is created by 0009, and a database that never ran it does
+-- not have one — this breakfast database is such a database, which is why the
+-- bell has been quietly inert rather than broken: every read of it catches the
+-- missing table and returns an empty list.
+--
+-- A DELETE naming a table that does not exist fails the whole paste, and it
+-- failed exactly there the first time this was run. The statement is gone
+-- rather than guarded because SQLite has no way to make a DELETE conditional
+-- on a table existing.
+--
+-- If your database DOES have app_notices, run this separately afterwards to
+-- clear the bell entries whose links now point at screens that are gone. It
+-- matches on the link as well as the kind, never on the kind alone, because
+-- 'count_pending' is raised by the kitchen's stock count too and those are
+-- still live:
+--
+--   DELETE FROM app_notices
+--    WHERE kind IN ('mx_adjustment', 'tool_overdue')
+--       OR (kind = 'count_pending' AND link LIKE '#/mx-%')
+--       OR audience IN ('mx_issue', 'mx_reports', 'mx_stock', 'mx_purchases', 'mx_setup');

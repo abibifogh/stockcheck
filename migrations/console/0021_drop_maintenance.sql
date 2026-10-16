@@ -17,7 +17,3 @@ DELETE FROM settings WHERE key IN (
 UPDATE users
    SET role = 'cook', permissions = '[]'
  WHERE role IN ('technician', 'maintenance_manager');
-DELETE FROM app_notices
- WHERE kind IN ('mx_adjustment', 'tool_overdue')
-    OR (kind = 'count_pending' AND link LIKE '#/mx-%')
-    OR audience IN ('mx_issue', 'mx_reports', 'mx_stock', 'mx_purchases', 'mx_setup');

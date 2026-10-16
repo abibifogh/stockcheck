@@ -1209,3 +1209,36 @@ td.tick input, th.tick input { cursor: pointer; }
    action in this system that cannot be undone. */
 .erase-preview { margin: .9rem 0 0; }
 .erase-preview .alert { margin-bottom: 0; }
+
+/* -------------------------------------------------------- odoo import -- */
+/* Each order line is a stacked block rather than a table row: this is used on
+   a phone at the back door as often as at a desk, and a seven-column table
+   there is a sideways scroll for every line. */
+.odoo-order {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: .7rem .75rem; margin: .8rem 0;
+}
+.odoo-order-head {
+  display: flex; justify-content: space-between; align-items: flex-start; gap: .6rem;
+  margin-bottom: .3rem;
+}
+.odoo-summary { display: flex; flex-wrap: wrap; gap: .3rem; margin: .4rem 0; }
+.odoo-line {
+  padding: .55rem .6rem; margin-top: .4rem;
+  background: var(--surface-2); border-radius: var(--radius-sm);
+}
+/* Already recorded, or not breakfast: present so nothing seems to vanish, but
+   stepped back so the lines that still need somebody stand out. */
+.odoo-line.odoo-quiet { opacity: .62; }
+.odoo-line-head {
+  display: flex; justify-content: space-between; gap: .6rem; align-items: baseline;
+  font-size: .9rem; overflow-wrap: anywhere;
+}
+.odoo-outcome {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .3rem;
+  margin-top: .35rem; font-size: .86rem;
+}
+.odoo-match { display: grid; gap: .4rem; margin-top: .45rem; }
+.odoo-match-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.odoo-footer { border-top: 1px solid var(--border); margin-top: 1rem; padding-top: .8rem; }
+.po-ref { font-variant-numeric: tabular-nums; }

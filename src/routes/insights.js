@@ -162,7 +162,7 @@ export async function exportCsv(ctx) {
   }
 
   if (type === 'purchases') {
-    const rows = [['Date', 'Category', 'Ingredient', 'Unit', 'Quantity', `Unit cost (${ds.currency})`, `Total (${ds.currency})`, 'Supplier', 'Note']];
+    const rows = [['Date', 'Category', 'Ingredient', 'Unit', 'Quantity', `Unit cost (${ds.currency})`, `Total (${ds.currency})`, 'Supplier', 'PO', 'Note']];
     for (const p of ds.purchases.filter((p) => p.day >= from && p.day <= to)) {
       const ing = ds.ingredientById.get(p.ingredient_id);
       rows.push([
@@ -171,7 +171,7 @@ export async function exportCsv(ctx) {
         ing?.name ?? `#${p.ingredient_id}`,
         ing?.unit ?? '', p.qty, p.unit_cost,
         (Number(p.qty) * Number(p.unit_cost)).toFixed(2),
-        p.supplier ?? '', p.note ?? '',
+        p.supplier ?? '', p.po_ref ?? '', p.note ?? '',
       ]);
     }
     return csvResponse(`breakfast-purchases-${from}-to-${to}.csv`, rows);

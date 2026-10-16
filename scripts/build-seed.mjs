@@ -167,6 +167,10 @@ const OTHER_STORES = new Set([
   // Clears the parts store away. A housekeeping database never had it, so a
   // fresh seed has nothing to drop and would only carry the statements about.
   '0021_drop_maintenance.sql',
+  // Alters the kitchen's purchases and maps Odoo products onto its ingredients.
+  // The bed check buys nothing, and an ALTER cannot be pasted twice — which
+  // these seed files are written to survive.
+  '0022_odoo_purchases.sql',
 ]);
 
 // The whole database a housekeeping-only site needs.

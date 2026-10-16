@@ -95,6 +95,14 @@ export const api = {
   lastCosts: () => request('/api/purchases/last-costs'),
   deletePurchase: (id) => request(`/api/purchases/${id}`, { method: 'DELETE' }),
 
+  odooStatus: () => request('/api/odoo/status'),
+  odooPreview: (pos) => request('/api/odoo/preview', { method: 'POST', body: { pos } }),
+  odooImport: (body) => request('/api/odoo/import', { method: 'POST', body }),
+  odooMappings: () => request('/api/odoo/mappings'),
+  saveOdooMappings: (mappings) => request('/api/odoo/mappings', { method: 'PUT', body: { mappings } }),
+  deleteOdooMapping: (productId, uomId) =>
+    request(`/api/odoo/mappings/${productId}/${uomId}`, { method: 'DELETE' }),
+
   suppliers: () => request('/api/suppliers'),
   createSupplier: (body) => request('/api/suppliers', { method: 'POST', body }),
   updateSupplier: (id, body) => request(`/api/suppliers/${id}`, { method: 'PUT', body }),
