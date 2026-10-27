@@ -4,7 +4,7 @@ import {
 import { assertDayWritable } from '../lib/locks.js';
 import { isDay } from '../util/dates.js';
 import {
-  MAX_ORDERS, OdooError, configProblem, odooConfig, parsePoNumbers, readOrders,
+  MAX_ORDERS, OdooError, configProblem, odooConfig, parsePoNumbers, readOrders, testConnection,
 } from '../lib/odoo.js';
 
 /**
@@ -189,6 +189,16 @@ export async function status(ctx) {
       maxOrders: MAX_ORDERS,
     });
   });
+}
+
+/**
+ * Check the address, the key and the user's rights, one at a time.
+ *
+ * For whoever is setting this up. "Odoo refused" has several causes, each
+ * fixed by a different person, and this says which one it is.
+ */
+export async function test(ctx) {
+  return guarded(async () => json(await testConnection(await configFor(ctx), { fetchImpl: ctx.fetchImpl ?? fetch })));
 }
 
 /** Read the orders and say what importing them would do. Writes nothing. */

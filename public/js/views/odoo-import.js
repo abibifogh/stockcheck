@@ -274,7 +274,11 @@ export async function odooImportCard({ onImported }) {
     } catch (err) {
       preview = null;
       mount(previewHost, h('div.alert.high', h('div.alert-icon', '⛔'),
-        h('div', h('div.alert-title', 'Could not read from Odoo'), h('div.alert-detail', err.message))));
+        h('div', h('div.alert-title', 'Could not read from Odoo'), h('div.alert-detail', err.message),
+          h('div.alert-detail', { style: { marginTop: '.3rem' } },
+            can('setup')
+              ? 'Setup → Odoo purchase orders → Test connection checks the address, the key and the user’s rights one at a time.'
+              : 'An administrator can check the connection under Setup → Odoo purchase orders.'))));
     } finally {
       if (button) button.disabled = false;
     }
@@ -385,6 +389,33 @@ export async function odooSetupCard(settings, onSaved) {
     ? h('span.pill.good', 'API key is set')
     : h('span.pill.warn', 'API key not set');
 
+  // Asks Odoo, step by step, whether the address answers, the key is accepted
+  // and its user may read purchase orders — and stops at the first that fails.
+  const testOut = h('div');
+  const testButton = h('button', {
+    disabled: !status.ready,
+    title: status.ready ? 'Ask Odoo whether this works, without importing anything' : status.problem,
+    onclick: async () => {
+      testButton.disabled = true;
+      mount(testOut, h('p.muted', { style: { fontSize: '.84rem' } }, 'Asking Odoo…'));
+      try {
+        const result = await api.odooTest();
+        mount(testOut, result.steps.map((step) => h(`div.alert.${step.ok ? 'good' : 'high'}`,
+          h('div.alert-icon', step.ok ? '✅' : '⛔'),
+          h('div', h('div.alert-title', {
+            key: 'The address and the API key',
+            purchases: 'Reading purchase orders',
+            setup: 'Setup',
+          }[step.step] ?? step.step), h('div.alert-detail', step.text)))));
+      } catch (err) {
+        mount(testOut, h('div.alert.high', h('div.alert-icon', '⛔'),
+          h('div', h('div.alert-title', 'The test could not run'), h('div.alert-detail', err.message))));
+      } finally {
+        testButton.disabled = false;
+      }
+    },
+  }, 'Test connection');
+
   const remembered = mapData.mappings || [];
   return card('Odoo purchase orders', {
     wide: true,
@@ -393,7 +424,8 @@ export async function odooSetupCard(settings, onSaved) {
     h('div.field-row',
       h('label.field', h('span', 'Odoo address'), base),
       h('label.field', h('span', 'Database (optional)'), db)),
-    h('div.btn-row', { style: { alignItems: 'center', margin: '.4rem 0 .8rem' } }, save, keyLine),
+    h('div.btn-row', { style: { alignItems: 'center', margin: '.4rem 0 .8rem' } }, save, testButton, keyLine),
+    testOut,
     status.hasKey
       ? null
       : h('p.muted', { style: { fontSize: '.82rem' } },

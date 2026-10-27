@@ -374,6 +374,19 @@ How it behaves:
 - The supplier is the vendor's name as Odoo has it, and each line carries its
   PO number — shown in the Purchases list and in the CSV export.
 
+If Odoo refuses, press **Test connection** under **Setup → Odoo purchase
+orders**. It checks one thing at a time and stops at the first that fails:
+
+- **"Odoo did not accept the API key"** — the key itself. Odoo asks how long a
+  key should last when it is made, so check it has not expired. Check it was
+  made in the same database the address points to, not a copy or a test
+  database. Make a new one if in doubt and put it in `ODOO_API_KEY` again.
+  Spaces, newlines and quotes picked up when pasting are ignored.
+- **"Odoo accepted the API key, but its user is not allowed to read…"** — the
+  key is fine; the user it belongs to needs at least **Purchase: User** in
+  Odoo. With "own documents only", other people's orders come back as
+  "Odoo has no order called …".
+
 ### 5. First deploy
 
 ```bash

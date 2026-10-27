@@ -93,6 +93,7 @@ const ROUTES = [
   // Purchases read out of Odoo by PO number. Reading Odoo and recording what it
   // says is the same job as typing in a delivery, so it is the same permission.
   ['GET', '/api/odoo/status', ['purchases', 'setup'], odoo.status],
+  ['POST', '/api/odoo/test', ['purchases', 'setup'], odoo.test],
   ['POST', '/api/odoo/preview', 'purchases', odoo.preview],
   ['POST', '/api/odoo/import', 'purchases', odoo.importOrders],
   ['GET', '/api/odoo/mappings', ['purchases', 'setup'], odoo.listMappings],

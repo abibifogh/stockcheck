@@ -96,6 +96,7 @@ export const api = {
   deletePurchase: (id) => request(`/api/purchases/${id}`, { method: 'DELETE' }),
 
   odooStatus: () => request('/api/odoo/status'),
+  odooTest: () => request('/api/odoo/test', { method: 'POST' }),
   odooPreview: (pos) => request('/api/odoo/preview', { method: 'POST', body: { pos } }),
   odooImport: (body) => request('/api/odoo/import', { method: 'POST', body }),
   odooMappings: () => request('/api/odoo/mappings'),
