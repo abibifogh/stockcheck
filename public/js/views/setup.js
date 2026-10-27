@@ -143,8 +143,10 @@ function settingsForm(settings, onSaved) {
       'A correction overwrites straight away'),
   );
   const supplierMode = h('select',
-    h('option', { value: 'select', selected: (settings.supplier_mode || 'select') === 'select' },
-      'Choose from the supplier list'),
+    h('option', { value: 'suggest', selected: (settings.supplier_mode || 'suggest') === 'suggest' },
+      'Choose from the supplier list, or type a new one'),
+    h('option', { value: 'select', selected: settings.supplier_mode === 'select' },
+      'Only suppliers on the list'),
     h('option', { value: 'free', selected: settings.supplier_mode === 'free' },
       'Type any supplier name'),
     h('option', { value: 'off', selected: settings.supplier_mode === 'off' },
@@ -218,7 +220,7 @@ function settingsForm(settings, onSaved) {
 }
 
 function supplierCard(suppliers, settings, onSaved) {
-  const mode = settings.supplier_mode || 'select';
+  const mode = settings.supplier_mode || 'suggest';
 
   const name = h('input', { type: 'text', placeholder: 'Supplier name' });
   const contact = h('input', { type: 'text', placeholder: 'Contact person' });
@@ -242,7 +244,9 @@ function supplierCard(suppliers, settings, onSaved) {
   };
 
   return card('Suppliers', {
-    note: mode === 'select'
+    note: mode === 'suggest'
+      ? 'Deliveries pick from this list, or type a supplier not on it. Suppliers from Odoo come from Insight (Buying › Suppliers), key suppliers first'
+      : mode === 'select'
       ? 'Deliveries are recorded against this list'
       : mode === 'free'
         ? 'Supplier names are typed freely — this list is not enforced'
@@ -250,7 +254,8 @@ function supplierCard(suppliers, settings, onSaved) {
     wide: true,
   },
     table([
-      { key: 'name', label: 'Supplier' },
+      { key: 'name', label: 'Supplier', format: (v, row) => h('span', row.key_supplier ? '★ ' : '', v) },
+      { key: 'odoo_id', label: 'From', format: (v, row) => (v ? h('span.pill', row.grp ? `Odoo · ${row.grp}` : 'Odoo') : h('span.muted', 'added here')) },
       { key: 'contact', label: 'Contact', format: (v) => v || h('span.muted', '—') },
       { key: 'phone', label: 'Phone', format: (v) => v || h('span.muted', '—') },
       { key: 'purchase_count', label: 'Deliveries', align: 'right', format: (v) => fmtNum(v, 0) },
