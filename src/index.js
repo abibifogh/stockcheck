@@ -18,6 +18,7 @@ import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
 import * as bakery from './routes/bakery.js';
 import * as hk from './routes/housekeeping.js';
+import * as link from './routes/link.js';
 import { handleSsoArrival } from './lib/sso-consumer.js';
 import { PIN_TAKEN } from './routes/admin.js';
 
@@ -63,6 +64,8 @@ const ROUTES = [
   // gate, and all it can do is add stock.
   ['POST', '/api/bakery/open', 'public', bakery.open],
   ['POST', '/api/bakery/submit', 'public', bakery.submit],
+  // The group hub's management report: Insight asks, signed, for this app's own figures.
+  ['POST', '/api/link/report', 'public', link.report],
 
   ['GET', '/api/bakery/form', 'bakery', bakery.form],
   ['POST', '/api/production', 'bakery', bakery.create],

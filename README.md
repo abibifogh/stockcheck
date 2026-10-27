@@ -571,6 +571,20 @@ The housekeeping deployment redeems as `housekeeping` rather than `breakfast`,
 derived from its own `APP_SITE`, so the two need separate secrets and separate
 grants and neither can use the other's code.
 
+### The management report
+
+Insight's weekly and monthly management report has a breakfast section, and it
+asks this app for it: `POST /api/link/report` with `{period: 'week', week}` or
+`{period: 'month', month}`. The answer is this app's own Week or Month report
+(`weeklyInsights` / `monthlyInsights`), the stock report as it stood at the end
+of the period (or today, while it runs), deliveries by supplier, what the bakery
+made, and the days no breakfast was recorded. It is read only.
+
+Every request is signed with the same `INSIGHT_SSO_SECRET` as the sign-in
+hand-off, under its own label, and one older than five minutes is refused (see
+`src/lib/link.js`). Nothing more to set up: if signing in from Insight works, so
+does this. The housekeeping site does not answer it.
+
 ---
 
 ## Day-to-day use
