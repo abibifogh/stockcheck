@@ -12,6 +12,10 @@ import { HttpError } from '../src/lib/http.js';
  * gets written, and the statements are recorded so the test can read them.
  */
 
+// A day a week ago: recent enough to record (anything over two months old is
+// refused), and fixed for the run so every assertion can name it.
+const DAY = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
+
 const BEDS = [
   { id: 1, label: 'Bed 1', expected_state: 'occupied', active: 1 },
   { id: 2, label: 'Bed 2', expected_state: 'free', active: 1 },
@@ -21,7 +25,7 @@ const BEDS = [
   { id: 9, label: 'Bed 1', expected_state: null, active: 0 },
 ];
 
-function fakeDb({ beds = BEDS, round = { id: 7, day: '2026-08-10', submitted_at: null } } = {}) {
+function fakeDb({ beds = BEDS, round = { id: 7, day: DAY, submitted_at: null } } = {}) {
   const written = [];
 
   const statement = (sql) => ({
@@ -86,7 +90,7 @@ function openedRound(db) {
 }
 
 test('an occupied bed must answer the name tag question, by name', async () => {
-  const ctx = context({ day: '2026-08-10', checks: [{ bedId: 1, state: 'occupied' }] });
+  const ctx = context({ day: DAY, checks: [{ bedId: 1, state: 'occupied' }] });
 
   await assert.rejects(saveChecks(ctx), (err) => {
     assert.ok(err instanceof HttpError);
@@ -101,7 +105,7 @@ test('an occupied bed must answer the name tag question, by name', async () => {
 test('a free bed stores no answer to a question it was never asked', async () => {
   const db = fakeDb();
   const response = await saveChecks(context({
-    day: '2026-08-10',
+    day: DAY,
     checks: [{ bedId: 3, state: 'free' }],
   }, db));
 
@@ -115,7 +119,7 @@ test('a free bed stores no answer to a question it was never asked', async () =>
 test('the roster is copied onto the check as it stands at the moment of the round', async () => {
   const db = fakeDb();
   await saveChecks(context({
-    day: '2026-08-10',
+    day: DAY,
     slot: 'evening',
     checks: [
       { bedId: 1, state: 'occupied', nameTag: true },
@@ -128,7 +132,7 @@ test('the roster is copied onto the check as it stands at the moment of the roun
   assert.deepEqual(saved.map((s) => s.expected), ['occupied', 'free', null]);
   assert.deepEqual(saved.map((s) => s.nameTag), [1, 0, null]);
   assert.equal(saved[1].note, 'someone is in it');
-  assert.ok(saved.every((s) => s.roundId === 7 && s.day === '2026-08-10'));
+  assert.ok(saved.every((s) => s.roundId === 7 && s.day === DAY));
 });
 
 // ------------------------------------------------------------- the rounds --
@@ -136,17 +140,17 @@ test('the roster is copied onto the check as it stands at the moment of the roun
 test('a save opens the round it names, and stamps it onto every check', async () => {
   const db = fakeDb();
   await saveChecks(context({
-    day: '2026-08-10', slot: 'evening', checks: [{ bedId: 3, state: 'free' }],
+    day: DAY, slot: 'evening', checks: [{ bedId: 3, state: 'free' }],
   }, db));
 
-  assert.deepEqual(openedRound(db), { day: '2026-08-10', slot: 'evening' });
+  assert.deepEqual(openedRound(db), { day: DAY, slot: 'evening' });
   assert.equal(savedChecks(db)[0].slot, 'evening');
 });
 
 test('each of the three checks is its own round on the same day', async () => {
   for (const slot of ['morning', 'housekeeping', 'evening']) {
     const db = fakeDb();
-    await saveChecks(context({ day: '2026-08-10', slot, checks: [{ bedId: 3, state: 'free' }] }, db));
+    await saveChecks(context({ day: DAY, slot, checks: [{ bedId: 3, state: 'free' }] }, db));
     assert.equal(openedRound(db).slot, slot);
     assert.equal(savedChecks(db)[0].slot, slot);
   }
@@ -154,7 +158,7 @@ test('each of the three checks is its own round on the same day', async () => {
 
 test('a check that names no round falls to the one the clock is in', async () => {
   const db = fakeDb();
-  await saveChecks(context({ day: '2026-08-10', checks: [{ bedId: 3, state: 'free' }] }, db));
+  await saveChecks(context({ day: DAY, checks: [{ bedId: 3, state: 'free' }] }, db));
 
   // Whichever it picked, it must be a real one rather than blank — a check
   // filed against nothing would vanish from every report.
@@ -166,7 +170,7 @@ test('a check that names no round falls to the one the clock is in', async () =>
 test('a round nobody recognises is refused rather than invented', async () => {
   const db = fakeDb();
   await saveChecks(context({
-    day: '2026-08-10', slot: 'midnight-snack', checks: [{ bedId: 3, state: 'free' }],
+    day: DAY, slot: 'midnight-snack', checks: [{ bedId: 3, state: 'free' }],
   }, db));
 
   // An unknown name falls back to the clock rather than writing 'midnight-snack'
@@ -176,7 +180,7 @@ test('a round nobody recognises is refused rather than invented', async () => {
 
 test('a bed in a closed room is not something to answer for', async () => {
   await assert.rejects(
-    saveChecks(context({ day: '2026-08-10', checks: [{ bedId: 9, state: 'free' }] })),
+    saveChecks(context({ day: DAY, checks: [{ bedId: 9, state: 'free' }] })),
     (err) => {
       assert.equal(err.status, 400);
       assert.match(err.message, /no longer on the list/);
@@ -187,14 +191,14 @@ test('a bed in a closed room is not something to answer for', async () => {
 
 test('a bed that does not exist is refused rather than written against nothing', async () => {
   await assert.rejects(
-    saveChecks(context({ day: '2026-08-10', checks: [{ bedId: 404, state: 'free' }] })),
+    saveChecks(context({ day: DAY, checks: [{ bedId: 404, state: 'free' }] })),
     (err) => err.status === 400,
   );
 });
 
 test('a state that is neither occupied nor free is refused', async () => {
   await assert.rejects(
-    saveChecks(context({ day: '2026-08-10', checks: [{ bedId: 1, state: 'maybe' }] })),
+    saveChecks(context({ day: DAY, checks: [{ bedId: 1, state: 'maybe' }] })),
     (err) => {
       assert.match(err.message, /occupied or free/);
       return true;
@@ -215,7 +219,7 @@ test('a round cannot be recorded for a day that has not happened', async () => {
 
 test('an empty save is refused rather than opening an empty round', async () => {
   const db = fakeDb();
-  await assert.rejects(saveChecks(context({ day: '2026-08-10', checks: [] }, db)), (err) => {
+  await assert.rejects(saveChecks(context({ day: DAY, checks: [] }, db)), (err) => {
     assert.equal(err.status, 400);
     return true;
   });
