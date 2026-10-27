@@ -66,6 +66,7 @@ const ROUTES = [
   ['POST', '/api/bakery/submit', 'public', bakery.submit],
   // The group hub's management report: Insight asks, signed, for this app's own figures.
   ['POST', '/api/link/report', 'public', link.report],
+  ['POST', '/api/link/suppliers', 'public', link.suppliers],
 
   ['GET', '/api/bakery/form', 'bakery', bakery.form],
   ['POST', '/api/production', 'bakery', bakery.create],

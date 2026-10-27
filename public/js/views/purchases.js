@@ -23,7 +23,7 @@ export async function renderPurchases(params) {
     renderPurchases({ from: nextFrom, to: nextTo }).then((view) => mount(host, view));
   };
 
-  const supplierMode = state.settings.supplier_mode || 'select';
+  const supplierMode = state.settings.supplier_mode || 'suggest';
   const suppliers = (supplierData.suppliers || []).filter((s) => s.active);
 
   // The figures and the list redraw on their own after an Odoo import, so the
@@ -127,8 +127,18 @@ function deliveryForm({ suppliers, supplierMode, lastCosts, onSaved }) {
   const day = h('input', { type: 'date', value: todayISO() });
   const note = h('input', { type: 'text', placeholder: 'Invoice number, driver…' });
 
+  // Suggest: pick from the list (key suppliers first, from Insight), or type one it does not have.
+  const pickList = supplierMode === 'suggest'
+    ? h('datalist', { id: 'supplier-pick' }, suppliers.map((s) => h('option', { value: s.name }, s.key_supplier ? `★ ${s.grp || 'Key supplier'}` : '')))
+    : null;
   const supplierField = supplierMode === 'off'
     ? null
+    : supplierMode === 'suggest'
+      ? (() => {
+        const input = h('input', { type: 'text', placeholder: 'Choose or type a supplier', autocomplete: 'off' });
+        input.setAttribute('list', 'supplier-pick');
+        return input;
+      })()
     : supplierMode === 'select'
       ? h('select',
         h('option', { value: '' }, suppliers.length ? 'Choose supplier…' : 'No suppliers set up yet'),
@@ -265,7 +275,7 @@ function deliveryForm({ suppliers, supplierMode, lastCosts, onSaved }) {
   return h('div',
     h('div.field-row',
       h('label.field', h('span', 'Delivery date'), day),
-      supplierField ? h('label.field', h('span', 'Supplier'), supplierField) : null,
+      supplierField ? h('label.field', h('span', 'Supplier'), supplierField, pickList) : null,
       h('label.field', h('span', 'Note (optional)'), note),
     ),
     supplierHelp,

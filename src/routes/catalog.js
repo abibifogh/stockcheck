@@ -344,7 +344,7 @@ export async function createPurchase(ctx) {
   // rather than only in the form — otherwise "choose from the list" would be a
   // suggestion that any stale browser tab could ignore.
   const modeRow = await ctx.db.prepare("SELECT value FROM settings WHERE key = 'supplier_mode'").first();
-  const mode = modeRow?.value || 'select';
+  const mode = modeRow?.value || 'suggest';
 
   let supplier = str(body.supplier, 'Supplier', { max: 120 });
 
@@ -442,7 +442,7 @@ export async function createDelivery(ctx) {
 /** Apply the admin's supplier policy to an incoming value. */
 async function resolveSupplier(db, raw) {
   const modeRow = await db.prepare("SELECT value FROM settings WHERE key = 'supplier_mode'").first();
-  const mode = modeRow?.value || 'select';
+  const mode = modeRow?.value || 'suggest';
 
   if (mode === 'off') return null;
 
@@ -637,7 +637,7 @@ const SETTING_RULES = {
   restrict_cooks_to_everyday: (value) => (bool(value, false) ? '1' : '0'),
   supplier_mode: (value) => {
     const mode = String(value);
-    if (!['select', 'free', 'off'].includes(mode)) throw badRequest('Unknown supplier setting');
+    if (!['suggest', 'select', 'free', 'off'].includes(mode)) throw badRequest('Unknown supplier setting');
     return mode;
   },
   currency: (value) => str(value, 'Currency', { required: true, max: 8 }).toUpperCase(),

@@ -571,6 +571,19 @@ The housekeeping deployment redeems as `housekeeping` rather than `breakfast`,
 derived from its own `APP_SITE`, so the two need separate secrets and separate
 grants and neither can use the other's code.
 
+### Suppliers, from Insight
+
+Insight keeps the group's one supplier list (Buying › Suppliers, taken from
+Odoo) and sends it here each night and whenever it changes there: every Odoo
+supplier not hidden, key suppliers first, at `POST /api/link/suppliers`, signed
+with `INSIGHT_SSO_SECRET` like the management report. Each is added or brought
+up to date by its Odoo id; one no longer sent is retired, its deliveries
+keeping the name. Suppliers added here by hand are left alone.
+
+On a delivery, the supplier is picked from that list or typed when it is not on
+it (Setup › Suppliers: *Choose from the supplier list, or type a new one*, now
+the default; *Only suppliers on the list* is still there).
+
 ### The management report
 
 Insight's weekly and monthly management report has a breakfast section, and it

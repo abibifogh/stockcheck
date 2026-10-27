@@ -43,6 +43,7 @@ export const FULL_SITE_PATHS = [
   '/api/odoo',
   // The management report Insight asks for: breakfast figures only.
   '/api/link/report',
+  '/api/link/suppliers',
   // The bakery and its public link. Same reasoning: a hostel deployment has no
   // oven, and an endpoint that exists is a promise.
   '/api/bakery',
