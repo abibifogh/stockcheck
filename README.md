@@ -387,6 +387,53 @@ orders**. It checks one thing at a time and stops at the first that fails:
   Odoo. With "own documents only", other people's orders come back as
   "Odoo has no order called …".
 
+### 4d. The storeroom
+
+The kitchen asks the storeroom for milk, tissue, soap and the rest; the
+storekeeper issues it; the kitchen confirms what arrived. Deliveries now land
+in the storeroom, and what reaches the breakfast kitchen is what the
+storeroom issues to it.
+
+1. Run `migrations/0024_storeroom.sql` in the D1 console (paste the copy in
+   `migrations/console/`).
+2. **Setup → Ingredients**: add the supplies (tissue, soap, serviettes) with
+   *What it is* set to **Supply**: kept and issued by the storeroom, never on
+   the breakfast sheet or in the cost per guest. For every item, enter what is
+   on the storeroom's shelf today (*In the storeroom at the start*) and a
+   storeroom par level. Anything the storeroom never holds — bread delivered
+   to the kitchen door — set to *Not kept in the storeroom*.
+3. **Setup → Storeroom**: the departments that may ask, one per line. The
+   first is the breakfast kitchen. *Deliveries go* is set to the storeroom.
+4. **Users & data**: give the storekeeper the **Storekeeper** role
+   (*Storeroom* permission). Cooks get *Ask the storeroom* by default; anybody
+   with a custom permission list needs it ticked.
+
+How it behaves:
+
+- **Asking** (*Ask the storeroom*): the items you usually ask for come first;
+  say when it is needed (now, today, tomorrow morning) and send. The
+  storekeeper is told at once — in the app, and on their phone if alerts are
+  on. People who can only ask never see a price.
+- **Issuing** (*Storeroom*): requests wait most urgent first. Opening one fills
+  every line in with what was asked; change what you need, say why anything is
+  short, and issue. Whatever was not issued becomes a new waiting request on
+  its own, so nothing owed is forgotten. Issuing nothing is a decline, with a
+  reason. There is no approval step.
+- **Cost**: an issue is valued at the price last paid for the item, fixed on
+  the day it is issued.
+- **Receiving**: the kitchen taps *Got it all*, or *Something's wrong* and
+  enters what actually arrived. The kitchen's stock follows what it received,
+  and the difference is flagged to the manager. Anything not confirmed within
+  24 hours is taken as received, and shown as unconfirmed.
+- **Stock**: the storeroom's stock is what was there at the start, plus
+  deliveries into the storeroom, less what was issued. Kitchen stock is
+  deliveries straight to the kitchen, plus the bakery, plus what the storeroom
+  issued to the kitchen. What is issued to the other departments has left the
+  storeroom and is theirs.
+- **Storeroom report**: requests, how quickly they were issued, what was
+  issued by item and by department, differences, unconfirmed issues, items
+  repeatedly short, and what is running low.
+
 ### 5. First deploy
 
 ```bash

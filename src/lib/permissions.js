@@ -10,6 +10,11 @@ export const PERMISSIONS = [
   { key: 'purchases', label: 'Purchases', detail: 'Record deliveries and see what was paid' },
   { key: 'approvals', label: 'Approvals', detail: 'Accept or reject changes to days already submitted' },
   { key: 'bakery', label: 'Bakery', detail: 'Report bread produced, which puts it into stock' },
+  // The storeroom, split the way the work is: asking for things and confirming
+  // they arrived is the kitchen's; handing them over is the storekeeper's. A
+  // cook who could issue to themselves would make the record meaningless.
+  { key: 'store_request', label: 'Ask the storeroom', detail: 'Ask the storeroom for items and confirm what arrived' },
+  { key: 'store_issue', label: 'Storeroom', detail: 'Issue what departments ask for, and see the storeroom’s stock and costs' },
   { key: 'setup', label: 'Setup', detail: 'Ingredients, categories and property settings' },
   { key: 'users', label: 'Users & data', detail: 'Manage people, notifications, locks and erase data' },
 
@@ -31,8 +36,8 @@ export const ROLES = [
   {
     key: 'cook',
     label: 'Cook',
-    detail: 'Records the morning sheet. Sees no costs at all.',
-    defaults: ['entry'],
+    detail: 'Records the morning sheet and asks the storeroom for things. Sees no costs at all.',
+    defaults: ['entry', 'store_request'],
   },
   {
     key: 'manager',
@@ -40,7 +45,13 @@ export const ROLES = [
     detail: 'Records and reviews. Sees costs, stock and purchases, and approves changes.',
     // Including the bakery form: a manager covering for the baker on a quiet
     // Sunday should not need their own access changed to record a bake.
-    defaults: ['entry', 'reports', 'stock', 'purchases', 'approvals', 'bakery'],
+    defaults: ['entry', 'reports', 'stock', 'purchases', 'approvals', 'bakery', 'store_request'],
+  },
+  {
+    key: 'storekeeper',
+    label: 'Storekeeper',
+    detail: 'Issues what the kitchen and other departments ask for. Sees the storeroom and nothing else.',
+    defaults: ['store_issue'],
   },
   {
     key: 'baker',

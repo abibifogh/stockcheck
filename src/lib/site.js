@@ -41,6 +41,7 @@ export const FULL_SITE_PATHS = [
   '/api/ingredients',
   '/api/suppliers',
   '/api/odoo',
+  '/api/store',
   // The management report Insight asks for: breakfast figures only.
   '/api/link/report',
   '/api/link/suppliers',

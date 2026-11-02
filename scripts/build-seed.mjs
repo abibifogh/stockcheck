@@ -171,6 +171,12 @@ const OTHER_STORES = new Set([
   // The bed check buys nothing, and an ALTER cannot be pasted twice — which
   // these seed files are written to survive.
   '0022_odoo_purchases.sql',
+  // Alters the kitchen's supplier list. An ALTER cannot be pasted twice, and
+  // the bed check has no suppliers to speak of.
+  '0023_suppliers_from_insight.sql',
+  // The storeroom alters the kitchen's ingredients and purchases, and adds the
+  // requests between them. None of that exists in a housekeeping database.
+  '0024_storeroom.sql',
 ]);
 
 // The whole database a housekeeping-only site needs.

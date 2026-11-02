@@ -35,7 +35,8 @@ export async function renderEntry(params) {
   let filter = '';
   let dirty = false;
 
-  const activeIngredients = ingredients.filter((i) => i.active);
+  // Supplies (tissue, soap) are issued from the storeroom, never eaten at breakfast.
+  const activeIngredients = ingredients.filter((i) => i.active && (i.kind ?? 'food') !== 'supply');
   const statusEl = h('span.entry-status');
   const totalsEl = h('div.stat-sub');
   const listHost = h('div');

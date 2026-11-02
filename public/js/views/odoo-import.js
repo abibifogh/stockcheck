@@ -251,7 +251,9 @@ export async function odooImportCard({ onImported }) {
           h('div.btn-row', { style: { justifyContent: 'space-between', alignItems: 'flex-end' } },
             h('div', h('div.stat-label', 'To record'),
               h('div.stat-value', fmtMoney(value)),
-              h('div.muted', { style: { fontSize: '.82rem' } }, `${ready} line${ready === 1 ? '' : 's'}`)),
+              h('div.muted', { style: { fontSize: '.82rem' } }, `${ready} line${ready === 1 ? '' : 's'}`
+                + (state.settings?.deliveries_to === 'store' ? ' · into the storeroom'
+                  : state.settings?.deliveries_to === 'kitchen' ? ' · straight to the kitchen' : ''))),
             h('button.btn-primary', { disabled: !ready && !edits.size, onclick: runImport },
               ready ? `Import ${ready} line${ready === 1 ? '' : 's'}` : 'Save matches')))
         : null,

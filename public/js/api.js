@@ -95,6 +95,16 @@ export const api = {
   lastCosts: () => request('/api/purchases/last-costs'),
   deletePurchase: (id) => request(`/api/purchases/${id}`, { method: 'DELETE' }),
 
+  storeCatalog: () => request('/api/store/catalog'),
+  storeRequests: (view = 'mine') => request(`/api/store/requests?view=${view}`),
+  createStoreRequest: (body) => request('/api/store/requests', { method: 'POST', body }),
+  cancelStoreRequest: (id, body = {}) => request(`/api/store/requests/${id}/cancel`, { method: 'POST', body }),
+  issueStoreRequest: (id, body) => request(`/api/store/requests/${id}/issue`, { method: 'POST', body }),
+  declineStoreRequest: (id, body) => request(`/api/store/requests/${id}/decline`, { method: 'POST', body }),
+  receiveStoreRequest: (id, body = {}) => request(`/api/store/requests/${id}/receive`, { method: 'POST', body }),
+  storeStock: () => request('/api/store/stock'),
+  storeReport: (from, to) => request(`/api/store/report?${new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) })}`),
+
   odooStatus: () => request('/api/odoo/status'),
   odooTest: () => request('/api/odoo/test', { method: 'POST' }),
   odooPreview: (pos) => request('/api/odoo/preview', { method: 'POST', body: { pos } }),

@@ -22,7 +22,7 @@ self.addEventListener('push', (event) => {
     body: data.body || 'A day sheet was submitted.',
     // Same tag every morning, so a re-submission replaces the earlier alert
     // rather than stacking a second one underneath it.
-    tag: data.day ? `day-${data.day}` : 'breakfast',
+    tag: data.tag || (data.day ? `day-${data.day}` : 'breakfast'),
     renotify: true,
     // No icon is named on purpose: the browser falls back to the site's own,
     // and pointing at a file that does not exist gets you a broken one.

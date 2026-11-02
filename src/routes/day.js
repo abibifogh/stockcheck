@@ -132,10 +132,11 @@ export async function saveDay(ctx, day) {
   const entries = Object.entries(usage);
   if (entries.length > 1000) throw badRequest('Too many line items in one save');
 
-  const ingredientRows = await db.prepare(
-    'SELECT id, name, unit, is_core, active FROM ingredients',
-  ).all();
-  const ingredients = ingredientRows.results ?? [];
+  // `SELECT *` so the storeroom's `kind` comes along once that migration has
+  // run, and nothing breaks before it has. A supply (tissue, soap) is never on
+  // the breakfast sheet: it cannot be required there, or recorded as eaten.
+  const ingredientRows = await db.prepare('SELECT * FROM ingredients').all();
+  const ingredients = (ingredientRows.results ?? []).filter((i) => (i.kind ?? 'food') !== 'supply');
   const validIds = new Set(ingredients.map((r) => r.id));
 
   // Normalise the incoming quantities once; both the completeness check and the

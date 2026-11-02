@@ -17,13 +17,13 @@ const FIXED_COLUMNS = ['Date', 'In-house guests', 'Outside guests', 'Note'];
 /** A spreadsheet template with one column per everyday ingredient. */
 export async function importTemplate(ctx) {
   const rows = await ctx.db.prepare(
-    `SELECT i.name, i.unit, c.name AS category
+    `SELECT i.*, c.name AS category
      FROM ingredients i JOIN categories c ON c.id = i.category_id
      WHERE i.active = 1
      ORDER BY c.sort_order, c.name, i.sort_order, i.name`,
   ).all();
 
-  const ingredients = rows.results ?? [];
+  const ingredients = (rows.results ?? []).filter((i) => (i.kind ?? 'food') !== 'supply');
   const header = [...FIXED_COLUMNS, ...ingredients.map((i) => `${i.name} (${i.unit})`)];
 
   // Two example rows, clearly marked, so the shape is obvious at a glance.
@@ -138,9 +138,10 @@ export async function importDays(ctx) {
   const noteIndex = header.findIndex((h) => normaliseHeading(h) === 'note');
 
   const ingredientRows = await ctx.db.prepare(
-    'SELECT id, name, unit, is_core, active FROM ingredients WHERE active = 1',
+    'SELECT * FROM ingredients WHERE active = 1',
   ).all();
-  const ingredients = ingredientRows.results ?? [];
+  // Supplies are never on a breakfast sheet, imported or typed.
+  const ingredients = (ingredientRows.results ?? []).filter((i) => (i.kind ?? 'food') !== 'supply');
   const byNormalised = new Map(ingredients.map((i) => [normaliseHeading(i.name), i]));
 
   // Map each spreadsheet column onto an ingredient.

@@ -8,7 +8,11 @@ import { isEmail, parseRecipients, renderDailyEmail } from '../src/lib/email.js'
 
 test('role defaults keep cooks away from anything with money in it', () => {
   const cook = defaultPermissions('cook');
-  assert.deepEqual(cook, ['entry']);
+  // Asking the storeroom shows quantities and never a price.
+  assert.deepEqual(cook, ['entry', 'store_request']);
+  // Issuing does show costs, and a cook who could issue to themselves would
+  // make the storeroom's record meaningless.
+  assert.ok(!cook.includes('store_issue'));
   assert.ok(!cook.includes('reports'));
   assert.ok(!cook.includes('purchases'));
   assert.ok(!cook.includes('stock'));

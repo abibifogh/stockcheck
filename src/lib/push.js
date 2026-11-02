@@ -1,4 +1,5 @@
 import { dailyInsights, loadDataset } from './analytics.js';
+import { effectivePermissions } from './permissions.js';
 
 /**
  * Phone and desktop alerts when a day sheet is submitted.
@@ -289,5 +290,55 @@ export async function pingDaySubmitted(db, { day, submittedBy, resubmission }) {
     );
   } catch (err) {
     await log('failed', err.message);
+  }
+}
+
+/**
+ * Alert particular people: everyone holding a permission, and anyone named.
+ *
+ * The storeroom's alerts are addressed. A new request is for whoever issues;
+ * "your milk is ready" is for whoever asked. Sending either to every phone
+ * that ever turned alerts on is how people learn to turn them off.
+ *
+ * Never throws, for the same reason as the morning ping.
+ */
+export async function pushToPeople(db, { permission = null, userIds = [], title, body, url, tag }) {
+  try {
+    const [subs, users, settingsRows] = await Promise.all([
+      db.prepare('SELECT * FROM push_subscriptions WHERE user_id IS NOT NULL').all(),
+      db.prepare('SELECT * FROM users WHERE active = 1').all(),
+      db.prepare('SELECT key, value FROM settings').all(),
+    ]);
+    const settings = Object.fromEntries((settingsRows.results ?? []).map((r) => [r.key, r.value]));
+    const named = new Set(userIds.map(Number).filter(Number.isFinite));
+    const wanted = new Set((users.results ?? [])
+      .filter((u) => named.has(u.id) || (permission && effectivePermissions(u).includes(permission)))
+      .map((u) => u.id));
+    const targets = (subs.results ?? []).filter((s) => wanted.has(s.user_id));
+    if (!targets.length) return { sent: 0 };
+
+    const vapid = await getVapidKeys(db);
+    const subject = settings.email_from && settings.email_from.includes('@')
+      ? `mailto:${settings.email_from.replace(/^.*<|>.*$/g, '').trim()}`
+      : (settings.site_url || 'https://example.com');
+    const message = JSON.stringify({ title, body, tag, url: `${settings.site_url || ''}/${url || ''}` });
+
+    let sent = 0;
+    const dead = [];
+    for (const sub of targets) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const result = await sendPush(sub, message, vapid, subject);
+        if (result.ok) sent += 1;
+        else if (result.gone) dead.push(sub.id);
+      } catch { /* one phone failing is not a reason to stop the others */ }
+    }
+    if (dead.length) {
+      await db.batch(dead.map((id) => db.prepare('DELETE FROM push_subscriptions WHERE id = ?').bind(id)))
+        .catch(() => {});
+    }
+    return { sent };
+  } catch {
+    return { sent: 0 };
   }
 }

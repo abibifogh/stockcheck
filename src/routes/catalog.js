@@ -1,11 +1,12 @@
 import {
-  badRequest, bool, int, isMissingTable, json, notFound, num, readJson,
+  HttpError, badRequest, bool, int, isMissingTable, json, notFound, num, readJson,
   rethrowConstraint, str,
 } from '../lib/http.js';
 import { assertDayWritable } from '../lib/locks.js';
 import { isDay } from '../util/dates.js';
 import { loadDataset } from '../lib/analytics.js';
 import { announce, readSettings } from '../lib/notify.js';
+import { deliveryLocation } from '../lib/store.js';
 
 const UNITS = ['kg', 'g', 'L', 'ml', 'pcs', 'pack', 'loaf', 'tray', 'crate', 'box', 'bottle'];
 
@@ -194,6 +195,37 @@ function ingredientFields(body, { partial = false } = {}) {
   };
 }
 
+/**
+ * The storeroom's view of an item: whether it is breakfast food or a supply,
+ * whether it can be asked for, and its storeroom opening stock and par.
+ *
+ * Written apart from the rest so that editing an ingredient keeps working on
+ * a database that has not run the storeroom migration — the screen only sends
+ * these once it has.
+ */
+async function saveStoreFields(ctx, id, body) {
+  const keys = ['kind', 'requestable', 'store_opening', 'store_par'];
+  if (!keys.some((k) => k in body)) return null;
+  const kind = body.kind === 'supply' ? 'supply' : 'food';
+  try {
+    return await ctx.db.prepare(
+      `UPDATE ingredients SET kind = ?, requestable = ?, store_opening = ?, store_par = ?
+        WHERE id = ? RETURNING *`,
+    ).bind(
+      kind,
+      bool(body.requestable, true) ? 1 : 0,
+      num(body.store_opening, 'Storeroom opening stock', { min: 0, max: 1e6, fallback: 0 }),
+      num(body.store_par, 'Storeroom par level', { min: 0, max: 1e6, fallback: 0 }),
+      id,
+    ).first();
+  } catch (err) {
+    if (isMissingTable(err)) {
+      throw new HttpError(409, 'Saved, except the storeroom settings: run migration 0024_storeroom.sql first.');
+    }
+    throw err;
+  }
+}
+
 export async function createIngredient(ctx) {
   const body = await readJson(ctx.request);
   const f = ingredientFields(body);
@@ -208,7 +240,8 @@ export async function createIngredient(ctx) {
       f.default_unit_cost, f.opening_stock, f.is_core, f.is_produced, f.is_bistro,
       f.active, f.sort_order,
     ).first();
-    return json({ ingredient: row }, { status: 201 });
+    const stored = await saveStoreFields(ctx, row.id, body);
+    return json({ ingredient: stored ?? row }, { status: 201 });
   } catch (err) {
     rethrowConstraint(err, {
       unique: `There is already an ingredient called "${f.name}" in that category.`,
@@ -250,7 +283,8 @@ export async function updateIngredient(ctx, id) {
   }
 
   if (!row) throw notFound('Ingredient not found');
-  return json({ ingredient: row });
+  const stored = await saveStoreFields(ctx, row.id, body);
+  return json({ ingredient: stored ?? row });
 }
 
 /**
@@ -263,6 +297,12 @@ export async function deleteIngredient(ctx, id) {
     `SELECT (SELECT COUNT(*) FROM usage WHERE ingredient_id = ?1) +
             (SELECT COUNT(*) FROM purchases WHERE ingredient_id = ?1) AS n`,
   ).bind(id).first();
+  // Asked for or issued from the storeroom is history too. Tolerated missing,
+  // on a database that has not run the storeroom migration.
+  const requested = await ctx.db.prepare(
+    'SELECT COUNT(*) AS n FROM store_request_lines WHERE ingredient_id = ?',
+  ).bind(id).first().catch(() => ({ n: 0 }));
+  if (used) used.n = (used.n ?? 0) + (requested?.n ?? 0);
 
   if (used?.n > 0) {
     const row = await ctx.db.prepare('UPDATE ingredients SET active = 0 WHERE id = ? RETURNING *')
@@ -359,11 +399,12 @@ export async function createPurchase(ctx) {
     }
   }
 
+  const location = await deliveryLocation(ctx.db, body.location);
   try {
     const row = await ctx.db.prepare(
-      `INSERT INTO purchases (day, ingredient_id, qty, unit_cost, supplier, note)
-       VALUES (?, ?, ?, ?, ?, ?) RETURNING *`,
-    ).bind(day, ingredientId, qty, unitCost, supplier, note).first();
+      `INSERT INTO purchases (day, ingredient_id, qty, unit_cost, supplier, note${location ? ', location' : ''})
+       VALUES (?, ?, ?, ?, ?, ?${location ? ', ?' : ''}) RETURNING *`,
+    ).bind(day, ingredientId, qty, unitCost, supplier, note, ...(location ? [location] : [])).first();
     return json({ purchase: row }, { status: 201 });
   } catch (err) {
     rethrowConstraint(err, {
@@ -399,6 +440,9 @@ export async function createDelivery(ctx) {
       .map((r) => r.id),
   );
 
+  // The storeroom, unless somebody said it went straight to the kitchen.
+  const location = await deliveryLocation(ctx.db, body.location);
+
   const statements = [];
   let total = 0;
 
@@ -412,9 +456,9 @@ export async function createDelivery(ctx) {
     total += qty * unitCost;
     statements.push(
       ctx.db.prepare(
-        `INSERT INTO purchases (day, ingredient_id, qty, unit_cost, supplier, note)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-      ).bind(day, ingredientId, qty, unitCost, supplier, note),
+        `INSERT INTO purchases (day, ingredient_id, qty, unit_cost, supplier, note${location ? ', location' : ''})
+         VALUES (?, ?, ?, ?, ?, ?${location ? ', ?' : ''})`,
+      ).bind(day, ingredientId, qty, unitCost, supplier, note, ...(location ? [location] : [])),
     );
   });
 
@@ -424,7 +468,7 @@ export async function createDelivery(ctx) {
         `${ctx.session.user.name} (${ctx.session.user.role})`,
         'delivery.create',
         day,
-        JSON.stringify({ supplier, lines: items.length, total: Math.round(total * 100) / 100 }),
+        JSON.stringify({ supplier, location, lines: items.length, total: Math.round(total * 100) / 100 }),
       ),
   );
 
@@ -434,6 +478,7 @@ export async function createDelivery(ctx) {
     ok: true,
     day,
     supplier,
+    location,
     lines: items.length,
     total: Math.round(total * 100) / 100,
   }, { status: 201 });
@@ -622,6 +667,8 @@ const ALLOWED_SETTINGS = new Set([
   'restrict_cooks_to_everyday',
   // Where Odoo is, for importing purchase orders. The key is a Worker secret.
   'odoo_base', 'odoo_db',
+  // The storeroom: where deliveries land, and who may ask it for things.
+  'deliveries_to', 'store_departments',
 ]);
 
 const SETTING_RULES = {
@@ -652,6 +699,19 @@ const SETTING_RULES = {
     return url.origin;
   },
   odoo_db: (value) => (str(value, 'Odoo database', { max: 100, fallback: '' }) || '').trim(),
+  deliveries_to: (value) => {
+    const where = String(value);
+    if (!['store', 'kitchen'].includes(where)) throw badRequest('Deliveries go to the storeroom or the kitchen.');
+    return where;
+  },
+  // One per line. The first is the breakfast kitchen, so it cannot be blank.
+  store_departments: (value) => {
+    const list = [...new Set(String(value ?? '').split(/[\n,]+/).map((d) => d.trim()).filter(Boolean))];
+    if (!list.length) throw badRequest('Name at least one department. The first is the breakfast kitchen.');
+    if (list.length > 20) throw badRequest('That is a lot of departments. Keep it to twenty.');
+    if (list.some((d) => d.length > 60)) throw badRequest('Keep each department’s name under 60 characters.');
+    return list.join('\n');
+  },
 };
 
 export async function updateSettings(ctx) {
