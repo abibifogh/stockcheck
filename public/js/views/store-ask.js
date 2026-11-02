@@ -61,7 +61,7 @@ function newRequest(catalog, prefill, onSent) {
   const totalOut = h('div.entry-status');
   const send = h('button.btn-primary', { onclick: submit }, 'Send request');
 
-  const neededSeg = h('div.seg.seg-fill', { role: 'radiogroup', 'aria-label': 'Needed' });
+  const neededSeg = h('div.seg.seg-fill.seg-row', { role: 'radiogroup', 'aria-label': 'Needed' });
   const paintNeeded = () => mount(neededSeg, catalog.needed.map((n) => h('button', {
     class: needed === n.key ? 'active' : '',
     role: 'radio',
