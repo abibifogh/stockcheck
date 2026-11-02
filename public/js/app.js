@@ -340,7 +340,7 @@ function shell(content) {
     h('header.topbar',
       menuButton,
       h('div.brand',
-        h('span.brand-mark', { html: BRAND.app === 'housekeeping' ? ICONS.bed : ICONS.sunrise, style: { color: '#fff' } }),
+        h('span.brand-mark', { html: BRAND.app === 'housekeeping' ? ICONS.bed : ICONS.sunrise, style: { color: 'var(--on-accent)' } }),
         h('div',
           state.settings.property_name || BRAND.name,
           h('span.brand-sub', state.name ? `${state.name} · ${roleLabel(state.role)}` : roleLabel(state.role)),

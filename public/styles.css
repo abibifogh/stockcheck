@@ -3,8 +3,8 @@
    own colour.
 
    A cool, quiet ground; cards with no outline; every button a pill; a black
-   pill for where you are. Jam means you can press it, ember means late or
-   urgent, honey means running low, green means done. Nothing else competes.
+   pill for where you are. Basil means you can press it, ember means late or
+   urgent, honey means running low, teal means done. Nothing else competes.
 
    The faces are the group's, kept here (vendor/fonts) so nothing is fetched
    from anybody else: Bricolage Grotesque for titles and big figures, Manrope
@@ -31,18 +31,19 @@
   --text-dim: #4a5166;
   --text-faint: #646b80;
 
-  /* The one accent: what can be pressed. */
-  --accent: #c42d63;
-  --accent-soft: #fbe7ef;
-  --accent-ink: #9e1f4c;
+  /* The one accent: what can be pressed. Basil, from the breakfast table. */
+  --accent: #2f7a4a;
+  --accent-soft: #e1f1e6;
+  --accent-ink: #1f5a35;
   --on-accent: #ffffff;
   /* Where you are: a black pill. */
   --pill: #0f1222;
   --on-pill: #ffffff;
 
   /* Status, each a tinted ground with ink dark enough to read on it. */
-  --good: #0b7f59;
-  --good-soft: #ddf5ec;
+  /* Done is teal rather than green, so it never reads as a basil button. */
+  --good: #0b6f78;
+  --good-soft: #dcf0f2;
   --warn: #8a5a00;
   --warn-soft: #fff4da;
   --bad: #b9361c;
@@ -50,7 +51,7 @@
   --info: #5b3df5;
   --ember: #f0642e;
   --honey: #e8a10c;
-  --leaf: #0e9f6e;
+  --leaf: #12969a;
 
   /* The categorical slots, in fixed order — the group's. */
   --c1: #2f6bff; --c2: #f0642e; --c3: #0eaa86; --c4: #e8a10c;
@@ -66,11 +67,12 @@
   --shadow-2: 0 2px 6px rgba(15, 18, 34, .08), 0 18px 40px rgba(15, 18, 34, .13);
   --glow: 0 12px 28px -8px color-mix(in srgb, var(--accent) 70%, transparent);
   --glass: rgba(237, 240, 243, .82);
-  /* The morning's panel: jam lit from the top right, like a sunrise. */
+  /* The morning's panel: basil and avocado, lit from the top right. Dark
+     enough at the top left, where the writing starts, for white to read. */
   --sunrise:
-    radial-gradient(70% 90% at 100% 0%, rgba(255, 176, 92, .75), transparent 62%),
-    radial-gradient(55% 70% at 88% 100%, rgba(255, 120, 150, .45), transparent 60%),
-    radial-gradient(130% 150% at 0% 0%, #e46a6f 0%, #c42d63 42%, #6e1638 100%);
+    radial-gradient(70% 90% at 100% 0%, rgba(196, 224, 112, .6), transparent 62%),
+    radial-gradient(55% 70% at 88% 100%, rgba(120, 190, 110, .35), transparent 60%),
+    radial-gradient(130% 150% at 0% 0%, #3b8650 0%, #2b6e44 42%, #143a25 100%);
   --spring: cubic-bezier(.34, 1.56, .64, 1);
   --settle: cubic-bezier(.22, 1, .36, 1);
   --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -87,12 +89,12 @@
     --bg: #0b0d14; --surface: #151824; --surface-2: #1c2030; --surface-3: #252a3c;
     --border: #262b3d; --border-strong: #363c52;
     --text: #eef0f8; --text-dim: #c0c6d6; --text-faint: #9097ab;
-    --accent: #f07ba3; --accent-soft: #3a1626; --accent-ink: #ffb3cc; --on-accent: #1c0611;
+    --accent: #7ccb93; --accent-soft: #16301f; --accent-ink: #a8e0b8; --on-accent: #0b2414;
     --pill: #eef0f8; --on-pill: #0b0d14;
-    --good: #7fdcbc; --good-soft: #11291f;
+    --good: #7fd3d8; --good-soft: #0f2a2c;
     --warn: #f5cf73; --warn-soft: #2e2410;
     --bad: #ffb088; --bad-soft: #3a1f14;
-    --info: #b3a3ff; --ember: #ff8a55; --honey: #f2b33d; --leaf: #3fc79e;
+    --info: #b3a3ff; --ember: #ff8a55; --honey: #f2b33d; --leaf: #3cc2c4;
     --c1: #5f8dff; --c2: #ff7a45; --c3: #2cc29d; --c4: #f2b33d;
     --c5: #f07ab8; --c6: #3fc79e; --c7: #9b87ff; --c8: #f06a69;
     --shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 6px 16px rgba(0, 0, 0, .3);
@@ -100,9 +102,9 @@
     --glow: 0 12px 28px rgba(0, 0, 0, .5);
     --glass: rgba(11, 13, 20, .8);
     --sunrise:
-      radial-gradient(70% 90% at 100% 0%, rgba(255, 150, 80, .45), transparent 62%),
-      radial-gradient(55% 70% at 88% 100%, rgba(240, 100, 140, .3), transparent 60%),
-      radial-gradient(130% 150% at 0% 0%, #a8324f 0%, #861f47 42%, #3a0b20 100%);
+      radial-gradient(70% 90% at 100% 0%, rgba(170, 210, 100, .3), transparent 62%),
+      radial-gradient(55% 70% at 88% 100%, rgba(100, 170, 100, .25), transparent 60%),
+      radial-gradient(130% 150% at 0% 0%, #2e6b45 0%, #1f5233 42%, #0c2618 100%);
   }
 }
 
@@ -111,12 +113,12 @@
   --bg: #0b0d14; --surface: #151824; --surface-2: #1c2030; --surface-3: #252a3c;
   --border: #262b3d; --border-strong: #363c52;
   --text: #eef0f8; --text-dim: #c0c6d6; --text-faint: #9097ab;
-  --accent: #f07ba3; --accent-soft: #3a1626; --accent-ink: #ffb3cc; --on-accent: #1c0611;
+  --accent: #7ccb93; --accent-soft: #16301f; --accent-ink: #a8e0b8; --on-accent: #0b2414;
   --pill: #eef0f8; --on-pill: #0b0d14;
-  --good: #7fdcbc; --good-soft: #11291f;
+  --good: #7fd3d8; --good-soft: #0f2a2c;
   --warn: #f5cf73; --warn-soft: #2e2410;
   --bad: #ffb088; --bad-soft: #3a1f14;
-  --info: #b3a3ff; --ember: #ff8a55; --honey: #f2b33d; --leaf: #3fc79e;
+  --info: #b3a3ff; --ember: #ff8a55; --honey: #f2b33d; --leaf: #3cc2c4;
   --c1: #5f8dff; --c2: #ff7a45; --c3: #2cc29d; --c4: #f2b33d;
   --c5: #f07ab8; --c6: #3fc79e; --c7: #9b87ff; --c8: #f06a69;
   --shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 6px 16px rgba(0, 0, 0, .3);
@@ -124,9 +126,9 @@
   --glow: 0 12px 28px rgba(0, 0, 0, .5);
   --glass: rgba(11, 13, 20, .8);
   --sunrise:
-    radial-gradient(70% 90% at 100% 0%, rgba(255, 150, 80, .45), transparent 62%),
-    radial-gradient(55% 70% at 88% 100%, rgba(240, 100, 140, .3), transparent 60%),
-    radial-gradient(130% 150% at 0% 0%, #a8324f 0%, #861f47 42%, #3a0b20 100%);
+    radial-gradient(70% 90% at 100% 0%, rgba(170, 210, 100, .3), transparent 62%),
+    radial-gradient(55% 70% at 88% 100%, rgba(100, 170, 100, .25), transparent 60%),
+    radial-gradient(130% 150% at 0% 0%, #2e6b45 0%, #1f5233 42%, #0c2618 100%);
 }
 
 * { box-sizing: border-box; }
@@ -1427,7 +1429,7 @@ label.field > span { font-weight: 700; }
 .entry-guests {
   border: 0; border-radius: 26px; padding: 1.1rem 1.2rem 1.15rem;
   background: var(--sunrise); color: #fff;
-  box-shadow: 0 22px 44px -22px #c42d63;
+  box-shadow: 0 22px 44px -22px #2b6e44;
 }
 .entry-guests label.field > span { color: rgba(255, 255, 255, .9); }
 .entry-guests input {
@@ -1439,7 +1441,7 @@ label.field > span { font-weight: 700; }
   font-family: var(--disp); font-weight: 800; font-size: 1.6rem; letter-spacing: -.03em;
 }
 .entry-guests .counter button { background: rgba(255, 255, 255, .22); color: #fff; }
-.entry-guests .counter button:last-child { background: #fff; color: #c42d63; }
+.entry-guests .counter button:last-child { background: #fff; color: #2b6e44; }
 .entry-guests .muted, .entry-guests .item-hint { color: rgba(255, 255, 255, .8); }
 
 .counter button { border-radius: 999px; flex-basis: 44px; min-height: 44px; }
@@ -1505,7 +1507,10 @@ body:has(.entry-footer) .toasts { bottom: calc(5.5rem + var(--bottombar-h) + env
     color: var(--text-faint); font: 700 .7rem var(--sans); text-decoration: none;
   }
   .bottombar svg { width: 20px; height: 20px; }
-  .bottombar a.active { flex-direction: row; gap: 6px; background: var(--pill); color: var(--on-pill); font-size: .8rem; }
+  /* Where you are: the same stacked icon and label as the others, on the
+     black pill. A side-by-side layout ran "Storeroom" off the pill. */
+  .bottombar a, .bottombar button { min-width: 0; overflow: hidden; white-space: nowrap; border-radius: 20px; }
+  .bottombar a.active { background: var(--pill); color: var(--on-pill); }
   .sidebar { background: var(--surface); border-radius: 0 26px 26px 0; }
   .shell.nav-open .nav-scrim { bottom: 0; }
 }
@@ -1519,7 +1524,7 @@ body:has(.entry-footer) .toasts { bottom: calc(5.5rem + var(--bottombar-h) + env
 /* ------------------------------------------------------- the morning panel -- */
 .hero {
   border-radius: 28px; padding: 1.5rem 1.7rem; margin-bottom: 1rem;
-  background: var(--sunrise); color: #fff; box-shadow: 0 22px 48px -22px #c42d63;
+  background: var(--sunrise); color: #fff; box-shadow: 0 22px 48px -22px #2b6e44;
   display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: flex-end; justify-content: space-between;
 }
 .hero-label { font-family: var(--mono); font-size: .68rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; opacity: .88; }
