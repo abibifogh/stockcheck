@@ -240,17 +240,92 @@ function closeDrawer() {
   document.querySelector('.shell')?.classList.remove('nav-open');
 }
 
+/**
+ * The few icons the frame uses. Stroke drawings in currentColor, so they take
+ * the colour of whatever they sit in, in either theme. `h()` makes HTML
+ * elements, not SVG ones, so they go in as markup.
+ */
+const svg = (paths, size = 20) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" `
+  + 'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+  + `${paths}</svg>`;
+const ICONS = {
+  sunrise: svg('<path d="M4 16a8 8 0 0 1 16 0"/><path d="M2 19h20"/><path d="M12 4v2M5.6 6.6l1.4 1.4M18.4 6.6 17 8"/>', 21),
+  bed: svg('<path d="M3 18V7M3 13h18v5M21 13a3 3 0 0 0-3-3h-7v3"/><circle cx="7" cy="11" r="1.6"/>', 21),
+  today: svg('<path d="M4 16a8 8 0 0 1 16 0"/><path d="M2 19h20"/>'),
+  overview: svg('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
+  store: svg('<path d="M3 9h18v11H3z"/><path d="M3 9 6 4h12l3 5"/><path d="M10 13h4"/>'),
+  stock: svg('<path d="m12 3 9 5-9 5-9-5 9-5z"/><path d="m3 13 9 5 9-5"/>'),
+  cart: svg('<path d="M3 4h2l2.4 11h11.2L21 7H6.2"/><circle cx="9" cy="19.5" r="1.3"/><circle cx="17" cy="19.5" r="1.3"/>'),
+  bakery: svg('<path d="M4 13a8 5 0 0 1 16 0v5H4z"/><path d="M9 10v3M12 9v4M15 10v3"/>'),
+  bedcheck: svg('<path d="M3 18V7M3 13h18v5"/><path d="m14 7 2 2 4-4"/>'),
+  more: svg('<path d="M5 12h.01M12 12h.01M19 12h.01"/>'),
+  theme: svg('<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/>', 18),
+  signout: svg('<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 16l-4-4 4-4M6 12h10"/>', 18),
+};
+
+/**
+ * The phone's bottom bar: the three places this person actually goes, in the
+ * order they go there, and More for everything else.
+ *
+ * Chosen from what they can open, so a cook gets Today and the storeroom and a
+ * storekeeper gets the storeroom first — nobody is offered a tab that refuses
+ * them.
+ */
+const TABS = [
+  { path: 'entry', label: 'Today', icon: 'today' },
+  { path: 'hk-check', label: 'Bed check', icon: 'bedcheck' },
+  { path: 'store', label: 'Storeroom', icon: 'store' },
+  { path: 'ask', label: 'Storeroom', icon: 'store' },
+  { path: 'overview', label: 'Overview', icon: 'overview' },
+  { path: 'hk-overview', label: 'Dorms', icon: 'overview' },
+  { path: 'production', label: 'Bakery', icon: 'bakery' },
+  { path: 'stock', label: 'Stock', icon: 'stock' },
+  { path: 'hk-roster', label: 'Roster', icon: 'today' },
+  { path: 'purchases', label: 'Purchases', icon: 'cart' },
+];
+
+function bottomTabs() {
+  const here = currentRoute()?.path;
+  const picked = [];
+  for (const tab of TABS) {
+    if (picked.length === 3) break;
+    const route = ROUTES.find((r) => r.path === tab.path);
+    if (!route || !allowed(route)) continue;
+    // One storeroom tab: the storekeeper's, if they have it.
+    if (tab.icon === 'store' && picked.some((t) => t.icon === 'store')) continue;
+    picked.push(tab);
+  }
+  if (!picked.length) return null;
+  const items = picked.map((tab) => h('a', {
+    href: `#/${tab.path}`,
+    class: here === tab.path ? 'active' : '',
+    'aria-current': here === tab.path ? 'page' : null,
+  }, h('span', { html: ICONS[tab.icon] }), tab.label));
+  const more = h('button', {
+    type: 'button',
+    'aria-label': 'Everything else',
+    onclick: () => document.querySelector('.shell')?.classList.toggle('nav-open'),
+  }, h('span', { html: ICONS.more }), 'More');
+  const bar = h('nav.bottombar', { 'aria-label': 'Main' }, items, more);
+  bar.style.setProperty('--tabs', String(items.length + 1));
+  return bar;
+}
+
+const initials = (name) => String(name || '?').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+
 function shell(content) {
   const menuButton = h('button.btn-ghost.btn-sm.nav-toggle', {
     title: 'Menu',
+    'aria-label': 'Menu',
     onclick: () => document.querySelector('.shell')?.classList.toggle('nav-open'),
   }, '☰');
+  const tabs = bottomTabs();
 
-  const shellEl = h('div.shell',
+  const shellEl = h(`div.shell${tabs ? '.has-bottombar' : ''}`,
     h('header.topbar',
       menuButton,
       h('div.brand',
-        h('span.brand-mark', BRAND.mark),
+        h('span.brand-mark', { html: BRAND.app === 'housekeeping' ? ICONS.bed : ICONS.sunrise, style: { color: '#fff' } }),
         h('div',
           state.settings.property_name || BRAND.name,
           h('span.brand-sub', state.name ? `${state.name} · ${roleLabel(state.role)}` : roleLabel(state.role)),
@@ -258,12 +333,15 @@ function shell(content) {
       ),
       h('div.topbar-spacer'),
       noticeBell(),
-      h('button.btn-ghost.btn-sm', {
+      h('button.btn-ghost.btn-sm.icon-btn', {
         title: 'Switch light / dark',
+        'aria-label': 'Switch light or dark',
         onclick: toggleTheme,
-      }, '🌗'),
-      h('button.btn-ghost.btn-sm', {
-        title: state.role === 'admin' ? 'Change my password' : 'Change my PIN',
+        html: ICONS.theme,
+      }),
+      h('button.btn-ghost.btn-sm.avatar-btn', {
+        title: state.role === 'admin' ? 'My account — change my password' : 'My account — change my PIN',
+        'aria-label': 'My account',
         onclick: () => openAccountDialog({
           role: state.role,
           name: state.name || 'you',
@@ -271,14 +349,17 @@ function shell(content) {
           isRecovery: state.isRecovery,
           canAlert: can('reports'),
         }),
-      }, 'My account'),
-      h('button.btn-ghost.btn-sm', {
+      }, initials(state.name)),
+      h('button.btn-ghost.btn-sm.icon-btn', {
+        title: 'Sign out',
+        'aria-label': 'Sign out',
+        html: ICONS.signout,
         onclick: async () => {
           await api.logout().catch(() => {});
           resetSession();
           render();
         },
-      }, 'Sign out'),
+      }),
     ),
     h('div.body-row',
       sidebar(),
@@ -287,6 +368,7 @@ function shell(content) {
       h('div.nav-scrim', { onclick: closeDrawer }),
       h('main.main', content),
     ),
+    tabs,
   );
 
   return shellEl;

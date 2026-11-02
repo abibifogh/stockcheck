@@ -19,23 +19,30 @@ export async function renderOverview() {
 
   const trendDays = data.trend;
   const cpgSpark = trendDays.map((d) => d.costPerGuest);
-  const guestSpark = trendDays.map((d) => d.guests);
+
+  // The morning's panel: the latest day's cost a guest, large, and the run of
+  // mornings before it. The one place the sunrise is used on this screen.
+  const recent = cpgSpark.slice(-14).map((v) => Number(v) || 0);
+  const lo = Math.min(...recent);
+  const hi = Math.max(...recent);
+  const hero = h('section.hero',
+    h('div',
+      h('div.hero-label', `Latest morning · ${fmtDay(data.latestDay)}`),
+      h('div.hero-figure', fmtMoney(k.costPerGuest)),
+      h('div.hero-sub', `a guest · ${fmtNum(k.guests, 0)} guests`),
+      h('span.hero-chip', data.todayRecorded ? 'Today is recorded' : 'Today is not recorded yet'),
+    ),
+    recent.length > 1
+      ? h('div.hero-bars', { role: 'img', 'aria-label': `Cost a guest over the last ${recent.length} mornings` },
+        h('div.hero-label', `Cost a guest · last ${recent.length} mornings`),
+        h('div.hero-bars-track', recent.map((v) => h('span', {
+          title: fmtMoney(v),
+          style: { height: `${hi > lo ? Math.round(18 + ((v - lo) / (hi - lo)) * 82) : 60}%` },
+        }))))
+      : null,
+  );
 
   const tiles = h('div.grid.grid-4', { style: { marginBottom: '1rem' } },
-    statTile({
-      label: `Latest day · ${fmtDayShort(data.latestDay)}`,
-      value: fmtNum(k.guests, 0),
-      sub: 'guests served',
-      spark: guestSpark,
-      accent: 'var(--c1)',
-    }),
-    statTile({
-      label: 'Cost per guest',
-      value: fmtMoney(k.costPerGuest),
-      sub: 'latest day',
-      spark: cpgSpark,
-      accent: 'var(--c3)',
-    }),
     statTile({
       label: 'This week',
       value: fmtMoney(k.weekCost, { compact: true }),
@@ -145,6 +152,7 @@ export async function renderOverview() {
         h('button.btn-sm.btn-primary', { onclick: () => navigate('monthly') }, 'Monthly report'),
       ),
     ),
+    hero,
     tiles,
     secondary,
     alerts,

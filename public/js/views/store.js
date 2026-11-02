@@ -79,6 +79,7 @@ export async function renderStore(params = {}) {
     return h('button.card', {
       style: {
         margin: 0, textAlign: 'left', width: '100%', cursor: 'pointer', display: 'grid', gap: '.4rem',
+        justifyContent: 'stretch', alignItems: 'start', borderRadius: 'var(--radius)',
         borderColor: urgent ? 'var(--bad)' : null, font: 'inherit', color: 'inherit',
       },
       onclick: () => openIssue(r),
