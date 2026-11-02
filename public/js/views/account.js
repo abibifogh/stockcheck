@@ -14,8 +14,8 @@ import {
  */
 export function openAccountDialog({ role, name, email: myEmail, isRecovery, canAlert = false }) {
   const usesPassword = role === 'admin';
-  // Only the people who read the reports are offered the alert. A cook does not
-  // need to be pinged about the sheet they just filled in themselves.
+  // Only people something is addressed to are offered alerts: managers, the
+  // storeroom, and anyone who asks the storeroom for things.
   const canSeeAlerts = canAlert && pushSupported();
   const error = h('p.muted', { style: { minHeight: '1.2rem', fontSize: '.85rem' } });
 
@@ -185,9 +185,9 @@ export function openAccountDialog({ role, name, email: myEmail, isRecovery, canA
         h('h3', { style: { fontSize: '.95rem', marginBottom: '.35rem' } }, 'Alerts on this device'),
         h('p.muted', { style: { fontSize: '.85rem' } },
           subscribed
-            ? 'This device is alerted whenever a cook submits a day.'
-            : 'Get a notification the moment a cook submits a day. Each device has to be turned on '
-              + 'separately — a phone and a computer are two separate permissions.'),
+            ? 'This device is alerted when something needs you: a storeroom request, a submitted day.'
+            : 'Get a notification the moment something needs you, even with the app closed. Each '
+              + 'device is turned on once — a phone and a computer are two separate permissions.'),
         needsHomeScreen() && !subscribed
           ? h('div.guide-note.warn', { style: { marginTop: 0, fontSize: '.83rem' } },
             h('strong', 'On an iPhone or iPad: '),

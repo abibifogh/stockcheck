@@ -357,3 +357,51 @@ test('the report adds up what was issued, by item and by department', async () =
   assert.equal(rep.counts.full, 2);
   assert.ok(rep.low.some((i) => i.name === 'Dish soap'), 'none of it on the shelf');
 });
+
+// ---------------------------------------------------------- telling people --
+
+test('a new request is emailed to the storeroom; what follows is not', async () => {
+  const { sqlite, db } = database();
+  sqlite.exec(`
+    UPDATE settings SET value = 'Breakfast <b@example.com>' WHERE key = 'email_from';
+    UPDATE settings SET value = 'https://breakfast.example.com' WHERE key = 'site_url';
+    INSERT INTO users (id, name, email, role, permissions) VALUES
+      (2, 'Kwesi', 'kwesi@example.com', 'storekeeper', '["store_issue"]'),
+      (1, 'Ama', 'ama@example.com', 'cook', '["entry","store_request"]');
+  `);
+  const mails = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    if (String(url).includes('resend')) mails.push(JSON.parse(init.body));
+    return new Response('{"id":"x"}', { status: 200 });
+  };
+  const withKey = (who, opts) => ({ ...ctx(db, who, opts), env: { RESEND_API_KEY: 'test-key' } });
+
+  try {
+    const { request } = await (await createRequest(withKey(COOK, {
+      body: { needed: 'now', note: 'For the omelette station', lines: [{ ingredient_id: 900, qty: 6 }, { ingredient_id: 950, qty: 4 }] },
+    }))).json();
+
+    assert.equal(mails.length, 1, 'one email for the new request');
+    assert.deepEqual(mails[0].to, ['kwesi@example.com'], 'to the storeroom, not to the person asking');
+    assert.match(mails[0].subject, new RegExp(request.ref));
+    assert.match(mails[0].html, /Fresh milk: 6/);
+    assert.match(mails[0].html, /Toilet tissue: 4/);
+    assert.match(mails[0].html, /omelette station/);
+    assert.match(mails[0].html, /https:\/\/breakfast\.example\.com#\/store/);
+
+    // Issued short, so a follow-up is raised too: still no more email.
+    await issueRequest(withKey(KEEPER, {
+      body: { lines: request.lines.map((l) => ({ id: l.id, issued: l.name === 'Fresh milk' ? 6 : 0, reason: 'none left' })) },
+    }), request.id);
+    const second = (await (await createRequest(withKey(COOK, { body: { lines: [{ ingredient_id: 901, qty: 1 }] } }))).json()).request;
+    await cancelRequest(withKey(COOK, { body: {} }), second.id);
+    assert.equal(mails.length, 2, 'the second request is emailed; the issue and the cancel are not');
+
+    const kinds = sqlite.prepare('SELECT kind FROM app_notices ORDER BY id').all().map((r) => r.kind);
+    assert.deepEqual(kinds, ['store_request', 'store_issued', 'store_request', 'store_cancelled'],
+      'every step still lands on the bell');
+  } finally {
+    globalThis.fetch = original;
+  }
+});

@@ -2,7 +2,7 @@ import {
   HttpError, badRequest, isMissingTable, json, notFound, num, readJson, str,
 } from '../lib/http.js';
 import { assertDayWritable } from '../lib/locks.js';
-import { notify, readSettings } from '../lib/notify.js';
+import { emailAudience, notify, readSettings } from '../lib/notify.js';
 import { pushToPeople } from '../lib/push.js';
 import {
   NEEDED, autoReceive, departmentsOf, lastCosts, storeStock,
@@ -236,9 +236,16 @@ export async function createRequest(ctx) {
     ]);
 
     // The storekeeper is told now, not when they next look.
+    //
+    // A new request is the one step that gets an email as well: it is the
+    // start of something somebody has to act on, and the email is the record
+    // of it that sits in an inbox until it is done. Everything after — issued,
+    // declined, a difference, cancelled — is a quick nudge on the phone and the
+    // bell, never another email.
     const summary = [...wanted].slice(0, 4).map(([id, amount]) => `${names.get(id)} ${qty(amount)}`).join(', ')
       + (wanted.size > 4 ? ` and ${wanted.size - 4} more` : '');
     const title = `${refOf(row.id)}: ${department} needs ${NEEDED[needed].toLowerCase()}`;
+    const everything = [...wanted].map(([id, amount]) => `• ${names.get(id)}: ${qty(amount)}`).join('\n');
     await later(ctx, Promise.all([
       notify(ctx.db, {
         kind: 'store_request', audience: 'store_issue', level: needed === 'now' ? 'warn' : 'info',
@@ -246,6 +253,15 @@ export async function createRequest(ctx) {
       }),
       pushToPeople(ctx.db, {
         permission: 'store_issue', title, body: `${ctx.session.user.name}: ${summary}`, url: '#/store', tag: `store-${row.id}`,
+      }),
+      emailAudience(ctx.db, ctx.env, {
+        kind: 'store_request',
+        audience: 'store_issue',
+        subject: `Storeroom request ${refOf(row.id)} from ${department}`,
+        title,
+        body: `${ctx.session.user.name} asked for:\n${everything}${note ? `\n\nNote: ${note}` : ''}`,
+        link: '#/store',
+        linkLabel: 'Open the storeroom',
       }),
     ]));
 
@@ -304,7 +320,16 @@ export async function cancelRequest(ctx, id) {
       throw new HttpError(409, `${request.ref} has already been ${request.status}, so it cannot be cancelled.`);
     }
     await audit(ctx, 'store.cancel', refOf(id), { note }).run().catch(() => {});
-    return json({ request: await oneRequest(ctx, id) });
+    const request = await oneRequest(ctx, id);
+
+    // So nobody walks to the shelf for something no longer wanted.
+    const title = `${request.ref} cancelled by ${request.department}`;
+    const text = note || `${ctx.session.user.name} no longer needs it.`;
+    await later(ctx, Promise.all([
+      notify(ctx.db, { kind: 'store_cancelled', audience: 'store_issue', title, body: text, link: '#/store' }),
+      pushToPeople(ctx.db, { permission: 'store_issue', title, body: text, url: '#/store', tag: `store-${request.id}` }),
+    ]));
+    return json({ request });
   });
 }
 
