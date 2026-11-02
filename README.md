@@ -394,8 +394,10 @@ storekeeper issues it; the kitchen confirms what arrived. Deliveries now land
 in the storeroom, and what reaches the breakfast kitchen is what the
 storeroom issues to it.
 
-1. Run `migrations/0024_storeroom.sql` in the D1 console (paste the copy in
-   `migrations/console/`).
+1. Run the storeroom update: **Actions → Breakfast database → Run workflow**,
+   choose `0024_storeroom.sql`, type `breakfast`, Run. (It needs the
+   repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`; or
+   paste `migrations/console/0024_storeroom.sql` into the D1 console.)
 2. **Setup → Ingredients**: add the supplies (tissue, soap, serviettes) with
    *What it is* set to **Supply**: kept and issued by the storeroom, never on
    the breakfast sheet or in the cost per guest. For every item, enter what is
