@@ -25,6 +25,7 @@ import { renderStore } from './views/store.js';
 import { renderStoreReport } from './views/store-report.js';
 import { BRAND } from './brand.js';
 import { noticeBell } from './views/notices.js';
+import { install, installBanner, installState, registerWorker } from './install.js';
 
 export const state = {
   role: null,
@@ -233,7 +234,12 @@ function sidebar() {
 
     if (!isOpen) body.style.display = 'none';
     return h('div.side-group', header, body);
-  }));
+  }),
+  // Always findable here, under More on a phone, even after the banner was
+  // put away.
+  ['prompt', 'ios'].includes(installState())
+    ? h('button.side-link.side-install', { type: 'button', onclick: () => { closeDrawer(); install(); } }, 'Install the app')
+    : null);
 }
 
 function closeDrawer() {
@@ -366,7 +372,7 @@ function shell(content) {
       // Tapping the page behind an open drawer closes it, which is what every
       // phone user already expects to happen.
       h('div.nav-scrim', { onclick: closeDrawer }),
-      h('main.main', content),
+      h('main.main', installBanner(), content),
     ),
     tabs,
   );
@@ -508,6 +514,7 @@ window.addEventListener('hashchange', render);
 window.addEventListener('online', syncPending);
 
 (async function boot() {
+  registerWorker();
   const savedTheme = localStorage.getItem('bf.theme');
   if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
 
