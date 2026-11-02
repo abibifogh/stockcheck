@@ -1572,3 +1572,20 @@ body:has(.entry-footer) .toasts { bottom: calc(5.5rem + var(--bottombar-h) + env
   .entry-footer button { flex: 0 0 auto; min-width: 0; min-height: 46px; padding-inline: .9rem; }
   .entry-footer .btn-primary { flex: 1 1 auto; }
 }
+
+/* Items on a narrow phone.
+   A 375px phone pushed the + off the edge of its card: the name column would
+   not shrink below its longest word, the list would not go narrower than
+   290px, and the − / figure / + group is wide. The name now gives way and
+   wraps, the list never asks for more than the screen, and below 420px the
+   stepper tightens. */
+.item-list { grid-template-columns: repeat(auto-fill, minmax(min(290px, 100%), 1fr)); }
+.item { grid-template-columns: minmax(0, 1fr) auto; }
+.item-name, .item-hint { overflow-wrap: anywhere; }
+@media (max-width: 420px) {
+  .item { gap: .4rem .5rem; padding: .7rem .6rem .7rem .85rem; }
+  .item-input { gap: .25rem; }
+  .item-input input { width: 54px; min-width: 0; padding-inline: .25rem; font-size: 1.05rem; }
+  .item-input button { flex: 0 0 38px; width: 38px; min-height: 38px; }
+  .item-input .unit { width: auto; }
+}

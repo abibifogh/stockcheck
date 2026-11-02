@@ -137,7 +137,7 @@ export async function renderStore(params = {}) {
 
       return h('div.item', {
         style: {
-          gridTemplateColumns: '1fr auto',
+          gridTemplateColumns: 'minmax(0, 1fr) auto',
           borderColor: shortBy ? 'var(--warn)' : null,
           background: shortBy ? 'color-mix(in srgb, var(--warn-soft) 60%, var(--surface))' : null,
         },
