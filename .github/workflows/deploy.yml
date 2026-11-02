@@ -59,15 +59,11 @@ jobs:
       - run: npm ci
         if: steps.creds.outputs.ready == 'true'
 
-      # Migrations run before the deploy so the new code never meets an old
-      # schema. Every migration is written to be safe to re-apply.
-      - name: Apply database migrations
-        if: steps.creds.outputs.ready == 'true'
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: d1 migrations apply breakfast --remote
+      # No `d1 migrations apply` here. This database's updates have been run
+      # by hand from migrations/console/, so wrangler's own record of what ran
+      # is empty, and `migrations apply` would replay every file from 0001 —
+      # including the ones that rebuild tables. Updates are run deliberately,
+      # from Actions → Breakfast database.
 
       - name: Deploy Worker
         if: steps.creds.outputs.ready == 'true'
