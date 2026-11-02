@@ -1572,3 +1572,53 @@ body:has(.entry-footer) .toasts { bottom: calc(5.5rem + var(--bottombar-h) + env
   .entry-footer button { flex: 0 0 auto; min-width: 0; min-height: 46px; padding-inline: .9rem; }
   .entry-footer .btn-primary { flex: 1 1 auto; }
 }
+
+/* Items on a narrow phone.
+   A 375px phone pushed the + off the edge of its card: the name column would
+   not shrink below its longest word, the list would not go narrower than
+   290px, and the − / figure / + group is wide. The name now gives way and
+   wraps, the list never asks for more than the screen, and below 420px the
+   stepper tightens. */
+.item-list { grid-template-columns: repeat(auto-fill, minmax(min(290px, 100%), 1fr)); }
+.item { grid-template-columns: minmax(0, 1fr) auto; }
+.item-name, .item-hint { overflow-wrap: anywhere; }
+@media (max-width: 420px) {
+  .item { gap: .4rem .5rem; padding: .7rem .6rem .7rem .85rem; }
+  .item-input { gap: .25rem; }
+  .item-input input { width: 54px; min-width: 0; padding-inline: .25rem; font-size: 1.05rem; }
+  .item-input button { flex: 0 0 38px; width: 38px; min-height: 38px; }
+  .item-input .unit { width: auto; }
+}
+
+/* ------------------------------------------------------ steady on a phone -- */
+/* A quick second tap on + or − was zooming the page on iPhones. This turns
+   off double-tap zoom and the tap delay, and leaves pinch-to-zoom alone for
+   anybody who needs it larger. */
+html { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+/* Nothing can push the page sideways, so it cannot wobble under a thumb. */
+html, body { overflow-x: clip; }
+/* iPhones zoom into any text box written smaller than 16px the moment it is
+   tapped, and stay zoomed. 16px on touch screens stops that. */
+@media (pointer: coarse) {
+  input, select, textarea { font-size: 16px; }
+}
+
+/* ------------------------------------------------------------- installing -- */
+.install-banner {
+  display: flex; align-items: center; gap: .85rem; flex-wrap: wrap;
+  padding: .8rem 1rem; margin-bottom: 1rem; border-radius: 22px;
+  background: var(--surface); box-shadow: var(--shadow);
+}
+.install-banner img { width: 44px; height: 44px; border-radius: 12px; flex: none; }
+.install-banner > div:nth-child(2) { flex: 1 1 200px; min-width: 0; }
+.install-title { font-weight: 800; }
+.install-sub { font-size: .84rem; color: var(--text-dim); }
+.install-banner .btn-row { margin-left: auto; }
+.side-install { width: 100%; justify-content: flex-start; background: var(--accent-soft); color: var(--accent-ink); margin-top: .4rem; }
+.side-install:hover { background: var(--accent-soft); color: var(--accent-ink); }
+.install-steps { max-width: 420px; width: 92vw; padding: 1.4rem; background: var(--surface); color: var(--text); }
+.install-steps ol { padding-left: 1.2rem; display: grid; gap: .6rem; margin: 1rem 0; }
+.install-share {
+  display: inline-grid; place-items: center; width: 28px; height: 28px; vertical-align: middle;
+  border-radius: 8px; background: var(--surface-2); color: var(--accent-ink);
+}

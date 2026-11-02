@@ -23,6 +23,13 @@ name = "niceoperation-housekeeping"
 main = "src/index.js"
 compatibility_date = "2025-05-01"
 
+# Leave alone any variable set in the Cloudflare dashboard. Without this a
+# deploy replaces them with the [vars] below, and a SESSION_SECRET or PIN
+# added there as plain text (rather than as an encrypted secret) disappears
+# on the next deploy, signing everybody out of a site that then refuses to
+# start. Secrets added with `wrangler secret put` are kept either way.
+keep_vars = true
+
 [assets]
 directory = "./public"
 binding = "ASSETS"
