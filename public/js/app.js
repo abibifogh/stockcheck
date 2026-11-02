@@ -26,6 +26,7 @@ import { renderStoreReport } from './views/store-report.js';
 import { BRAND } from './brand.js';
 import { noticeBell } from './views/notices.js';
 import { install, installBanner, installState, registerWorker } from './install.js';
+import { alertsBanner, keepAlertsOn } from './push.js';
 
 export const state = {
   role: null,
@@ -317,6 +318,14 @@ function bottomTabs() {
   return bar;
 }
 
+/**
+ * Who is offered alerts on their device: the people something is addressed
+ * to. Managers hear about submitted days, the storeroom about new requests,
+ * and whoever asked about their request being issued.
+ */
+const canReceiveAlerts = () => can(['reports', 'store_issue', 'store_request']);
+let alertsKeptFor = null;
+
 const initials = (name) => String(name || '?').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 
 function shell(content) {
@@ -353,7 +362,7 @@ function shell(content) {
           name: state.name || 'you',
           email: state.email,
           isRecovery: state.isRecovery,
-          canAlert: can('reports'),
+          canAlert: canReceiveAlerts(),
         }),
       }, initials(state.name)),
       h('button.btn-ghost.btn-sm.icon-btn', {
@@ -372,7 +381,7 @@ function shell(content) {
       // Tapping the page behind an open drawer closes it, which is what every
       // phone user already expects to happen.
       h('div.nav-scrim', { onclick: closeDrawer }),
-      h('main.main', installBanner(), content),
+      h('main.main', installBanner(), canReceiveAlerts() ? alertsBanner() : null, content),
     ),
     tabs,
   );
@@ -459,6 +468,12 @@ export async function render() {
   const container = h('div');
   mount(root, shell(container));
   trackTopbarHeight();
+  // Once per sign-in: a device already allowed to alert is kept subscribed,
+  // and pointed at whoever is using it now.
+  if (canReceiveAlerts() && alertsKeptFor !== state.name) {
+    alertsKeptFor = state.name;
+    keepAlertsOn();
+  }
   mount(container, h('div.card', h('div.skeleton', { style: { height: '120px' } })));
 
   try {

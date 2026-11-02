@@ -3,6 +3,11 @@ import { deriveLoginKey } from '../crypto.js';
 import { h, mount, toast } from '../util.js';
 import { BRAND } from '../brand.js';
 
+const keyIcon = (paths) => '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+  + `stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+const KEY_ERASE = keyIcon('<path d="M9 5h11a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H9l-6-7 6-7z"/><path d="m12 9.5 5 5M17 9.5l-5 5"/>');
+const KEY_ENTER = keyIcon('<path d="M5 12h14M13 6l6 6-6 6"/>');
+
 /** PIN keypad. Big targets, no keyboard needed, works with gloves on. */
 export function renderLogin(onSuccess) {
   let pin = '';
@@ -44,11 +49,13 @@ export function renderLogin(onSuccess) {
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
   const keypad = h('div.keypad',
     keys.map((k) => h('button', { onclick: () => press(k) }, k)),
-    h('button.btn-ghost', {
+    h('button.btn-ghost.key-erase', {
+      'aria-label': 'Delete the last digit',
       onclick: () => { pin = pin.slice(0, -1); paint(); },
-    }, '⌫'),
+      html: KEY_ERASE,
+    }),
     h('button', { onclick: () => press('0') }, '0'),
-    h('button.btn-primary', { onclick: submit }, '→'),
+    h('button.btn-primary.key-enter', { 'aria-label': 'Sign in', onclick: submit, html: KEY_ENTER }),
   );
 
   const onKeydown = (event) => {

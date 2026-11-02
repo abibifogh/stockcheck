@@ -18,7 +18,17 @@ import { h, mount } from '../util.js';
 
 const REFRESH_MS = 120000;
 
-const LEVEL_ICON = { high: '⛔', warn: '⚠️', info: '🛏' };
+// Line drawings in currentColor, like every other icon in the frame, so they
+// take the theme's colour rather than a phone's emoji set.
+const svg = (paths, size) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" `
+  + 'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+  + `${paths}</svg>`;
+const BELL = svg('<path d="M6 9a6 6 0 0 1 12 0c0 6.5 2.5 8 2.5 8h-17S6 15.5 6 9z"/><path d="M10.2 20.5a2 2 0 0 0 3.6 0"/>', 19);
+const LEVEL_ICON = {
+  high: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5h.01"/>', 16),
+  warn: svg('<path d="M12 3.5 2.5 20h19L12 3.5z"/><path d="M12 10v4.5M12 17.5h.01"/>', 16),
+  info: svg('<circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.5h.01"/>', 16),
+};
 
 let timer = null;
 
@@ -50,7 +60,7 @@ export function noticeBell() {
         }
       }
     },
-  }, '🔔', count);
+  }, h('span.bell-glyph', { html: BELL }), count);
 
   const paintCount = () => {
     count.textContent = state.unread > 9 ? '9+' : String(state.unread || '');
@@ -65,7 +75,7 @@ export function noticeBell() {
         href: n.link || '#/',
         onclick: () => { open = false; panel.classList.remove('open'); },
       },
-        h('span.bell-icon', LEVEL_ICON[n.level] ?? LEVEL_ICON.info),
+        h('span.bell-icon', { html: LEVEL_ICON[n.level] ?? LEVEL_ICON.info }),
         h('div.bell-text',
           h('div.bell-title', n.title),
           n.body ? h('div.bell-body', n.body) : null,
@@ -75,7 +85,7 @@ export function noticeBell() {
       : h('p.muted', { style: { margin: '.5rem .2rem', fontSize: '.86rem' } },
         state.unavailable
           ? 'Notifications need the latest database update before they can be recorded.'
-          : 'Nothing yet. Submitted checks appear here.'));
+          : 'Nothing yet. Requests, submitted days and checks appear here.'));
   };
 
   const refresh = async () => {
@@ -105,7 +115,7 @@ export function noticeBell() {
   panel.addEventListener('click', (event) => event.stopPropagation());
 
   mount(panel,
-    h('div.bell-head', h('strong', 'What has happened')),
+    h('div.bell-head', h('strong', 'Notifications')),
     list,
   );
 

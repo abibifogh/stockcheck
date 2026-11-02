@@ -1,4 +1,6 @@
 import { api } from './api.js';
+import { h, mount, toast } from './util.js';
+import { installOffered, onInstallChange } from './install.js';
 
 /**
  * Turning on alerts for this browser.
@@ -140,3 +142,86 @@ export async function testPush() {
   if (!subscription) throw new Error('Turn alerts on for this device first.');
   await api.pushTest({ endpoint: subscription.endpoint });
 }
+
+/**
+ * Keep this device's alerts pointed at whoever is signed in.
+ *
+ * A browser that has already been allowed to notify needs no second question:
+ * if it has no subscription yet (a new sign-in, a cleared cache, a phone the
+ * push service rotated) it is subscribed quietly here. It also re-sends an
+ * existing one, so a shared kitchen phone alerts the person now using it.
+ *
+ * A browser that has not been asked yet is never asked from here. Every
+ * browser only shows that question after a tap, and one that pops up unasked
+ * is the one people answer "Block" to for good.
+ */
+export async function keepAlertsOn() {
+  if (!pushSupported() || Notification.permission !== 'granted') return;
+  try {
+    const reg = await ready();
+    let subscription = await reg.pushManager.getSubscription();
+    if (!subscription) {
+      const { key } = await api.pushKey();
+      subscription = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToBytes(key) });
+    }
+    await api.pushSubscribe({ endpoint: subscription.endpoint, ...keysOf(subscription), label: describeDevice() });
+  } catch { /* the account dialog is where a failure gets explained */ }
+}
+
+const ALERTS_DISMISS_KEY = 'bf.alertsDismissed';
+const alertsDismissed = () => {
+  try {
+    return Date.now() - (Number(localStorage.getItem(ALERTS_DISMISS_KEY)) || 0) < 14 * 86400000;
+  } catch { return false; }
+};
+
+/**
+ * The one-tap offer to turn alerts on, for a device that has never been asked.
+ *
+ * Waits behind the install offer: on an iPhone alerts only work once the app
+ * is on the home screen, and two banners at once is one too many.
+ */
+export function alertsBanner() {
+  const host = h('div.install-host');
+  const paint = () => {
+    const show = pushSupported()
+      && Notification.permission === 'default'
+      && !needsHomeScreen()
+      && !installOffered()
+      && !alertsDismissed();
+    if (!show) { mount(host); return; }
+    const status = h('div.install-sub', 'A notification the moment a request or a day needs you, even with the app closed.');
+    mount(host, h('section.install-banner.alerts-banner',
+      h('span.alerts-mark', { html: ALERTS_ICON }),
+      h('div', h('div.install-title', 'Turn on alerts for this device'), status),
+      h('div.btn-row',
+        h('button.btn-sm.btn-ghost', {
+          onclick: () => {
+            try { localStorage.setItem(ALERTS_DISMISS_KEY, String(Date.now())); } catch { /* private mode */ }
+            paint();
+          },
+        }, 'Not now'),
+        h('button.btn-sm.btn-primary', {
+          onclick: async (event) => {
+            event.target.disabled = true;
+            try {
+              await enablePush();
+              toast('Alerts are on for this device', 'good');
+              paint();
+            } catch (err) {
+              status.textContent = err.message;
+              event.target.disabled = false;
+              if (Notification.permission === 'denied') paint();
+            }
+          },
+        }, 'Turn on')),
+    ));
+  };
+  paint();
+  const stop = onInstallChange(() => (host.isConnected ? paint() : stop()));
+  return host;
+}
+
+const ALERTS_ICON = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+  + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+  + '<path d="M6 9a6 6 0 0 1 12 0c0 6.5 2.5 8 2.5 8h-17S6 15.5 6 9z"/><path d="M10.2 20.5a2 2 0 0 0 3.6 0"/></svg>';

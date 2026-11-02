@@ -921,7 +921,7 @@ const SECTIONS = [
     title: 'The bell, and what rings it',
     lead: 'Everything the system wants to tell you, in one place at the top of every screen.',
     render: () => h('div',
-      h('p', 'The 🔔 at the top right carries a red number when something is waiting. Open it, read '
+      h('p', 'The bell at the top right carries a red number when something is waiting. Open it, read '
         + 'the list, and click any line to go straight to what it is about. What you see is decided '
         + 'by what you are allowed to open — there is nothing in there you could not have found by '
         + 'looking.'),
@@ -1104,7 +1104,7 @@ const SECTIONS = [
           + 'a quiet word.'],
       ),
       note('The bell tells you the moment a check lands.', 'Every submitted check '
-        + 'appears under the 🔔 at the top of the screen, with the one number that matters — how '
+        + 'appears under the bell at the top of the screen, with the one number that matters — how '
         + 'many beds had no name tag — and a link straight to that day. It also says when an '
         + 'email could not be sent, which is the failure you would otherwise never hear about.'),
       note('Coverage keeps the rest honest.', 'Every rate on the page is calculated from the beds that '

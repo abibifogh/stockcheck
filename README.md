@@ -132,7 +132,7 @@ whatever was written down. Underneath it shows the day's other two checks and
 what is still outstanding after the last one to look.
 
 **Two ways of being told.** Every submitted check sends its email *and* records
-a notice in the app — the 🔔 in the top bar, with an unread count, the headline
+a notice in the app — the bell in the top bar, with an unread count, the headline
 number, and a link to that day. They exist together on purpose: an email
 reaches somebody who is not looking at the system, and the bell reaches
 somebody who is. It also survives what email does not. A wrong sending domain,

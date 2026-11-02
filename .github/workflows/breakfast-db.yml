@@ -26,6 +26,9 @@ on:
         options:
           # The storeroom: requests, issues, item kinds, where deliveries go.
           - 0024_storeroom.sql
+          # The bell and phone alerts: whichever of 0004, 0009 and 0013 the
+          # database is missing. Each adds tables or a column; none touches data.
+          - notifications
           # Only reads: which updates the database already has.
           - check-only
       confirm:
@@ -75,19 +78,27 @@ jobs:
         run: |
           npx wrangler d1 execute breakfast --remote --json --command "
             SELECT
+              (SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'push_subscriptions') AS has_0004,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'app_notices') AS has_0009,
+              (SELECT COUNT(*) FROM pragma_table_info('app_notices') WHERE name = 'audience') AS has_0013,
               (SELECT COUNT(*) FROM pragma_table_info('purchases') WHERE name = 'odoo_line_id') AS has_0022,
               (SELECT COUNT(*) FROM pragma_table_info('ingredients') WHERE name = 'kind') AS has_0024
           " > state.json
-          has_0024=$(node -e "const r=require('./state.json');console.log(r[0].results[0].has_0024)")
-          has_0022=$(node -e "const r=require('./state.json');console.log(r[0].results[0].has_0022)")
-          echo "has_0024=$has_0024" >> "$GITHUB_OUTPUT"
+          has() { node -e "const r=require('./state.json');console.log(r[0].results[0].has_$1)"; }
+          has_0004=$(has 0004); has_0009=$(has 0009); has_0013=$(has 0013)
+          has_0022=$(has 0022); has_0024=$(has 0024)
+          for n in 0004 0009 0013 0024; do echo "has_$n=$(has $n)" >> "$GITHUB_OUTPUT"; done
+          yn() { [ "$1" = "1" ] && echo yes || echo no; }
           {
             echo "### Breakfast database before this run"
             echo ""
             echo "| Update | Applied |"
             echo "| --- | --- |"
-            echo "| 0022 Odoo purchases | $([ "$has_0022" = "1" ] && echo yes || echo no) |"
-            echo "| 0024 Storeroom | $([ "$has_0024" = "1" ] && echo yes || echo no) |"
+            echo "| 0004 Phone alerts | $(yn "$has_0004") |"
+            echo "| 0009 The bell | $(yn "$has_0009") |"
+            echo "| 0013 Who each notice is for | $(yn "$has_0013") |"
+            echo "| 0022 Odoo purchases | $(yn "$has_0022") |"
+            echo "| 0024 Storeroom | $(yn "$has_0024") |"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run 0024_storeroom.sql
@@ -108,4 +119,33 @@ jobs:
             echo "### Storeroom update applied"
             echo ""
             node -e "for (const r of require('./after.json')[0].results) console.log('- ' + r.key + ': ' + String(r.value).replace(/\n/g, ', '))"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run the notification updates
+        if: inputs.update == 'notifications'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          ran=""
+          if [ "${{ steps.state.outputs.has_0004 }}" != "1" ]; then
+            npx wrangler d1 execute breakfast --remote --file=./migrations/console/0004_push_alerts.sql
+            ran="$ran 0004"
+          fi
+          if [ "${{ steps.state.outputs.has_0009 }}" != "1" ]; then
+            npx wrangler d1 execute breakfast --remote --file=./migrations/console/0009_notices.sql
+            ran="$ran 0009"
+          fi
+          # 0013 adds a column, so it can only run once: skipped when it is there.
+          if [ "${{ steps.state.outputs.has_0013 }}" != "1" ]; then
+            npx wrangler d1 execute breakfast --remote --file=./migrations/console/0013_notice_audience.sql
+            ran="$ran 0013"
+          fi
+          {
+            echo ""
+            if [ -z "$ran" ]; then
+              echo "The notification updates are all in the database already. Nothing to do."
+            else
+              echo "### Notification updates applied:$ran"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

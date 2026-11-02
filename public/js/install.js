@@ -101,6 +101,12 @@ const dismissedRecently = () => {
   } catch { return false; }
 };
 
+/** Whether the banner below is on screen, so the alerts offer can wait its turn. */
+export function installOffered() {
+  const state = installState();
+  return (state === 'prompt' || state === 'ios') && !dismissedRecently();
+}
+
 /**
  * A quiet offer at the top of the page, until it is installed or somebody
  * says "Not now" (asked again after a month). It fills itself in when the
