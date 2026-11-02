@@ -87,6 +87,11 @@ function dataSection(data, { from, to, suppliers, refresh }) {
       { key: 'total', label: 'Total', align: 'right', format: (_, r) => h('b', fmtMoney(Number(r.qty) * Number(r.unit_cost), { withSymbol: false })) },
       { key: 'supplier', label: 'Supplier', format: (v) => v || h('span.muted', '—') },
       { key: 'po_ref', label: 'PO', format: (v) => (v ? h('span.pill.info.po-ref', v) : h('span.muted', '—')) },
+      {
+        key: 'location',
+        label: 'Went to',
+        format: (v) => (v === 'store' ? h('span.pill', 'Storeroom') : v === 'kitchen' ? h('span.muted', 'Kitchen') : h('span.muted', '—')),
+      },
       { key: 'note', label: 'Note', format: (v) => v || h('span.muted', '—') },
       {
         key: 'id',
@@ -126,6 +131,14 @@ function deliveryForm({ suppliers, supplierMode, lastCosts, onSaved }) {
 
   const day = h('input', { type: 'date', value: todayISO() });
   const note = h('input', { type: 'text', placeholder: 'Invoice number, driver…' });
+  // Where it went. Only once the storeroom exists; the setting is the default,
+  // and bread dropped at the kitchen door can still go straight there.
+  const storeOn = 'deliveries_to' in (state.settings || {});
+  const location = storeOn
+    ? h('select',
+      h('option', { value: 'store', selected: state.settings.deliveries_to !== 'kitchen' }, 'The storeroom'),
+      h('option', { value: 'kitchen', selected: state.settings.deliveries_to === 'kitchen' }, 'Straight to the kitchen'))
+    : null;
 
   // Suggest: pick from the list (key suppliers first, from Insight), or type one it does not have.
   const pickList = supplierMode === 'suggest'
@@ -255,6 +268,7 @@ function deliveryForm({ suppliers, supplierMode, lastCosts, onSaved }) {
         day: day.value,
         supplier: supplierField ? supplierField.value || null : null,
         note: note.value || null,
+        ...(location ? { location: location.value } : {}),
         items,
       });
       toast(`Delivery saved — ${result.lines} items, ${fmtMoney(result.total)}`, 'good');
@@ -276,6 +290,7 @@ function deliveryForm({ suppliers, supplierMode, lastCosts, onSaved }) {
     h('div.field-row',
       h('label.field', h('span', 'Delivery date'), day),
       supplierField ? h('label.field', h('span', 'Supplier'), supplierField, pickList) : null,
+      location ? h('label.field', h('span', 'Delivered to'), location) : null,
       h('label.field', h('span', 'Note (optional)'), note),
     ),
     supplierHelp,

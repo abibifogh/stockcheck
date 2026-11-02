@@ -13,6 +13,7 @@ import * as revisions from './routes/revisions.js';
 import * as importing from './routes/importing.js';
 import * as catalog from './routes/catalog.js';
 import * as odoo from './routes/odoo.js';
+import * as store from './routes/store.js';
 import * as insights from './routes/insights.js';
 import * as admin from './routes/admin.js';
 import * as push from './routes/push.js';
@@ -90,9 +91,23 @@ const ROUTES = [
   ['POST', '/api/deliveries', 'purchases', catalog.createDelivery],
   ['DELETE', '/api/purchases/:id', 'purchases', catalog.deletePurchase],
 
+  // The storeroom. Asking and confirming is the departments'; issuing is the
+  // storekeeper's; the report is for whoever reads the money.
+  ['GET', '/api/store/catalog', ['store_request', 'store_issue'], store.catalog],
+  ['GET', '/api/store/requests', ['store_request', 'store_issue', 'reports'], store.listRequests],
+  ['POST', '/api/store/requests', 'store_request', store.createRequest],
+  ['GET', '/api/store/requests/:id', ['store_request', 'store_issue', 'reports'], store.getRequest],
+  ['POST', '/api/store/requests/:id/cancel', ['store_request', 'store_issue'], store.cancelRequest],
+  ['POST', '/api/store/requests/:id/issue', 'store_issue', store.issueRequest],
+  ['POST', '/api/store/requests/:id/decline', 'store_issue', store.declineRequest],
+  ['POST', '/api/store/requests/:id/receive', 'store_request', store.receiveRequest],
+  ['GET', '/api/store/stock', ['store_issue', 'reports', 'setup'], store.stock],
+  ['GET', '/api/store/report', ['store_issue', 'reports'], store.report],
+
   // Purchases read out of Odoo by PO number. Reading Odoo and recording what it
   // says is the same job as typing in a delivery, so it is the same permission.
   ['GET', '/api/odoo/status', ['purchases', 'setup'], odoo.status],
+  ['POST', '/api/odoo/test', ['purchases', 'setup'], odoo.test],
   ['POST', '/api/odoo/preview', 'purchases', odoo.preview],
   ['POST', '/api/odoo/import', 'purchases', odoo.importOrders],
   ['GET', '/api/odoo/mappings', ['purchases', 'setup'], odoo.listMappings],

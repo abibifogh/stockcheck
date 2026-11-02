@@ -1242,3 +1242,8 @@ td.tick input, th.tick input { cursor: pointer; }
 .odoo-match-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
 .odoo-footer { border-top: 1px solid var(--border); margin-top: 1rem; padding-top: .8rem; }
 .po-ref { font-variant-numeric: tabular-nums; }
+
+/* A short tab bar that stays one row on a phone, where .seg-fill would give
+   each tab 40% and push the third onto a line of its own. */
+.seg.seg-fill.seg-row { flex-wrap: nowrap; }
+.seg.seg-fill.seg-row button { flex: 1 1 0; min-width: 0; padding-inline: .45rem; white-space: nowrap; }

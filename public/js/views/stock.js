@@ -376,7 +376,7 @@ function countForm(onSaved) {
   const addRow = () => {
     const select = h('select',
       h('option', { value: '' }, 'Choose ingredient…'),
-      state.catalog.ingredients.filter((i) => i.active).map((i) =>
+      state.catalog.ingredients.filter((i) => i.active && (i.kind ?? 'food') !== 'supply').map((i) =>
         h('option', { value: i.id }, `${i.name} (${i.unit})`)),
     );
     const qty = h('input', { type: 'number', min: 0, step: '0.01', placeholder: 'Counted quantity' });

@@ -52,7 +52,13 @@ export async function renderSetup() {
     wide: true,
   },
     table([
-      { key: 'name', label: 'Ingredient', format: (v, r) => h('div', h('div', v), h('small.muted', r.category_name)) },
+      {
+        key: 'name',
+        label: 'Ingredient',
+        format: (v, r) => h('div',
+          h('div', v, r.kind === 'supply' ? h('span.pill', { style: { marginLeft: '.35rem' } }, 'supply') : null),
+          h('small.muted', r.category_name)),
+      },
       { key: 'unit', label: 'Unit' },
       { key: 'step', label: 'Tap step', align: 'right', format: (v) => fmtNum(v, 2) },
       { key: 'par_level', label: 'Par level', align: 'right', format: (v, r) => `${fmtNum(v, 2)} ${r.unit}` },
@@ -100,6 +106,7 @@ export async function renderSetup() {
     ),
     h('div.grid.grid-2', settingsCard, categoryCard),
     supplierCard(supplierData.suppliers || [], settings, reload),
+    'deliveries_to' in settings ? storeroomCard(settings, reload) : null,
     await odooSetupCard(settings, reload),
     ingredientCard,
   );
@@ -375,6 +382,18 @@ function ingredientForm(existing, categories, units, onSaved) {
     h('option', { value: '0', selected: !value.active }, 'Retired'));
   const order = h('input', { type: 'number', value: value.sort_order, step: 10 });
 
+  // The storeroom's questions, asked only once its database update has run —
+  // before that there is nowhere to save the answers.
+  const hasStore = 'deliveries_to' in (state.settings || {});
+  const kind = h('select',
+    h('option', { value: 'food', selected: (value.kind ?? 'food') !== 'supply' }, 'Breakfast food'),
+    h('option', { value: 'supply', selected: value.kind === 'supply' }, 'Supply (tissue, soap…)'));
+  const requestable = h('select',
+    h('option', { value: '1', selected: value.requestable !== 0 }, 'Can be asked for'),
+    h('option', { value: '0', selected: value.requestable === 0 }, 'Not kept in the storeroom'));
+  const storeOpening = h('input', { type: 'number', min: 0, step: '0.1', value: value.store_opening ?? 0 });
+  const storePar = h('input', { type: 'number', min: 0, step: '0.1', value: value.store_par ?? 0 });
+
   const submit = async (event) => {
     problem.classList.add('hidden');
     if (!name.value.trim()) {
@@ -395,6 +414,12 @@ function ingredientForm(existing, categories, units, onSaved) {
       is_bistro: isBistro.value === '1',
       active: active.value === '1',
       sort_order: Number(order.value) || 100,
+      ...(hasStore ? {
+        kind: kind.value,
+        requestable: requestable.value === '1',
+        store_opening: Number(storeOpening.value) || 0,
+        store_par: Number(storePar.value) || 0,
+      } : {}),
     };
     try {
       if (existing) await api.updateIngredient(existing.id, body);
@@ -422,6 +447,16 @@ function ingredientForm(existing, categories, units, onSaved) {
       h('label.field', h('span', 'Status'), active),
       h('label.field', h('span', 'Sort order'), order),
     ),
+    hasStore ? h('div.field-row', { style: { marginTop: '.4rem' } },
+      h('label.field', h('span', 'What it is'), kind),
+      h('label.field', h('span', 'Storeroom'), requestable),
+      h('label.field', h('span', 'In the storeroom at the start'), storeOpening),
+      h('label.field', h('span', 'Storeroom par level'), storePar),
+    ) : null,
+    hasStore ? h('p.muted', { style: { fontSize: '.8rem' } },
+      'A supply is kept and issued by the storeroom but never appears on the breakfast sheet or in the '
+      + 'cost per guest. “In the storeroom at the start” is what was on its shelf when the storeroom began '
+      + 'being tracked; below the par level it shows as running low.') : null,
     h('p.muted', { style: { fontSize: '.8rem' } },
       'Tap step is how much one press of + or − moves the quantity — set it to how the kitchen actually measures (6 for eggs, 0.5 for a half kilo). Fallback unit cost is only used until the first delivery of that item is recorded.'),
     h('p.muted', { style: { fontSize: '.8rem' } },
@@ -448,4 +483,49 @@ function editIngredient(row, categories, units, onSaved) {
   document.body.append(dialog);
   dialog.addEventListener('close', () => dialog.remove());
   dialog.showModal();
+}
+
+/**
+ * Where deliveries land, and who may ask the storeroom for things.
+ *
+ * The first department is the breakfast kitchen: what it receives is
+ * breakfast stock. Said on the card, because it is the one rule here that
+ * changes a number somewhere else.
+ */
+function storeroomCard(settings, onSaved) {
+  const where = h('select',
+    h('option', { value: 'store', selected: settings.deliveries_to !== 'kitchen' }, 'Into the storeroom'),
+    h('option', { value: 'kitchen', selected: settings.deliveries_to === 'kitchen' }, 'Straight to the kitchen'));
+  const departments = h('textarea', {
+    rows: 4,
+    value: String(settings.store_departments || 'Kitchen'),
+    placeholder: 'Kitchen\nRestaurant bar\nHousekeeping',
+    style: { width: '100%', fontFamily: 'inherit' },
+  });
+  const save = h('button.btn-primary', {
+    onclick: async () => {
+      save.disabled = true;
+      try {
+        const result = await api.updateSettings({ deliveries_to: where.value, store_departments: departments.value });
+        state.settings = result.settings;
+        toast('Storeroom settings saved', 'good');
+        onSaved();
+      } catch (err) {
+        toast(err.message, 'bad');
+        save.disabled = false;
+      }
+    },
+  }, 'Save');
+
+  return card('Storeroom', { wide: true, note: 'Deliveries and who can ask for things' },
+    h('div.field-row',
+      h('label.field', h('span', 'Deliveries go'), where),
+      h('label.field', { style: { flex: '2 1 260px' } },
+        h('span', 'Departments that can ask, one per line'), departments)),
+    h('p.muted', { style: { fontSize: '.8rem' } },
+      'The first department is the breakfast kitchen: what the storeroom issues to it becomes breakfast stock, '
+      + 'at the price last paid. What it issues to the others has left the storeroom and is theirs. '
+      + 'A delivery can still be sent straight to the kitchen from the Purchases screen.'),
+    h('div.btn-row', save),
+  );
 }

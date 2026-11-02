@@ -76,12 +76,29 @@ export function parsePoNumbers(text) {
   return out;
 }
 
+/**
+ * The API key as Odoo issued it.
+ *
+ * A secret is pasted into a dashboard box by a person, and what comes along
+ * with it is a trailing newline, a space, the quotes it was copied between, or
+ * the word "bearer" from an example. Odoo compares the key exactly, so any of
+ * those reads as a wrong key, and nothing on a screen shows the difference.
+ * None of them can be part of a real key, so they come off.
+ */
+export function cleanKey(raw) {
+  return String(raw ?? '')
+    .trim()
+    .replace(/^["'`]+|["'`]+$/g, '')
+    .replace(/^bearer\s+/i, '')
+    .trim();
+}
+
 /** The configuration this needs, read out of the settings rows and the env. */
 export function odooConfig(settings, env) {
   return {
     base: String(settings?.odoo_base ?? '').trim().replace(/\/+$/, ''),
     db: String(settings?.odoo_db ?? '').trim(),
-    key: env?.ODOO_API_KEY ?? '',
+    key: cleanKey(env?.ODOO_API_KEY),
   };
 }
 
@@ -132,16 +149,37 @@ async function call(config, model, method, body, { fetchImpl = fetch, timeoutMs 
     clearTimeout(timer);
   }
 
-  if (response.status === 401 || response.status === 403) {
-    throw new OdooError('Odoo refused the API key. Check it, and that the user it belongs to may read purchases.');
+  // What Odoo said, in its own words. JSON-2 answers an error with its name
+  // and message, and the message is usually the whole diagnosis.
+  const odooSaid = async () => {
+    try {
+      const said = await response.json();
+      const text = said?.message || said?.error?.data?.message || said?.error?.message || JSON.stringify(said);
+      return String(text).replace(/\s+/g, ' ').trim().slice(0, 300);
+    } catch { return ''; }
+  };
+
+  // 401 and 403 are different problems with different fixes, and saying the
+  // same sentence for both sends somebody to regenerate a key that was fine.
+  if (response.status === 401) {
+    const said = await odooSaid();
+    throw new OdooError('Odoo did not accept the API key. It may be mistyped, expired, revoked, or made in a '
+      + 'different Odoo database.' + (said ? ` Odoo said: ${said}` : ''), { kind: 'key', status: 401 });
+  }
+  if (response.status === 403) {
+    const said = await odooSaid();
+    throw new OdooError(`Odoo accepted the API key, but its user is not allowed to read ${model}. `
+      + 'Give that user at least Purchase: User in Odoo.' + (said ? ` Odoo said: ${said}` : ''),
+    { kind: 'access', status: 403 });
   }
   if (response.status === 404) {
-    throw new OdooError(`Odoo has no ${model} model, or the address is wrong. Check the Odoo address under Setup.`);
+    throw new OdooError(`Odoo has no ${model} model, or the address is wrong. Check the Odoo address under Setup.`,
+      { kind: 'address', status: 404 });
   }
   if (!response.ok) {
-    let detail = '';
-    try { detail = JSON.stringify(await response.json()).slice(0, 300); } catch { /* body already gone */ }
-    throw new OdooError(`Odoo answered ${response.status} reading ${model}. ${detail}`.trim());
+    const said = await odooSaid();
+    throw new OdooError(`Odoo answered ${response.status} reading ${model}.${said ? ` Odoo said: ${said}` : ''}`,
+      { status: response.status });
   }
 
   try {
@@ -152,7 +190,13 @@ async function call(config, model, method, body, { fetchImpl = fetch, timeoutMs 
 }
 
 /** An error worth showing a person as it is, as opposed to a bug. */
-export class OdooError extends Error {}
+export class OdooError extends Error {
+  constructor(message, { kind = null, status = null } = {}) {
+    super(message);
+    this.kind = kind;
+    this.status = status;
+  }
+}
 
 /**
  * Every record matching a domain, a page at a time, ordered by id.
@@ -271,4 +315,51 @@ export async function readOrders(config, names, { fetchImpl = fetch } = {}) {
   orders.sort((a, b) => wanted.indexOf(a.name) - wanted.indexOf(b.name));
   const found = new Set(orders.map((o) => o.name.toUpperCase()));
   return { orders, unknown: wanted.filter((n) => !found.has(n.toUpperCase())) };
+}
+
+/**
+ * Check the connection one step at a time, and say which step fails.
+ *
+ * "Odoo refused" has four different causes: the address, the key, the
+ * database, and the user's rights. Each needs a different person to fix it, so
+ * this asks the questions in order and stops at the first one that fails:
+ *
+ *   1. Does the address answer at all, and does it accept the key?
+ *      Asked of res.partner, which every Odoo user can read. A refusal
+ *      here is the key (or the database it belongs to), never rights.
+ *   2. May that user read purchase orders?
+ *
+ * Read-only, like everything else here. It reads one record from each.
+ */
+export async function testConnection(config, { fetchImpl = fetch } = {}) {
+  const steps = [];
+  const problem = configProblem(config);
+  if (problem) return { ok: false, steps: [{ step: 'setup', ok: false, text: problem }] };
+
+  const ask = (model) => call(config, model, 'search_read',
+    { domain: [], fields: ['id'], limit: 1 }, { fetchImpl });
+
+  try {
+    await ask('res.partner');
+    steps.push({ step: 'key', ok: true, text: `${config.base} answered and accepted the API key.` });
+  } catch (err) {
+    steps.push({ step: 'key', ok: false, text: err.message });
+    return { ok: false, steps };
+  }
+
+  try {
+    const rows = await ask('purchase.order');
+    steps.push({
+      step: 'purchases',
+      ok: true,
+      text: (Array.isArray(rows) ? rows : rows?.records ?? []).length
+        ? 'The key’s user can read purchase orders.'
+        : 'The key’s user can read purchase orders, but sees none. If Odoo has orders, that user may be '
+          + 'limited to their own documents: give them Purchase: User.',
+    });
+  } catch (err) {
+    steps.push({ step: 'purchases', ok: false, text: err.message });
+    return { ok: false, steps };
+  }
+  return { ok: true, steps };
 }

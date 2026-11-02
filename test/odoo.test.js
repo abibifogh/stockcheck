@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
-  OdooError, configProblem, parsePoNumbers, poName, readOrders,
+  OdooError, cleanKey, configProblem, odooConfig, parsePoNumbers, poName, readOrders, testConnection,
 } from '../src/lib/odoo.js';
 import { importOrders, preview, saveMappings } from '../src/routes/odoo.js';
 
@@ -164,7 +164,61 @@ test('a draft order is read but marked as not importable', async () => {
 test('a refused key becomes a sentence, not a status code', async () => {
   const { fetchImpl } = fakeOdoo({ status: 401 });
   await assert.rejects(readOrders(CONFIG, ['P02433'], { fetchImpl }),
-    (err) => err instanceof OdooError && /refused the API key/.test(err.message));
+    (err) => err instanceof OdooError && err.kind === 'key' && /did not accept the API key/.test(err.message));
+});
+
+test('a key accepted without the rights is not reported as a bad key', async () => {
+  // The two have different fixes. Sending somebody to make a new key when the
+  // key was fine and the user lacked Purchase rights wastes an afternoon.
+  const fetchImpl = async () => new Response(JSON.stringify({
+    name: 'odoo.exceptions.AccessError',
+    message: 'You are not allowed to access Purchase Order (purchase.order) records.',
+  }), { status: 403 });
+  await assert.rejects(readOrders(CONFIG, ['P02433'], { fetchImpl }), (err) => {
+    assert.equal(err.kind, 'access');
+    assert.match(err.message, /accepted the API key/);
+    assert.match(err.message, /Odoo said: You are not allowed to access Purchase Order/);
+    return true;
+  });
+});
+
+test('a key pasted with a newline, quotes or "bearer" is the same key', () => {
+  for (const pasted of ['abc123\n', '  abc123  ', '"abc123"', "'abc123'", 'bearer abc123', 'Bearer abc123\r\n']) {
+    assert.equal(cleanKey(pasted), 'abc123', JSON.stringify(pasted));
+  }
+  assert.equal(odooConfig({ odoo_base: 'https://x.odoo.com/' }, { ODOO_API_KEY: 'abc123\n' }).key, 'abc123');
+  assert.equal(cleanKey(undefined), '');
+});
+
+test('the connection test says which step fails: the key', async () => {
+  const { fetchImpl, calls } = fakeOdoo({ status: 401 });
+  const result = await testConnection(CONFIG, { fetchImpl });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.steps.map((s) => [s.step, s.ok]), [['key', false]]);
+  assert.equal(calls.length, 1, 'stops at the first failure');
+});
+
+test('the connection test says which step fails: the rights', async () => {
+  const fetchImpl = async (url) => (url.includes('/res.partner/')
+    ? new Response(JSON.stringify([{ id: 1 }]))
+    : new Response(JSON.stringify({ message: 'You are not allowed to access Purchase Order' }), { status: 403 }));
+  const result = await testConnection(CONFIG, { fetchImpl });
+  assert.deepEqual(result.steps.map((s) => [s.step, s.ok]), [['key', true], ['purchases', false]]);
+  assert.match(result.steps[1].text, /Purchase: User/);
+});
+
+test('the connection test passes when both answer', async () => {
+  const fetchImpl = async () => new Response(JSON.stringify([{ id: 1 }]));
+  const result = await testConnection(CONFIG, { fetchImpl });
+  assert.equal(result.ok, true);
+  assert.equal(result.steps.length, 2);
+});
+
+test('the connection test never asks Odoo without a key', async () => {
+  let asked = 0;
+  const result = await testConnection({ ...CONFIG, key: '' }, { fetchImpl: async () => { asked += 1; } });
+  assert.equal(result.ok, false);
+  assert.equal(asked, 0);
 });
 
 // --------------------------------------------------------------- importing --

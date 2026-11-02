@@ -20,6 +20,9 @@ import { renderHkOverview, renderHkReport } from './views/hk-reports.js';
 import { renderHkRoom } from './views/hk-room.js';
 import { renderHkSetup } from './views/hk-setup.js';
 import { renderHkRoster } from './views/hk-roster.js';
+import { renderAsk } from './views/store-ask.js';
+import { renderStore } from './views/store.js';
+import { renderStoreReport } from './views/store-report.js';
 import { BRAND } from './brand.js';
 import { noticeBell } from './views/notices.js';
 
@@ -45,6 +48,13 @@ const ROUTES = [
   { path: 'stock', label: 'Stock', permission: 'stock', render: renderStock, group: 'Breakfast', site: 'full' },
   { path: 'purchases', label: 'Purchases', permission: 'purchases', render: renderPurchases, group: 'Breakfast', site: 'full' },
   { path: 'setup', label: 'Setup', permission: 'setup', render: renderSetup, group: 'Breakfast', site: 'full' },
+
+  // ---------------------------------------------------------------- storeroom --
+  // Asking first: it is the screen opened most, by the most people.
+  { path: 'ask', label: 'Ask the storeroom', permission: 'store_request', render: renderAsk, group: 'Storeroom', site: 'full' },
+  { path: 'store', label: 'Storeroom', permission: 'store_issue', render: renderStore, group: 'Storeroom', site: 'full' },
+  { path: 'store-report', label: 'Storeroom report', permission: ['store_issue', 'reports'], render: renderStoreReport, group: 'Storeroom', site: 'full' },
+
   { path: 'admin', label: 'Users & data', permission: 'users', render: renderAdmin },
 
   // ----------------------------------------------------------- housekeeping --
@@ -66,8 +76,11 @@ const ROUTES = [
 
 const root = document.getElementById('app');
 
+/** A list means any one of them, exactly as the server reads a route. */
 export function can(permission) {
-  return !permission || state.permissions.includes(permission);
+  if (!permission) return true;
+  if (Array.isArray(permission)) return permission.some((p) => state.permissions.includes(p));
+  return state.permissions.includes(permission);
 }
 
 /**
@@ -110,7 +123,7 @@ function defaultRoute() {
   const preferred = BRAND.app === 'housekeeping'
     ? ['hk-overview', 'hk-check', 'hk-roster', 'hk-setup', 'overview', 'entry',
       'stock', 'purchases', 'setup', 'admin', 'guide']
-    : ['overview', 'entry', 'production',
+    : ['overview', 'entry', 'production', 'store', 'ask',
       'stock', 'purchases', 'setup', 'admin', 'guide'];
 
   // The fallback matters as much as the list. Naming a specific route here

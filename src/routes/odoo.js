@@ -3,8 +3,9 @@ import {
 } from '../lib/http.js';
 import { assertDayWritable } from '../lib/locks.js';
 import { isDay } from '../util/dates.js';
+import { deliveryLocation } from '../lib/store.js';
 import {
-  MAX_ORDERS, OdooError, configProblem, odooConfig, parsePoNumbers, readOrders,
+  MAX_ORDERS, OdooError, configProblem, odooConfig, parsePoNumbers, readOrders, testConnection,
 } from '../lib/odoo.js';
 
 /**
@@ -191,6 +192,16 @@ export async function status(ctx) {
   });
 }
 
+/**
+ * Check the address, the key and the user's rights, one at a time.
+ *
+ * For whoever is setting this up. "Odoo refused" has several causes, each
+ * fixed by a different person, and this says which one it is.
+ */
+export async function test(ctx) {
+  return guarded(async () => json(await testConnection(await configFor(ctx), { fetchImpl: ctx.fetchImpl ?? fetch })));
+}
+
 /** Read the orders and say what importing them would do. Writes nothing. */
 export async function preview(ctx) {
   const body = await readJson(ctx.request);
@@ -288,6 +299,9 @@ export async function importOrders(ctx) {
 
   return guarded(async () => {
     await writeMappings(ctx, body.mappings);
+    // Odoo orders are deliveries like any other: into the storeroom, unless
+    // the screen said straight to the kitchen.
+    const location = await deliveryLocation(ctx.db, body.location);
     const { orders, unknown } = await examine(ctx, names);
 
     const statements = [];
@@ -336,8 +350,8 @@ export async function importOrders(ctx) {
       for (const line of ready) {
         statements.push(ctx.db.prepare(
           `INSERT OR IGNORE INTO purchases
-             (day, ingredient_id, qty, unit_cost, supplier, note, po_ref, odoo_line_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+             (day, ingredient_id, qty, unit_cost, supplier, note, po_ref, odoo_line_id${location ? ', location' : ''})
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?${location ? ', ?' : ''})`,
         ).bind(
           day, line.ingredient.id, line.convertedQty, line.unitCost,
           // The vendor exactly as Odoo has it. The supplier list governs what a
@@ -347,6 +361,7 @@ export async function importOrders(ctx) {
           line.product === line.ingredient.name ? null : `Odoo: ${line.product}${line.uom ? ` (${line.uom})` : ''}`,
           order.name,
           line.lineId,
+          ...(location ? [location] : []),
         ));
         const value = line.convertedQty * line.unitCost;
         owners.push({ result, value });

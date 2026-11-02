@@ -1,4 +1,5 @@
 import { buildLedger } from './ledger.js';
+import { kitchenDepartment } from './store.js';
 import {
   addDays, addMonths, diffDays, dow, DOW_LABELS, monthBounds, monthOf, rangeDays, startOfWeek,
 } from '../util/dates.js';
@@ -30,7 +31,7 @@ const MIN_SAMPLE = 4;
  * read is faster and far less error-prone than incremental bookkeeping.
  */
 export async function loadDataset(db) {
-  const [categories, ingredients, serviceDays, usage, purchases, settings, counts, production]
+  const [categories, ingredients, serviceDays, usage, purchases, settings, counts, production, issues]
     = await Promise.all([
       db.prepare('SELECT * FROM categories ORDER BY sort_order, name').all(),
       db.prepare('SELECT * FROM ingredients ORDER BY sort_order, name').all(),
@@ -42,6 +43,14 @@ export async function loadDataset(db) {
       // Tolerated missing so every report still loads on an installation that
       // has not run the bakery migration yet.
       db.prepare('SELECT * FROM production ORDER BY day, id').all().catch(() => ({ results: [] })),
+      // What the storeroom handed over. Tolerated missing for the same reason:
+      // an installation that has not run the storeroom migration has none.
+      db.prepare(
+        `SELECT r.day, r.department, l.ingredient_id, l.issued, l.received, l.unit_cost
+           FROM store_request_lines l JOIN store_requests r ON r.id = l.request_id
+          WHERE r.status IN ('issued', 'received') AND l.issued > 0
+          ORDER BY r.day, l.id`,
+      ).all().catch(() => ({ results: [] })),
     ]);
 
   return makeDataset({
@@ -53,12 +62,39 @@ export async function loadDataset(db) {
     settings: settings.results ?? [],
     stockCounts: counts.results ?? [],
     production: production.results ?? [],
+    issues: issues.results ?? [],
   });
 }
 
 export function makeDataset(raw) {
   const settings = Object.fromEntries((raw.settings ?? []).map((r) => [r.key, r.value]));
+  // Every item, for looking a name up. A purchase of soap is still a purchase,
+  // and an export that printed it as "#41" would help nobody.
   const ingredientById = new Map(raw.ingredients.map((i) => [i.id, i]));
+
+  // Breakfast's own items. Tissue and soap are bought, stored and issued, but
+  // never eaten: they are not on the morning sheet, have no usage to draw them
+  // down, and would sit in the kitchen's stock and its cost per guest forever.
+  // So the breakfast analysis does not see them at all.
+  const food = raw.ingredients.filter((i) => (i.kind ?? 'food') !== 'supply');
+
+  // Stock reaching the breakfast kitchen from the storeroom. Only what was
+  // issued to the kitchen (the first department) — milk sent to the bar left
+  // the storeroom but never reached this shelf. What the kitchen said it
+  // actually received wins over what was issued, when they differ.
+  const kitchen = kitchenDepartment(settings);
+  const issues = (raw.issues ?? [])
+    .filter((i) => i.department === kitchen && i.day)
+    .map((i) => ({
+      day: i.day,
+      ingredient_id: i.ingredient_id,
+      qty: Number(i.received ?? i.issued) || 0,
+      unit_cost: Number(i.unit_cost) || 0,
+    }));
+
+  // A delivery into the storeroom is not stock in the kitchen. It arrives
+  // there when it is issued, at the price in force on that day.
+  const kitchenDeliveries = (raw.purchases ?? []).filter((p) => (p.location ?? 'kitchen') !== 'store');
   const categoryById = new Map(raw.categories.map((c) => [c.id, c]));
 
   const serviceByDay = new Map(raw.serviceDays.map((d) => [d.day, d]));
@@ -83,9 +119,10 @@ export function makeDataset(raw) {
     .filter((p) => (p.destination ?? 'breakfast') !== 'bistro');
 
   const ledger = buildLedger({
-    ingredients: raw.ingredients,
+    ingredients: food,
     purchases: [
-      ...(raw.purchases ?? []),
+      ...kitchenDeliveries,
+      ...issues,
       ...production.map((p) => ({
         day: p.day,
         ingredient_id: p.ingredient_id,
@@ -117,6 +154,8 @@ export function makeDataset(raw) {
 
   const dataset = {
     ...raw,
+    ingredients: food,
+    issues,
     settings,
     currency: settings.currency || 'GHS',
     timezone: settings.timezone || 'UTC',

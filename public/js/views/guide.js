@@ -683,6 +683,46 @@ const SECTIONS = [
   },
 
   {
+    id: 'store-ask',
+    title: 'Asking the storeroom',
+    permission: 'store_request',
+    lead: 'Milk, tissue, soap: ask on the phone, and the storeroom is told at once.',
+    render: () => h('div',
+      steps(
+        h('span', 'Open ', h('strong', 'Ask the storeroom'), '. What you usually ask for is already at the top.'),
+        h('span', 'Tap ', h('strong', '+'), ' for how many of each. Anything else: type its name in ', h('strong', 'Search'), '.'),
+        h('span', 'Say when it is needed — ', h('strong', 'Now'), ', ', h('strong', 'Today'), ' or ', h('strong', 'Tomorrow morning'),
+          ' — add a note if it helps, and tap ', h('strong', 'Send request'), '.'),
+        h('span', 'When it arrives, open ', h('strong', 'My requests'), ' and tap ', h('strong', 'Got it all'),
+          '. If anything is missing, tap ', h('strong', 'Something’s wrong'), ' and enter what actually came.'),
+      ),
+      note('Something short?', 'Whatever the storeroom could not give you stays on its list as a new request until it is '
+        + 'in stock. Cancel it under My requests if you no longer need it.'),
+      warn('Please confirm.', 'If nobody confirms within a day it is taken as received, and the manager sees that '
+        + 'nobody checked.'),
+    ),
+  },
+
+  {
+    id: 'store-issue',
+    title: 'Issuing from the storeroom',
+    permission: 'store_issue',
+    lead: 'What is waiting, the most urgent first. Issuing a request in full is two taps.',
+    render: () => h('div',
+      steps(
+        h('span', 'Open ', h('strong', 'Storeroom'), '. New requests appear on their own, and on your phone if alerts are on.'),
+        h('span', 'Tap a request. Every line is already filled in with what was asked.'),
+        h('span', 'Change any line you cannot fill. A short line asks ', h('strong', 'Why less?'),
+          ' — tap the reason.'),
+        h('span', 'Tap ', h('strong', 'Issue'), '. What you could not give becomes a new waiting request by itself.'),
+      ),
+      note('Turning one down?', 'Tap Decline and say why. The kitchen is told, with your reason.'),
+      note('The Stock tab', 'shows what the storeroom holds: what was there at the start, plus deliveries, less what '
+        + 'you issued. Anything below its par is marked low.'),
+    ),
+  },
+
+  {
     id: 'odoo-import',
     title: 'Importing purchase orders from Odoo',
     permission: 'purchases',
