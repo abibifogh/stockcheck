@@ -99,7 +99,7 @@ jobs:
             echo "| 0013 Who each notice is for | $(yn "$has_0013") |"
             echo "| 0022 Odoo purchases | $(yn "$has_0022") |"
             echo "| 0024 Storeroom | $(yn "$has_0024") |"
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Run 0024_storeroom.sql
         if: inputs.update == '0024_storeroom.sql'
