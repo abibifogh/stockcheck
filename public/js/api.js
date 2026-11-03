@@ -110,6 +110,8 @@ export const api = {
   odooPreview: (pos) => request('/api/odoo/preview', { method: 'POST', body: { pos } }),
   odooImport: (body) => request('/api/odoo/import', { method: 'POST', body }),
   odooMappings: () => request('/api/odoo/mappings'),
+  odooIncoming: () => request('/api/odoo/incoming'),
+  odooReceive: (body) => request('/api/odoo/incoming/receive', { method: 'POST', body }),
   saveOdooMappings: (mappings) => request('/api/odoo/mappings', { method: 'PUT', body: { mappings } }),
   deleteOdooMapping: (productId, uomId) =>
     request(`/api/odoo/mappings/${productId}/${uomId}`, { method: 'DELETE' }),
