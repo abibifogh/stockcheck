@@ -3,6 +3,7 @@ import { can, state } from '../app.js';
 import { fmtDay, fmtMoney, fmtNum, h, mount, shiftDay, toast, todayISO } from '../util.js';
 import { card, exportButton, statTile, table } from './components.js';
 import { odooImportCard } from './odoo-import.js';
+import { odooIncomingCard } from './odoo-incoming.js';
 
 /**
  * Delivery log. Every delivery keyed here feeds the weighted average cost, so
@@ -49,6 +50,8 @@ export async function renderPurchases(params) {
       h('span.muted', 'to'),
       h('input', { type: 'date', value: to, onchange: (e) => rerange(from, e.target.value) }),
     ),
+    // What Insight sent from confirmed Odoo orders, waiting for "Received".
+    await odooIncomingCard({ onReceived: refresh }),
     await odooImportCard({ onImported: refresh }),
     card('Record a delivery', { note: 'For anything not on an Odoo order — add every item, then save once', wide: true },
       deliveryForm({ suppliers, supplierMode, lastCosts: data.lastCosts || {}, onSaved: reload }),

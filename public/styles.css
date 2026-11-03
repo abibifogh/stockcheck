@@ -1298,6 +1298,24 @@ td.tick input, th.tick input { cursor: pointer; }
 .odoo-footer { border-top: 1px solid var(--border); margin-top: 1rem; padding-top: .8rem; }
 .po-ref { font-variant-numeric: tabular-nums; }
 
+/* On its way from Odoo: one block per PO, a number per line, one button. */
+.incoming-line {
+  display: grid; grid-template-columns: minmax(0, 1fr) 5.5rem auto; gap: .5rem;
+  align-items: center; padding: .5rem 0; border-top: 1px solid var(--border);
+  font-size: .9rem; overflow-wrap: anywhere;
+}
+.incoming-line .muted { font-size: .78rem; }
+.incoming-qty { width: 100%; text-align: right; font-variant-numeric: tabular-nums; }
+.incoming-received { width: 100%; min-height: 44px; margin-top: .5rem; }
+.incoming-hint { font-size: .78rem; text-align: center; margin: .45rem 0 0; }
+.incoming-today { margin-top: 1rem; }
+.incoming-today h3 { font-size: .95rem; margin: 0 0 .3rem; }
+.incoming-done {
+  display: flex; justify-content: space-between; align-items: center; gap: .6rem;
+  padding: .45rem 0; border-top: 1px solid var(--border); font-size: .88rem;
+}
+.incoming-done .muted { font-size: .78rem; }
+
 /* A short tab bar that stays one row on a phone, where .seg-fill would give
    each tab 40% and push the third onto a line of its own. */
 .seg.seg-fill.seg-row { flex-wrap: nowrap; }

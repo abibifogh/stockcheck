@@ -66,6 +66,7 @@ export async function odooImportCard({ onImported }) {
   /** What a line becomes, worked out again here as matches change. */
   function effective(line) {
     if (line.status === 'imported') return { status: 'imported' };
+    if (line.status === 'expected') return { status: 'expected' };
     const match = matchOf(line);
     if (match?.ignored) return { status: 'ignored', match };
     const ingredient = match?.ingredientId ? ingredientById.get(Number(match.ingredientId)) : null;
@@ -155,6 +156,9 @@ export async function odooImportCard({ onImported }) {
     if (eff.status === 'imported') {
       outcome = h('div.odoo-outcome', h('span.pill', 'already recorded'),
         line.importedDay ? h('span.muted', ` on ${fmtDay(line.importedDay)}`) : null);
+    } else if (eff.status === 'expected') {
+      outcome = h('div.odoo-outcome', h('span.pill.info', 'on its way'),
+        h('span.muted', ' — it is listed under On its way from Odoo; tap Received there when it arrives'));
     } else if (eff.status === 'ignored') {
       outcome = h('div.odoo-outcome', h('span.pill', 'not breakfast — skipped'),
         h('button.btn-sm.btn-ghost', { onclick: () => setMatch(line, { ignored: false }) }, 'Undo'));
@@ -176,7 +180,7 @@ export async function odooImportCard({ onImported }) {
         matchEditor(line));
     }
 
-    return h(`div.odoo-line${eff.status === 'imported' || eff.status === 'ignored' ? '.odoo-quiet' : ''}`,
+    return h(`div.odoo-line${['imported', 'ignored', 'expected'].includes(eff.status) ? '.odoo-quiet' : ''}`,
       h('div.odoo-line-head',
         h('div', h('b', line.product), line.uom ? h('span.muted', ` · ${line.uom}`) : null),
         h('div.muted', { style: { whiteSpace: 'nowrap' } },
@@ -208,6 +212,7 @@ export async function odooImportCard({ onImported }) {
           h('div.odoo-summary',
             ready.length ? h('span.pill.info', `${ready.length} to record · ${fmtMoney(value, { withSymbol: false })}`) : null,
             count('imported') ? h('span.pill', `${count('imported')} already in`) : null,
+            count('expected') ? h('span.pill.info', `${count('expected')} on its way`) : null,
             count('ignored') ? h('span.pill', `${count('ignored')} not breakfast`) : null,
             count('unmatched') ? h('span.pill.warn', `${count('unmatched')} to match`) : null,
             !order.lines.length ? h('span.pill', 'no product lines') : null),
