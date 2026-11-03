@@ -280,7 +280,7 @@ const SECTIONS = [
         + 'breakfast’s. What you put in the Bistro box is recorded, since it was your flour and '
         + 'your oven, but it never lands on the breakfast shelf: the kitchen is not shown bread '
         + 'it cannot use, and breakfast’s cost per guest is not moved by it. A manager changes '
-        + 'which items have the box under Setup → Ingredients.'),
+        + 'which items have the box under Setup → Items.'),
       note('Sending again replaces what you sent, it does not add to it.',
         'So a number typed wrongly is fixed by sending the day again with the right ones, and '
         + 'pressing Send twice because you were not sure the first went through costs nothing. '
@@ -765,7 +765,7 @@ const SECTIONS = [
         h('span', h('strong', 'Set what a unit costs you to make.'), ' That is the “Fallback unit '
           + 'cost” on the same screen. Every bake is valued at it, so it is what the bread on the '
           + 'shelf is worth and what the kitchen’s cost per guest is built from.'),
-        h('span', h('strong', 'Create a link'), ' under Users & data → Bakery links, name it after '
+        h('span', h('strong', 'Create a link'), ' under Users & data → People → Bakery links, name it after '
           + 'whoever will use it, and send it to them. WhatsApp works well.'),
       ),
       warn('The link is shown once and never again.',
@@ -931,7 +931,7 @@ const SECTIONS = [
         h('span', h('strong', 'A stock count is waiting for approval —'), ' goes to '
           + 'administrators, because they are the only people who can accept one — not to the '
           + 'daily email list, unless an administrator has deliberately widened it under '
-          + 'Users & data → Email alerts.'),
+          + 'Users & data → Alerts.'),
         h('span', h('strong', 'A submitted day was amended —'), ' with what changed and what it '
           + 'does to the cost, to whoever can approve it.'),
         h('span', h('strong', 'The bakery reported a bake —'), ' goes to whoever can '
@@ -943,7 +943,7 @@ const SECTIONS = [
         + 'address on their account gets a copy, along with everybody on the daily-email list. The '
         + 'bell needs no setup at all; email needs a sending key first.'),
       can('users')
-        ? note('Turning it down.', 'Users & data → In-app notifications has a switch for the bell '
+        ? note('Turning it down.', 'Users & data → Alerts → In-app notifications has a switch for the bell '
           + 'itself and one for each of the two events. Switching the bell off stops them being '
           + 'recorded at all, for everybody.')
         : null,
@@ -1181,7 +1181,7 @@ const SECTIONS = [
         ? note('The bed check has its own email.', 'It goes out the moment a round is submitted and '
           + 'lists every occupied bed found without a name tag, by room and bed, along with anything '
           + 'found where the roster said it should not be. It has its own list of recipients under '
-          + 'Users & data → Email alerts; left empty, it goes to the same people as the morning sheet.')
+          + 'Users & data → Alerts; left empty, it goes to the same people as the morning sheet.')
         : null,
       can('users')
         ? note('What you can see under Users & data.', 'The “Phone alerts” panel lists every device '

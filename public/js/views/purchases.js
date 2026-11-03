@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { can, state } from '../app.js';
 import { fmtDay, fmtMoney, fmtNum, h, mount, shiftDay, toast, todayISO } from '../util.js';
-import { card, exportButton, statTile, table } from './components.js';
+import { card, exportButton, pageTabs, statTile, table } from './components.js';
 import { odooImportCard } from './odoo-import.js';
 
 /**
@@ -36,24 +36,30 @@ export async function renderPurchases(params) {
   };
   mount(dataHost, ...dataSection(data, { from, to, suppliers, refresh }));
 
+  const record = card(null, {},
+    deliveryForm({ suppliers, supplierMode, lastCosts: data.lastCosts || {}, onSaved: reload }));
+  const odoo = await odooImportCard({ onImported: refresh });
+  const list = h('div',
+    h('div.toolbar',
+      h('input', { type: 'date', value: from, 'aria-label': 'From', onchange: (e) => rerange(e.target.value, to) }),
+      h('span.muted', 'to'),
+      h('input', { type: 'date', value: to, 'aria-label': 'To', onchange: (e) => rerange(from, e.target.value) }),
+    ),
+    dataHost);
+
   mount(host,
     h('div.page-head',
       h('div',
         h('h1', 'Purchases'),
-        h('div.sub', 'Recording deliveries keeps unit costs, stock levels and every money figure accurate'),
+        h('div.sub', 'Every delivery keeps costs and stock right'),
       ),
-      exportButton(api.exportUrl('purchases', from, to), 'Export purchases'),
+      exportButton(api.exportUrl('purchases', from, to), 'Export'),
     ),
-    h('div.toolbar',
-      h('input', { type: 'date', value: from, onchange: (e) => rerange(e.target.value, to) }),
-      h('span.muted', 'to'),
-      h('input', { type: 'date', value: to, onchange: (e) => rerange(from, e.target.value) }),
-    ),
-    await odooImportCard({ onImported: refresh }),
-    card('Record a delivery', { note: 'For anything not on an Odoo order — add every item, then save once', wide: true },
-      deliveryForm({ suppliers, supplierMode, lastCosts: data.lastCosts || {}, onSaved: reload }),
-    ),
-    dataHost,
+    pageTabs('purchases', [
+      { id: 'record', label: 'Record a delivery', render: () => record },
+      { id: 'odoo', label: 'From Odoo', render: () => odoo },
+      { id: 'list', label: 'Deliveries', count: data.purchases.length, render: () => list },
+    ]),
   );
   return host;
 }
@@ -78,6 +84,7 @@ function dataSection(data, { from, to, suppliers, refresh }) {
     }),
   );
 
+  const has = (key, test = Boolean) => data.purchases.some((p) => test(p[key]));
   const listCard = card('Deliveries', { note: `${fmtDay(from)} → ${fmtDay(to)}`, wide: true },
     table([
       { key: 'day', label: 'Date', format: (v) => fmtDay(v) },
@@ -86,17 +93,19 @@ function dataSection(data, { from, to, suppliers, refresh }) {
       { key: 'unit_cost', label: 'Unit cost', align: 'right', format: (v) => fmtMoney(v, { withSymbol: false }) },
       { key: 'total', label: 'Total', align: 'right', format: (_, r) => h('b', fmtMoney(Number(r.qty) * Number(r.unit_cost), { withSymbol: false })) },
       { key: 'supplier', label: 'Supplier', format: (v) => v || h('span.muted', '—') },
-      { key: 'po_ref', label: 'PO', format: (v) => (v ? h('span.pill.info.po-ref', v) : h('span.muted', '—')) },
-      {
+      // Columns nobody has used in this range are left out rather than shown
+      // as a stripe of dashes.
+      has('po_ref') ? { key: 'po_ref', label: 'PO', format: (v) => (v ? h('span.pill.info.po-ref', v) : '') } : null,
+      has('location', (v) => v === 'store') ? {
         key: 'location',
         label: 'Went to',
-        format: (v) => (v === 'store' ? h('span.pill', 'Storeroom') : v === 'kitchen' ? h('span.muted', 'Kitchen') : h('span.muted', '—')),
-      },
-      { key: 'note', label: 'Note', format: (v) => v || h('span.muted', '—') },
+        format: (v) => (v === 'store' ? h('span.pill', 'Storeroom') : v === 'kitchen' ? h('span.muted', 'Kitchen') : ''),
+      } : null,
+      has('note') ? { key: 'note', label: 'Note', format: (v) => v || '' } : null,
       {
         key: 'id',
         label: '',
-        format: (id, row) => h('button.btn-sm.btn-danger', {
+        format: (id, row) => h('button.row-action.danger', {
           onclick: async () => {
             const ask = row.po_ref
               ? `Delete this line? Costs and stock will be recalculated. It came from ${row.po_ref}, so importing that PO again would bring it back.`
@@ -110,7 +119,7 @@ function dataSection(data, { from, to, suppliers, refresh }) {
           },
         }, 'Delete'),
       },
-    ], data.purchases, { empty: 'No deliveries recorded in this range.' }),
+    ].filter(Boolean), data.purchases, { empty: 'No deliveries recorded in this range.' }),
   );
 
   return [tiles, listCard];

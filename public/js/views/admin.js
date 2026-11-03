@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import { state } from '../app.js';
 import { prepareNewPassword } from '../crypto.js';
 import { fmtDay, fmtNum, h, mount, toast, todayISO } from '../util.js';
-import { card, table } from './components.js';
+import { card, more, pageTabs, table } from './components.js';
 import { BRAND } from '../brand.js';
 
 /** Administrator screen: who can use the system, notifications, and data. */
@@ -28,24 +28,37 @@ export async function renderAdmin() {
       h('div',
         h('h1', 'Users & data'),
         h('div.sub', full
-          ? 'Who can sign in, what they can see, closed periods and bulk entry'
-          : 'Who can sign in, what they can see, and who hears about a round'),
+          ? 'Who can sign in, the recorded days, and who hears about what'
+          : 'Who can sign in, and who hears about a round'),
       ),
     ),
-    usersCard(users, reload),
-    full ? locksCard(locks.locks || [], reload) : null,
-    full ? importCard(reload) : null,
-    full ? submissionsCard(days.days || [], reload) : null,
-    // The bakery reports through a link rather than an account, so the link
-    // belongs with the people rather than with the kitchen's settings.
-    full ? bakeryLinksCard(reload) : null,
-    notificationsCard(notifications, reload),
-    inAppCard(notifications, reload),
-    // Phone alerts announce a submitted day sheet, which the housekeeping site
-    // does not have. Showing the panel would be offering a switch that does
-    // nothing.
-    full ? pushCard(notifications, reload) : null,
-    eraseCard(summary, reload),
+    pageTabs('admin', [
+      {
+        id: 'people',
+        label: 'People',
+        count: (users.users || []).filter((u) => u.active).length,
+        // The bakery reports through a link rather than an account, so the
+        // link belongs with the people.
+        render: () => h('div', usersCard(users, reload), full ? bakeryLinksCard(reload) : null),
+      },
+      full ? {
+        id: 'days',
+        label: 'Recorded days',
+        render: () => h('div', submissionsCard(days.days || [], reload), locksCard(locks.locks || [], reload)),
+      } : null,
+      full ? { id: 'import', label: 'Import', render: () => importCard(reload) } : null,
+      {
+        id: 'alerts',
+        label: 'Alerts',
+        // Phone alerts announce a submitted day sheet, which the housekeeping
+        // site does not have.
+        render: () => h('div',
+          notificationsCard(notifications, reload),
+          inAppCard(notifications, reload),
+          full ? pushCard(notifications, reload) : null),
+      },
+      { id: 'erase', label: 'Erase', render: () => eraseCard(summary, reload) },
+    ].filter(Boolean)),
   );
   return host;
 }
@@ -84,7 +97,7 @@ function locksCard(locks, reload) {
       {
         key: 'id',
         label: '',
-        format: (id, row) => h('button.btn-sm.btn-danger', {
+        format: (id, row) => h('button.row-action.danger', {
           onclick: async () => {
             if (!confirm(`Reopen ${row.from_day} to ${row.to_day}? Those days become editable again.`)) return;
             try {
@@ -106,9 +119,8 @@ function locksCard(locks, reload) {
       ),
       h('button.btn-primary', { onclick: add }, 'Close this period'),
     ),
-    h('p.muted', { style: { fontSize: '.82rem', marginTop: '.7rem', marginBottom: 0 } },
-      'Close a month once you have reported on it. After that its figures cannot move — not by a '
-      + 'cook correcting a sheet, not by an import, not by a deletion. Reopening is recorded in the log.'),
+    more('About closing a period', h('p', 'Close a month once you have reported on it. After that its figures cannot move — not by a '
+      + 'cook correcting a sheet, not by an import, not by a deletion. Reopening is recorded in the log.')),
   );
 }
 
@@ -191,10 +203,7 @@ function importCard(reload) {
     h('div.btn-row', { style: { marginBottom: '.8rem' } },
       h('a.btn.btn-sm', { href: api.importTemplateUrl(), download: '' }, '⬇ Download the template'),
     ),
-    h('p.muted', { style: { fontSize: '.85rem' } },
-      'The template has one column per ingredient and one row per day. Fill it in with a '
-      + 'spreadsheet, save as CSV, then choose it below. Nothing is written until you have seen '
-      + 'the preview and pressed Import.'),
+    h('p.muted', { style: { fontSize: '.85rem' } }, 'Download the template, fill in one row per day, save as CSV and choose it below. Nothing is written until you have checked the preview.'),
     h('div.field-row',
       h('label.field', h('span', 'Your filled-in file'), fileInput),
       h('label.field', h('span', 'If a day already exists'), overwrite),
@@ -291,7 +300,7 @@ function submissionsCard(days, reload) {
       {
         key: 'day',
         label: '',
-        format: (day, row) => h('button.btn-sm.btn-danger', {
+        format: (day, row) => h('button.row-action.danger', {
           onclick: async () => {
             if (!confirm(
               `Delete the whole sheet for ${day}?\n\n`
@@ -350,7 +359,7 @@ function usersCard(data, reload) {
             h('div.alert-title', 'The emergency PIN is switched off'),
             h('div.alert-detail',
               'Administrators can only sign in with their email address and password. You can turn '
-              + 'it back on under Setup → Emergency access.'),
+              + 'it back on under Setup → Settings.'),
           ))
         : null;
 
@@ -409,7 +418,7 @@ function usersCard(data, reload) {
         label: '',
         format: (id, row) => h('div.btn-row',
           h('button.btn-sm', { onclick: () => userDialog(row, roles, permissions, reload) }, 'Edit'),
-          h('button.btn-sm.btn-danger', {
+          h('button.row-action.danger', {
             onclick: async () => {
               if (!confirm(`Remove ${row.name}? They will no longer be able to sign in.`)) return;
               try {
@@ -425,12 +434,11 @@ function usersCard(data, reload) {
 
     recoveryBanner,
 
-    h('p.muted', { style: { fontSize: '.82rem', marginTop: '.8rem', marginBottom: 0 } },
-      'Administrators sign in with an email address and a password. Cooks and managers use their '
+    more('How signing in works', h('p', 'Administrators sign in with an email address and a password. Cooks and managers use their '
       + 'own PIN, which is faster on a kitchen tablet — and everyone can change their own from '
       + '“My account”. Every day sheet records who entered it. If you ever lock yourself out, the '
       + 'MANAGER_PIN set on the server still works as a way back in; it can be switched off under '
-      + 'Setup once you no longer want it.'),
+      + 'Setup once you no longer want it.')),
   );
 }
 
@@ -688,12 +696,9 @@ function bakeryLinksCard(reload) {
 
     mount(host, card('Bakery links', {
       wide: true,
-      note: 'A link the bakery opens to report what it baked — no account needed',
+      note: 'No account needed',
     },
-      h('p.muted', { style: { fontSize: '.87rem', marginTop: 0 } },
-        'Send one to the bakery and they bookmark it. It opens a single form listing what you '
-        + 'have marked as made in-house; what they send goes onto the breakfast shelf, and the '
-        + 'morning sheet draws against it. The link shows no costs and reaches nothing else.'),
+      h('p.muted', { style: { fontSize: '.87rem', marginTop: 0 } }, 'A link the bakery bookmarks to report what it baked. It shows no costs and reaches nothing else.'),
 
       h('div.field-row',
         h('label.field', h('span', 'Who is this link for'), label),
@@ -730,10 +735,9 @@ function bakeryLinksCard(reload) {
           ], data.links, { rowClass: (r) => (r.active ? '' : 'row-muted') }))
         : null,
 
-      h('p.muted', { style: { fontSize: '.82rem', marginTop: '.9rem', marginBottom: 0 } },
-        'The link is shown once, when you create it, and never stored anywhere it could be read '
+      more('Keeping the link safe', h('p', 'The link is shown once, when you create it, and never stored anywhere it could be read '
         + 'back. If one is lost or goes to the wrong person, revoke it and make another — that '
-        + 'takes ten seconds and is the right habit anyway.'),
+        + 'takes ten seconds and is the right habit anyway.')),
     ));
   })();
 
@@ -938,18 +942,16 @@ function notificationsCard(data, reload) {
     h('div', { style: { marginTop: '1.1rem' } },
       h('div.stat-label', { style: { marginBottom: '.4rem' } }, 'Approvals and other alerts'),
       h('div.field-row', h('label.field', h('span', 'Who receives them'), alertsToWatchers)),
-      h('p.muted', { style: { fontSize: '.82rem', marginTop: '.5rem', marginBottom: 0 } },
-        'A count waiting for approval, a change waiting for a decision, a scheduled count falling '
+      more('Who gets these', h('p', 'A count waiting for approval, a change waiting for a decision, a scheduled count falling '
         + 'due. These go to whoever holds the permission that can act on them — an administrator '
-        + 'for an approval. Widen it only if the people on the list above genuinely want them.'),
+        + 'for an approval. Widen it only if the people on the list above genuinely want them.')),
     ),
     h('div.btn-row', { style: { marginTop: '1rem' } },
       h('button.btn-primary', { onclick: save }, 'Save'),
       h('button', { onclick: sendTest }, 'Send a test now'),
     ),
-    h('p.muted', { style: { fontSize: '.82rem', marginTop: '.8rem' } },
-      'The “from” address must be at a domain you have verified with your email provider. '
-      + 'Sending from a Gmail or Yahoo address will not work — mail providers reject it.'),
+    more('About the “from” address', h('p', 'The “from” address must be at a domain you have verified with your email provider. '
+      + 'Sending from a Gmail or Yahoo address will not work — mail providers reject it.')),
     data.log?.length
       ? h('div', { style: { marginTop: '.6rem' } },
         h('div.stat-label', { style: { marginBottom: '.4rem' } }, 'Recent sends'),
@@ -1027,11 +1029,7 @@ function inAppCard(data, reload) {
     note: 'The bell at the top of every screen',
     wide: true,
   },
-    h('p.muted', { style: { fontSize: '.87rem', marginTop: 0 } },
-      'These need no email account and no setup. Everybody sees what their own access allows: '
-      + 'a submitted breakfast sheet reaches whoever can read reports, a count waiting for '
-      + 'approval reaches administrators, and a '
-      + 'scheduled stock count that has come round reaches whoever was asked to do it.'),
+    h('p.muted', { style: { fontSize: '.87rem', marginTop: 0 } }, 'Shown on the bell to whoever can act on them. No setup needed.'),
     h('div.field-row',
       h('label.field', h('span', 'The bell'), inApp),
       h('label.field', h('span', 'A stock count needs approving'), countPending),
@@ -1040,9 +1038,8 @@ function inAppCard(data, reload) {
     h('div.btn-row', { style: { marginTop: '1rem' } },
       h('button.btn-primary', { onclick: save }, 'Save'),
     ),
-    h('p.muted', { style: { fontSize: '.82rem', marginTop: '.8rem', marginBottom: 0 } },
-      'The last two are also emailed, to whoever holds the matching access and has an '
-      + 'email address on their account, plus everybody on the daily-email list above.'),
+    more('Which of these are emailed', h('p', 'The last two are also emailed, to whoever holds the matching access and has an '
+      + 'email address on their account, plus everybody on the daily-email list above.')),
   );
 }
 
@@ -1089,9 +1086,7 @@ function pushCard(data, reload) {
     note: 'A notification the moment a day is submitted',
     wide: true,
   },
-    h('p.muted', { style: { fontSize: '.87rem' } },
-      'Each person turns these on for themselves, on each device they want alerted, under '
-      + '“My account”. A phone and a computer count as two devices.'),
+    h('p.muted', { style: { fontSize: '.87rem' } }, 'Each person turns alerts on for their own phone, under “My account” or the banner at the top.'),
     h('div.field-row',
       h('label.field', h('span', 'When a day is submitted'), enabled),
     ),
