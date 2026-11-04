@@ -3,6 +3,7 @@ import { can, state } from '../app.js';
 import { fmtDay, fmtMoney, fmtNum, h, mount, shiftDay, toast, todayISO } from '../util.js';
 import { card, exportButton, pageTabs, statTile, table } from './components.js';
 import { odooImportCard } from './odoo-import.js';
+import { odooIncomingCard } from './odoo-incoming.js';
 
 /**
  * Delivery log. Every delivery keyed here feeds the weighted average cost, so
@@ -55,6 +56,9 @@ export async function renderPurchases(params) {
       ),
       exportButton(api.exportUrl('purchases', from, to), 'Export'),
     ),
+    // What Insight sent from confirmed Odoo orders, waiting for "Received".
+    // Above the tabs: something to act on is never behind one.
+    await odooIncomingCard({ onReceived: refresh }),
     pageTabs('purchases', [
       { id: 'record', label: 'Record a delivery', render: () => record },
       { id: 'odoo', label: 'From Odoo', render: () => odoo },

@@ -21,9 +21,11 @@ on:
       update:
         description: Which update to run
         required: true
-        default: 0024_storeroom.sql
+        default: 0025_odoo_expected.sql
         type: choice
         options:
+          # Stock from Odoo: the lines Insight sends that are on their way.
+          - 0025_odoo_expected.sql
           # The storeroom: requests, issues, item kinds, where deliveries go.
           - 0024_storeroom.sql
           # The bell and phone alerts: whichever of 0004, 0009 and 0013 the
@@ -82,12 +84,13 @@ jobs:
               (SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'app_notices') AS has_0009,
               (SELECT COUNT(*) FROM pragma_table_info('app_notices') WHERE name = 'audience') AS has_0013,
               (SELECT COUNT(*) FROM pragma_table_info('purchases') WHERE name = 'odoo_line_id') AS has_0022,
-              (SELECT COUNT(*) FROM pragma_table_info('ingredients') WHERE name = 'kind') AS has_0024
+              (SELECT COUNT(*) FROM pragma_table_info('ingredients') WHERE name = 'kind') AS has_0024,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'odoo_expected') AS has_0025
           " > state.json
           has() { node -e "const r=require('./state.json');console.log(r[0].results[0].has_$1)"; }
           has_0004=$(has 0004); has_0009=$(has 0009); has_0013=$(has 0013)
-          has_0022=$(has 0022); has_0024=$(has 0024)
-          for n in 0004 0009 0013 0024; do echo "has_$n=$(has $n)" >> "$GITHUB_OUTPUT"; done
+          has_0022=$(has 0022); has_0024=$(has 0024); has_0025=$(has 0025)
+          for n in 0004 0009 0013 0022 0024 0025; do echo "has_$n=$(has $n)" >> "$GITHUB_OUTPUT"; done
           yn() { [ "$1" = "1" ] && echo yes || echo no; }
           {
             echo "### Breakfast database before this run"
@@ -99,6 +102,7 @@ jobs:
             echo "| 0013 Who each notice is for | $(yn "$has_0013") |"
             echo "| 0022 Odoo purchases | $(yn "$has_0022") |"
             echo "| 0024 Storeroom | $(yn "$has_0024") |"
+            echo "| 0025 Stock from Odoo, on its way | $(yn "$has_0025") |"
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Run 0024_storeroom.sql
@@ -120,6 +124,25 @@ jobs:
             echo ""
             node -e "for (const r of require('./after.json')[0].results) console.log('- ' + r.key + ': ' + String(r.value).replace(/\n/g, ', '))"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # Only creates a table, so it is safe on any database that has 0022 and
+      # 0024; it needs them (purchases.odoo_line_id, ingredients.kind).
+      - name: Run 0025_odoo_expected.sql
+        if: inputs.update == '0025_odoo_expected.sql'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ "${{ steps.state.outputs.has_0025 }}" = "1" ]; then
+            echo "The stock-from-Odoo update is already in the database. Nothing to do." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "${{ steps.state.outputs.has_0022 }}" != "1" ] || [ "${{ steps.state.outputs.has_0024 }}" != "1" ]; then
+            echo "::error::Run 0022 (Odoo purchases) and 0024 (storeroom) first; this update builds on both."
+            exit 1
+          fi
+          npx wrangler d1 execute breakfast --remote --file=./migrations/console/0025_odoo_expected.sql
+          echo "### Stock from Odoo update applied: odoo_expected created" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run the notification updates
         if: inputs.update == 'notifications'

@@ -64,7 +64,7 @@ indistinguishable from "we forgot" and silently drags every average down.
 | **Month** | Full report: cost per guest trend, category mix, outsider economics, store movement, best/worst days, projection. |
 | **Approvals** | Corrections to days already submitted, shown as a before/after list to accept or reject. A rejection is not final — a turned-down correction can be accepted later, unless a newer one for the same day is waiting; where the day has moved on since, the screen says so before you do. |
 | **Stock** | Book stock, days of cover, reorder list, physical-count variances. Filter the page to one category, or band every table by category. |
-| **Purchases** | Delivery log — multi-line, supplier picked from a list, unit costs pre-filled from the last price paid. |
+| **Purchases** | Delivery log — multi-line, supplier picked from a list, unit costs pre-filled from the last price paid. Confirmed Odoo orders arrive on their own through Insight and wait under **On its way from Odoo** until somebody taps **Received**. |
 
 ### For housekeeping — the dorm bed check
 
@@ -658,6 +658,18 @@ Every request is signed with the same `INSIGHT_SSO_SECRET` as the sign-in
 hand-off, under its own label, and one older than five minutes is refused (see
 `src/lib/link.js`). Nothing more to set up: if signing in from Insight works, so
 does this. The housekeeping site does not answer it.
+
+### Stock from Odoo, through Insight
+
+Insight reads confirmed Odoo purchase orders and offers each line here at
+`POST /api/link/stock`, signed the same way. This app decides what each line
+is, using the hand import's own product map. Lines either go into stock at once
+or show under **Purchases → On its way from Odoo** until somebody with the
+*Purchases* permission taps **Received**. They can correct a number if the
+delivery was short. Insight can also ask what became of a line, cancel lines
+from a cancelled PO, and answer "which item is this product?" into the same
+map. Run **Actions → Breakfast database → `0025_odoo_expected.sql`** once. The
+details are in [docs/stock-from-odoo.md](docs/stock-from-odoo.md).
 
 ---
 

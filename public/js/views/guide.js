@@ -745,6 +745,10 @@ const SECTIONS = [
       warn('Only confirmed orders import.', 'A quotation, or an order still waiting for approval in Odoo, '
         + 'is shown with the reason and left out. Confirm it in Odoo first.'),
       note('Something not on an Odoo order?', 'Use “Record a delivery” underneath, exactly as before.'),
+      note('On its way from Odoo.', 'Orders Insight sends appear at the top of Purchases by themselves, '
+        + 'already in your units. When the delivery arrives, change any number that is short (0 if it did '
+        + 'not come) and tap Received once for the order. It goes into stock today. A line on its way shows '
+        + 'here as “on its way” and is not imported a second time.'),
     ),
   },
 

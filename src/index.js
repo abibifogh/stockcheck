@@ -13,6 +13,7 @@ import * as revisions from './routes/revisions.js';
 import * as importing from './routes/importing.js';
 import * as catalog from './routes/catalog.js';
 import * as odoo from './routes/odoo.js';
+import * as odooStock from './routes/odoo-stock.js';
 import * as store from './routes/store.js';
 import * as insights from './routes/insights.js';
 import * as admin from './routes/admin.js';
@@ -68,6 +69,8 @@ const ROUTES = [
   // The group hub's management report: Insight asks, signed, for this app's own figures.
   ['POST', '/api/link/report', 'public', link.report],
   ['POST', '/api/link/suppliers', 'public', link.suppliers],
+  // Stock from Odoo: Insight offers each confirmed PO line, signed the same way.
+  ['POST', '/api/link/stock', 'public', odooStock.linkStock],
 
   ['GET', '/api/bakery/form', 'bakery', bakery.form],
   ['POST', '/api/production', 'bakery', bakery.create],
@@ -113,6 +116,9 @@ const ROUTES = [
   ['GET', '/api/odoo/mappings', ['purchases', 'setup'], odoo.listMappings],
   ['PUT', '/api/odoo/mappings', 'purchases', odoo.saveMappings],
   ['DELETE', '/api/odoo/mappings/:product/:uom', ['purchases', 'setup'], odoo.deleteMapping],
+  // On its way from Odoo (sent by Insight): received by whoever records deliveries.
+  ['GET', '/api/odoo/incoming', 'purchases', odooStock.incoming],
+  ['POST', '/api/odoo/incoming/receive', 'purchases', odooStock.receive],
 
   ['POST', '/api/categories', 'setup', catalog.createCategory],
   ['PUT', '/api/categories/:id', 'setup', catalog.updateCategory],

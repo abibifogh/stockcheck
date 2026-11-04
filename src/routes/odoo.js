@@ -27,7 +27,7 @@ import {
  */
 
 /** Unit costs keep four places: a crate at 100 over 30 eggs is 3.3333, not 3.33. */
-const round4 = (n) => Math.round(Number(n) * 10000) / 10000;
+export const round4 = (n) => Math.round(Number(n) * 10000) / 10000;
 const money = (n) => Math.round(Number(n) * 100) / 100;
 
 const MIGRATION_NEEDED = 'The Odoo import needs a database update that has not been run yet: '
@@ -53,30 +53,46 @@ async function configFor(ctx) {
   return odooConfig(await settingsOf(ctx.db), ctx.env);
 }
 
-const mapKey = (productId, uomId) => `${productId}:${uomId ?? 0}`;
+export const mapKey = (productId, uomId) => `${productId}:${uomId ?? 0}`;
 
-async function loadMappings(db) {
+export async function loadMappings(db) {
   const rows = await db.prepare('SELECT * FROM odoo_product_map').all();
   return new Map((rows.results ?? []).map((r) => [mapKey(r.odoo_product_id, r.odoo_uom_id), r]));
 }
 
-async function activeIngredients(db) {
+export async function activeIngredients(db) {
   const rows = await db.prepare('SELECT id, name, unit FROM ingredients WHERE active = 1').all();
   return new Map((rows.results ?? []).map((r) => [r.id, r]));
 }
 
-/** The Odoo lines already recorded here, and where. */
-async function alreadyImported(db, lineIds) {
+/**
+ * The Odoo lines already recorded here, and where — and the ones on their way
+ * (offered by Insight, not yet received), which are not to be recorded a second
+ * way either: they become stock when somebody taps Received.
+ */
+export async function alreadyImported(db, lineIds) {
   const out = new Map();
   // SQLite caps bound parameters; D1 at 100. Chunk well under it.
   for (let i = 0; i < lineIds.length; i += 90) {
     const chunk = lineIds.slice(i, i + 90);
+    const marks = chunk.map(() => '?').join(',');
     // eslint-disable-next-line no-await-in-loop
     const rows = await db.prepare(
       `SELECT id, day, odoo_line_id FROM purchases
-       WHERE odoo_line_id IN (${chunk.map(() => '?').join(',')})`,
+       WHERE odoo_line_id IN (${marks})`,
     ).bind(...chunk).all();
     for (const r of rows.results ?? []) out.set(r.odoo_line_id, { id: r.id, day: r.day });
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const coming = await db.prepare(
+        `SELECT odoo_line_id FROM odoo_expected
+         WHERE state = 'expected' AND odoo_line_id IN (${marks})`,
+      ).bind(...chunk).all();
+      for (const r of coming.results ?? []) if (!out.has(r.odoo_line_id)) out.set(r.odoo_line_id, { expected: true });
+    } catch (err) {
+      // Before migration 0025 nothing can be on its way; the import works as it did.
+      if (!isMissingTable(err)) throw err;
+    }
   }
   return out;
 }
@@ -85,6 +101,8 @@ async function alreadyImported(db, lineIds) {
  * What one Odoo line becomes here.
  *
  *   imported  — already recorded; importing again leaves it alone.
+ *   expected  — on its way from Odoo (through Insight); it becomes stock when
+ *               somebody taps Received under Purchases, not by importing.
  *   ignored   — somebody said this product is not breakfast.
  *   unmatched — nobody has said which ingredient it is yet. Skipped by an
  *               import until they do, then picked up by the next one.
@@ -102,6 +120,7 @@ export function classifyLine(line, { mappings, ingredients, imported }) {
       ignored: Boolean(map.ignored),
     };
   }
+  if (done?.expected) return { ...base, status: 'expected' };
   if (done) return { ...base, status: 'imported', purchaseId: done.id, importedDay: done.day };
   if (map?.ignored) return { ...base, status: 'ignored' };
 
@@ -126,12 +145,40 @@ export function classifyLine(line, { mappings, ingredients, imported }) {
   };
 }
 
+/**
+ * The purchase row one Odoo line becomes. Shared by the import here and by
+ * stock Insight sends (routes/odoo-stock.js), so a line is recorded the same
+ * way whichever road it came by. `INSERT OR IGNORE`: the unique index on
+ * odoo_line_id turns away a line already recorded, and the caller reads
+ * `meta.changes` to tell.
+ */
+export function recordOdooLine(db, {
+  day, ingredient, qty, unitCost, supplier, product, uom, po, lineId, location,
+}) {
+  return db.prepare(
+    `INSERT OR IGNORE INTO purchases
+       (day, ingredient_id, qty, unit_cost, supplier, note, po_ref, odoo_line_id${location ? ', location' : ''})
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?${location ? ', ?' : ''})`,
+  ).bind(
+    day, ingredient.id, qty, unitCost,
+    // The vendor exactly as Odoo has it. The supplier list governs what a
+    // person may type; this was not typed, and refusing an agreed order
+    // because a supplier was spelt differently here would help nobody.
+    supplier || null,
+    !product || product === ingredient.name ? null : `Odoo: ${product}${uom ? ` (${uom})` : ''}`,
+    po,
+    lineId,
+    ...(location ? [location] : []),
+  );
+}
+
 function summarise(lines) {
   const count = (status) => lines.filter((l) => l.status === status).length;
   const ready = lines.filter((l) => l.status === 'ready');
   return {
     ready: ready.length,
     imported: count('imported'),
+    expected: count('expected'),
     ignored: count('ignored'),
     unmatched: count('unmatched'),
     value: money(ready.reduce((sum, l) => sum + l.convertedQty * l.unitCost, 0)),
@@ -226,20 +273,23 @@ function mappingFields(m, index) {
   };
 }
 
-async function writeMappings(ctx, raw) {
+/**
+ * Remember Odoo products. Shared with Insight's "map" (link/stock), so a match
+ * made in either place is the one the other uses.
+ */
+export async function writeMappings(db, raw, who) {
   if (!Array.isArray(raw) || !raw.length) return 0;
   if (raw.length > 500) throw badRequest('That is too many products at once.');
   const fields = raw.map(mappingFields);
 
-  const ingredients = await activeIngredients(ctx.db);
+  const ingredients = await activeIngredients(db);
   fields.forEach((f, i) => {
     if (f.ingredientId && !ingredients.has(f.ingredientId)) {
       throw badRequest(`Product ${i + 1} is matched to an ingredient that is not active.`);
     }
   });
 
-  const who = ctx.session.user.name;
-  await ctx.db.batch(fields.map((f) => ctx.db.prepare(
+  await db.batch(fields.map((f) => db.prepare(
     `INSERT INTO odoo_product_map
        (odoo_product_id, odoo_uom_id, odoo_name, odoo_uom, ingredient_id, factor, ignored, updated_by, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
@@ -266,7 +316,7 @@ export async function listMappings(ctx) {
 
 export async function saveMappings(ctx) {
   const body = await readJson(ctx.request);
-  return guarded(async () => json({ ok: true, saved: await writeMappings(ctx, body.mappings) }));
+  return guarded(async () => json({ ok: true, saved: await writeMappings(ctx.db, body.mappings, ctx.session.user.name) }));
 }
 
 /** Forget a match, so the product is asked about again next time it is seen. */
@@ -298,7 +348,7 @@ export async function importOrders(ctx) {
   const days = body.days && typeof body.days === 'object' ? body.days : {};
 
   return guarded(async () => {
-    await writeMappings(ctx, body.mappings);
+    await writeMappings(ctx.db, body.mappings, ctx.session.user.name);
     // Odoo orders are deliveries like any other: into the storeroom, unless
     // the screen said straight to the kitchen.
     const location = await deliveryLocation(ctx.db, body.location);
@@ -318,7 +368,7 @@ export async function importOrders(ctx) {
         day: null,
         recorded: 0,
         value: 0,
-        skipped: order.summary.imported,
+        skipped: order.summary.imported + order.summary.expected,
         ignored: order.summary.ignored,
         unmatched: order.lines.filter((l) => l.status === 'unmatched').map((l) => l.product),
         refused: null,
@@ -348,21 +398,18 @@ export async function importOrders(ctx) {
 
       result.day = day;
       for (const line of ready) {
-        statements.push(ctx.db.prepare(
-          `INSERT OR IGNORE INTO purchases
-             (day, ingredient_id, qty, unit_cost, supplier, note, po_ref, odoo_line_id${location ? ', location' : ''})
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?${location ? ', ?' : ''})`,
-        ).bind(
-          day, line.ingredient.id, line.convertedQty, line.unitCost,
-          // The vendor exactly as Odoo has it. The supplier list governs what a
-          // person may type; this was not typed, and refusing an agreed order
-          // because a supplier was spelt differently here would help nobody.
-          order.vendor || null,
-          line.product === line.ingredient.name ? null : `Odoo: ${line.product}${line.uom ? ` (${line.uom})` : ''}`,
-          order.name,
-          line.lineId,
-          ...(location ? [location] : []),
-        ));
+        statements.push(recordOdooLine(ctx.db, {
+          day,
+          ingredient: line.ingredient,
+          qty: line.convertedQty,
+          unitCost: line.unitCost,
+          supplier: order.vendor,
+          product: line.product,
+          uom: line.uom,
+          po: order.name,
+          lineId: line.lineId,
+          location,
+        }));
         const value = line.convertedQty * line.unitCost;
         owners.push({ result, value });
         result.recorded += 1;
