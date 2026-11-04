@@ -88,7 +88,7 @@ function itemsTab(ingredients, categories, units, reload) {
         key: 'name',
         label: 'Item',
         format: (v, r) => h('div',
-          h('span.item-name', v), tags(r),
+          h('span.row-name', v), tags(r),
           h('div', h('small.muted', r.category_name, h('span.phone-only', ` · par ${fmtNum(r.par_level, 2)} ${r.unit}`)))),
       },
       { key: 'unit', label: 'Unit', cls: 'phone-hide' },
@@ -291,7 +291,7 @@ function categoriesTab(categories, reload) {
   return card(null, {},
     h('p.muted', { style: { marginTop: 0, fontSize: '.86rem' } }, 'The order here is the order on the morning sheet.'),
     table([
-      { key: 'name', label: 'Category', format: (v) => h('span.item-name', v) },
+      { key: 'name', label: 'Category', format: (v) => h('span.row-name', v) },
       { key: 'sort_order', label: 'Order', align: 'right' },
       {
         key: 'id',
@@ -360,7 +360,7 @@ function suppliersTab(suppliers, settings, reload) {
         key: 'name',
         label: 'Supplier',
         format: (v, row) => h('div',
-          h('span.item-name', row.key_supplier ? `★ ${v}` : v),
+          h('span.row-name', row.key_supplier ? `★ ${v}` : v),
           row.active ? null : h('span.tag-row', h('span.pill.warn', 'retired')),
           row.contact || row.phone
             ? h('div', h('small.muted', [row.contact, row.phone].filter(Boolean).join(' · ')))

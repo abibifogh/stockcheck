@@ -1721,7 +1721,7 @@ details.more .more-body p { margin: 0; }
 
 .tag-row { display: inline-flex; flex-wrap: wrap; gap: .25rem; margin-left: .4rem; vertical-align: middle; }
 .tag-row .pill { font-size: .68rem; padding: .05rem .5rem; }
-.item-name { font-weight: 700; }
+.row-name { font-weight: 700; }
 
 dialog.sheet {
   border: 0; border-radius: 26px; background: var(--surface); color: var(--text);
@@ -1771,3 +1771,41 @@ dialog.sheet .sheet-actions {
   .filter-bar .seg.seg-wrap::-webkit-scrollbar { display: none; }
   .filter-bar .seg.seg-wrap button { flex: none; }
 }
+
+/* --------------------------------------------- the morning sheet on a phone -- */
+/* A number box carries no spinner arrows anywhere: the − and + are the
+   spinners, and Safari's own took width the row did not have. */
+input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* The unit beside the name, used on a phone where the stepper drops it. */
+.item-unit { display: none; margin-left: .35rem; font-family: var(--mono); font-size: .72rem; font-weight: 600; color: var(--text-faint); }
+
+/* Up to the widest phones (430px), the stepper is compact and the unit moves
+   up beside the name, so − box + always fits inside the card. And should
+   the room still run out, the box gives way rather than the + spilling out. */
+@media (max-width: 480px) {
+  .item { grid-template-columns: minmax(0, 1fr) auto; gap: .4rem .5rem; padding: .7rem .6rem .7rem .85rem; }
+  .item > div:first-child { min-width: 0; }
+  .item-unit { display: inline; }
+  .item-input { gap: .25rem; min-width: 0; }
+  .item-input .unit { display: none; }
+  .item-input input { flex: 0 1 58px; width: 58px; min-width: 40px; padding-inline: .2rem; font-size: 1.05rem; }
+  .item-input button { flex: 0 0 38px; width: 38px; min-height: 38px; }
+}
+
+/* Today, before the sheet: the sunrise panel, the state of the morning, one button. */
+.today-card {
+  border-radius: 28px; padding: 1.4rem 1.4rem 1.3rem; margin-bottom: 1rem;
+  background: var(--sunrise); color: #fff; box-shadow: 0 22px 48px -22px #2b6e44;
+  display: grid; gap: .35rem; justify-items: start;
+}
+.today-card .pill { background: rgba(255, 255, 255, .2); color: #fff; }
+.today-card .pill.good { background: #fff; color: #1f5a35; }
+.today-figure { font-family: var(--disp); font-weight: 800; font-size: 2.6rem; letter-spacing: -.04em; line-height: 1.05; margin-top: .35rem; }
+.today-line { font-weight: 600; color: rgba(255, 255, 255, .9); }
+.today-go { margin-top: .9rem; min-height: 50px; padding-inline: 1.5rem; font-size: 1rem; background: #fff; color: #1f5a35; box-shadow: none; }
+.today-go:hover { background: rgba(255, 255, 255, .9); }
+.today-other h2 { margin: 0 0 .7rem; font-size: 1.05rem; }
+.today-other input { flex: 1 1 160px; min-width: 0; }
