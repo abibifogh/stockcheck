@@ -1677,3 +1677,135 @@ html, body { overflow-x: clip; }
 .keypad button svg { display: block; margin: auto; }
 
 .alerts-mark { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px; background: var(--accent-soft); color: var(--accent-ink); flex: none; }
+
+/* ------------------------------------------------------ clean, simple pages -- */
+/* A page in sections: the black pill marks the one on screen, like the menu. */
+.page-tabs {
+  display: flex; gap: 4px; padding: 4px; margin: 0 0 1rem;
+  width: max-content; max-width: 100%;
+  overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain;
+  background: var(--surface); border-radius: 999px; box-shadow: var(--shadow);
+}
+.page-tabs::-webkit-scrollbar { display: none; }
+.page-tabs button {
+  flex: none; min-height: 38px; padding: .4rem 1rem; border-radius: 999px;
+  background: transparent; color: var(--text-dim); font-weight: 700; box-shadow: none;
+}
+.page-tabs button:hover { background: var(--surface-2); color: var(--text); }
+.page-tabs button.active { background: var(--pill); color: var(--on-pill); }
+.page-tabs button.active .seg-count { color: inherit; opacity: .7; }
+.page-tab-body > .card + .card, .page-tab-body > * + .card { margin-top: 1rem; }
+
+/* The long explanation, folded away. */
+details.more { margin-top: .8rem; font-size: .84rem; color: var(--text-dim); }
+details.more summary {
+  cursor: pointer; width: max-content; max-width: 100%; list-style: none;
+  font-weight: 700; color: var(--accent-ink); padding: .2rem 0;
+}
+details.more summary::-webkit-details-marker { display: none; }
+details.more summary::before { content: '+ '; }
+details.more[open] summary::before { content: '− '; }
+details.more .more-body { padding: .3rem 0 0; display: grid; gap: .45rem; line-height: 1.5; }
+details.more .more-body p { margin: 0; }
+
+.field-hint { display: block; margin-top: .3rem; font-size: .74rem; line-height: 1.35; color: var(--text-faint); font-weight: 500; }
+.form-section { margin: 1.1rem 0 .55rem; font-family: var(--mono); font-size: .68rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint); }
+.form-section:first-child { margin-top: 0; }
+
+/* A toolbar above a list: search and filters on the left, the one action on the right. */
+.list-tools { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: .9rem; }
+.list-tools input[type="search"] { flex: 1 1 220px; min-width: 0; }
+.list-tools select { flex: 0 1 200px; min-width: 0; }
+.list-tools .btn-primary { margin-left: auto; }
+.list-count { font-size: .8rem; color: var(--text-faint); margin: -.3rem 0 .5rem; }
+
+.tag-row { display: inline-flex; flex-wrap: wrap; gap: .25rem; margin-left: .4rem; vertical-align: middle; }
+.tag-row .pill { font-size: .68rem; padding: .05rem .5rem; }
+.row-name { font-weight: 700; }
+
+dialog.sheet {
+  border: 0; border-radius: 26px; background: var(--surface); color: var(--text);
+  width: min(720px, 94vw); max-height: 90dvh; padding: 1.3rem 1.4rem; box-shadow: var(--shadow-2);
+}
+dialog.sheet .sheet-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; justify-content: flex-end; margin-top: 1.1rem; }
+dialog.sheet .sheet-actions .btn-danger { margin-right: auto; }
+
+/* Quiet row actions: a delete on every row is a column of red. */
+.row-action { min-height: 32px; padding: .25rem .7rem; font-size: .8rem; background: transparent; color: var(--text-dim); box-shadow: none; }
+.row-action:hover { background: var(--surface-2); color: var(--text); }
+.row-action.danger:hover { background: var(--bad-soft); color: var(--bad); }
+
+/* On a computer the floating bar sits beside the menu, not over it. */
+@media (min-width: 901px) {
+  .entry-footer { left: calc(208px + 1.5rem); }
+}
+.phone-only { display: none; }
+.list-tools select { flex: 1 1 150px; }
+dialog.sheet .sheet-actions {
+  position: sticky; bottom: -1.3rem; margin: 1.1rem -1.4rem -1.3rem; padding: .8rem 1.4rem 1rem;
+  background: var(--surface); border-top: 1px solid var(--border);
+}
+@media (max-width: 640px) {
+  .phone-hide { display: none; }
+  .phone-only { display: inline; }
+  dialog.sheet { padding: 1.1rem 1rem; }
+  dialog.sheet .sheet-actions { margin-inline: -1rem; padding-inline: 1rem; }
+  /* Two to a row in a dialog: one field per row made a short form a long scroll. */
+  dialog.sheet .field-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  dialog.sheet .field-row > .field:first-child:nth-last-child(odd) { grid-column: 1 / -1; }
+  .list-tools .btn-primary { margin-left: 0; flex: 1 1 100%; }
+}
+@media (max-width: 640px) {
+  /* A card's note goes under its title, rather than squeezing it to two lines. */
+  .card-head { flex-wrap: wrap; row-gap: .25rem; }
+  .card-head .card-note { flex: 1 1 100%; order: 3; }
+  /* Four figures as two by two, not four full-width blocks. */
+  .grid.grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }
+  .grid.grid-4 .stat { padding: .85rem .9rem; min-width: 0; }
+  .grid.grid-4 .stat-value { font-size: 1.35rem; overflow-wrap: anywhere; }
+  .grid.grid-4 .stat-sub { font-size: .72rem; }
+  /* Category chips scroll sideways in one row instead of stacking five deep. */
+  .filter-bar .seg.seg-wrap {
+    flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; border-radius: 999px; width: 100%;
+  }
+  .filter-bar .seg.seg-wrap::-webkit-scrollbar { display: none; }
+  .filter-bar .seg.seg-wrap button { flex: none; }
+}
+
+/* --------------------------------------------- the morning sheet on a phone -- */
+/* A number box carries no spinner arrows anywhere: the − and + are the
+   spinners, and Safari's own took width the row did not have. */
+input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* The unit beside the name, used on a phone where the stepper drops it. */
+.item-unit { display: none; margin-left: .35rem; font-family: var(--mono); font-size: .72rem; font-weight: 600; color: var(--text-faint); }
+
+/* Up to the widest phones (430px), the stepper is compact and the unit moves
+   up beside the name, so − box + always fits inside the card. And should
+   the room still run out, the box gives way rather than the + spilling out. */
+@media (max-width: 480px) {
+  .item { grid-template-columns: minmax(0, 1fr) auto; gap: .4rem .5rem; padding: .7rem .6rem .7rem .85rem; }
+  .item > div:first-child { min-width: 0; }
+  .item-unit { display: inline; }
+  .item-input { gap: .25rem; min-width: 0; }
+  .item-input .unit { display: none; }
+  .item-input input { flex: 0 1 58px; width: 58px; min-width: 40px; padding-inline: .2rem; font-size: 1.05rem; }
+  .item-input button { flex: 0 0 38px; width: 38px; min-height: 38px; }
+}
+
+/* Today, before the sheet: the sunrise panel, the state of the morning, one button. */
+.today-card {
+  border-radius: 28px; padding: 1.4rem 1.4rem 1.3rem; margin-bottom: 1rem;
+  background: var(--sunrise); color: #fff; box-shadow: 0 22px 48px -22px #2b6e44;
+  display: grid; gap: .35rem; justify-items: start;
+}
+.today-card .pill { background: rgba(255, 255, 255, .2); color: #fff; }
+.today-card .pill.good { background: #fff; color: #1f5a35; }
+.today-figure { font-family: var(--disp); font-weight: 800; font-size: 2.6rem; letter-spacing: -.04em; line-height: 1.05; margin-top: .35rem; }
+.today-line { font-weight: 600; color: rgba(255, 255, 255, .9); }
+.today-go { margin-top: .9rem; min-height: 50px; padding-inline: 1.5rem; font-size: 1rem; background: #fff; color: #1f5a35; box-shadow: none; }
+.today-go:hover { background: rgba(255, 255, 255, .9); }
+.today-other h2 { margin: 0 0 .7rem; font-size: 1.05rem; }
+.today-other input { flex: 1 1 160px; min-width: 0; }

@@ -153,7 +153,7 @@ export function table(columns, rows, {
     mount(host,
       h('table',
         h('thead', h('tr', columns.map((c) =>
-          h(`th${c.align === 'right' ? '.num' : ''}`, heading(c))))),
+          h(`th${c.align === 'right' ? '.num' : ''}${c.cls ? `.${c.cls}` : ''}`, heading(c))))),
         // Grouping bands the rows; sorting orders them inside each band, which
         // is the only combination that makes sense. Sorting across the bands
         // would take the rows out of the groups they were put in.
@@ -304,6 +304,77 @@ export function modal(title, fields, save, { saveLabel = 'Save', width = '460px'
     ),
   );
 
+  document.body.append(dialog);
+  dialog.addEventListener('close', () => dialog.remove());
+  dialog.showModal();
+  return dialog;
+}
+
+/**
+ * A page in sections, one shown at a time.
+ *
+ * A long settings page is a list of separate jobs; stacking them all makes
+ * every one of them harder to find. The tabs name the jobs, and the page
+ * shows the one you picked. The choice is kept for the visit, so saving
+ * something (which redraws the page) leaves you where you were.
+ *
+ * tabs: [{ id, label, count?, render: () => Node | Promise<Node> }]
+ */
+export function pageTabs(key, tabs) {
+  const storeKey = `bf.tab.${key}`;
+  let stored = null;
+  try { stored = sessionStorage.getItem(storeKey); } catch { /* private mode */ }
+  let current = tabs.some((t) => t.id === stored) ? stored : tabs[0].id;
+
+  const body = h('div.page-tab-body');
+  const buttons = new Map();
+  const bar = h('nav.page-tabs', { role: 'tablist', 'aria-label': 'Sections' },
+    tabs.map((tab) => {
+      const button = h('button', { type: 'button', role: 'tab', onclick: () => show(tab.id) },
+        tab.label,
+        tab.count != null ? h('span.seg-count', String(tab.count)) : null);
+      buttons.set(tab.id, button);
+      return button;
+    }));
+
+  async function show(id) {
+    current = id;
+    try { sessionStorage.setItem(storeKey, id); } catch { /* private mode */ }
+    for (const [tabId, button] of buttons) {
+      button.classList.toggle('active', tabId === id);
+      button.setAttribute('aria-selected', tabId === id ? 'true' : 'false');
+    }
+    buttons.get(id)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+    mount(body, h('div.card', h('div.skeleton', { style: { height: '120px' } })));
+    try {
+      const node = await tabs.find((t) => t.id === id).render();
+      if (current === id) mount(body, node);
+    } catch (err) {
+      if (current === id) mount(body, h('div.card.empty', h('p.muted', err.message || String(err))));
+    }
+  }
+
+  show(current);
+  return h('div.paged', bar, body);
+}
+
+/** The longer explanation, folded away until somebody wants it. */
+export function more(label, ...children) {
+  return h('details.more', h('summary', label), h('div.more-body', ...children));
+}
+
+/** One short line under a field. */
+export function hint(text) {
+  return h('small.field-hint', text);
+}
+
+/** A dialog for anything that is not a single save: a frame and a close. */
+export function sheet(title, ...children) {
+  const dialog = h('dialog.sheet',
+    h('div.card-head', h('h2', title),
+      h('button.btn-sm.btn-ghost', { 'aria-label': 'Close', onclick: () => dialog.close() }, '✕')),
+    ...children,
+  );
   document.body.append(dialog);
   dialog.addEventListener('close', () => dialog.remove());
   dialog.showModal();

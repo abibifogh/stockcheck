@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { can, state } from '../app.js';
 import { fmtDay, fmtMoney, fmtNum, h, mount, toast, todayISO } from '../util.js';
-import { card, categoryBar, exportButton, inCategory, statTile, table } from './components.js';
+import { card, categoryBar, exportButton, inCategory, more, pageTabs, statTile, table } from './components.js';
 
 const STATUS_PILL = {
   negative: ['bad', 'Negative'],
@@ -26,7 +26,7 @@ export async function renderStock(params) {
     api.pendingStockCounts().catch(() => ({ counts: [], days: [] })),
   ]);
   const host = h('div');
-  const bakeryHost = h('div');
+  const bakeryHost = h('div', card(null, {}, h('p.muted', { style: { margin: 0 } }, 'Nothing from the bakery yet.')));
   const reload = async () => mount(host, await renderStock({ asOf, category, grouped }));
 
   let category = params.category ?? null;
@@ -36,9 +36,9 @@ export async function renderStock(params) {
   // when somebody presses a category chip.
   const countCard = card('Record a physical count', { note: 'Enter only what you actually counted' },
     countForm(reload),
-    h('p.muted', { style: { fontSize: '.82rem', marginTop: '.7rem', marginBottom: 0 } },
-      'A count does not change the figures on its own. It goes to an administrator, who sees what '
-      + 'accepting it would do to each item and decides. Until then the book stands.'),
+    more('What happens to a count',
+      h('p', 'A count does not change the figures on its own. It goes to an administrator, who sees what '
+        + 'accepting it would do to each item and decides. Until then the book stands.')),
   );
 
   const paint = () => {
@@ -89,18 +89,32 @@ export async function renderStock(params) {
       h('div.page-head',
         h('div',
           h('h1', 'Stock'),
-          h('div.sub', 'Book stock = opening + purchases − recorded usage, valued at weighted average cost'),
+          h('div.sub', 'What should be on the shelf, from deliveries and what the kitchen used'),
         ),
         exportButton(api.exportUrl('stock', data.asOf, data.asOf), 'Export stock'),
       ),
       bar,
       tiles,
-      reorderCard(reorder, groupBy, groupValue),
-      shrinkageCard(shrinkage, groupBy),
-      countApprovalCard(pending, reload),
-      h('div.grid.grid-2', countCard, h('div')),
-      allCard(rows, data.asOf, category, groupBy, groupValue),
-      bakeryHost,
+      pageTabs('stock', [
+        {
+          id: 'order',
+          label: 'To order',
+          count: reorder.length,
+          render: () => reorderCard(reorder, groupBy, groupValue)
+            || card(null, {}, h('p.muted', { style: { margin: 0 } }, 'Everything is above its par level.')),
+        },
+        { id: 'all', label: 'All stock', render: () => allCard(rows, data.asOf, category, groupBy, groupValue) },
+        {
+          id: 'counts',
+          label: 'Counts',
+          count: (pending.counts ?? []).length || null,
+          render: () => h('div',
+            countApprovalCard(pending, reload),
+            shrinkageCard(shrinkage, groupBy),
+            countCard),
+        },
+        { id: 'bakery', label: 'Bakery', render: () => bakeryHost },
+      ]),
     );
   };
 
@@ -152,8 +166,8 @@ function shrinkageCard(shrinkage, groupBy) {
         { key: 'countVariance', label: 'Difference', align: 'right', format: (v, r) => h(`span.delta.${v < 0 ? 'up' : 'down'}`, `${v > 0 ? '+' : ''}${fmtNum(v, 2)} ${r.unit}`) },
         { key: 'countVarianceValue', label: 'Value', align: 'right', format: (v) => fmtMoney(v, { withSymbol: false }) },
       ], shrinkage, { groupBy }),
-      h('p.muted', { style: { fontSize: '.82rem', marginTop: '.6rem', marginBottom: 0 } },
-        'A shortfall means more left the store than was recorded as used — over-portioning, waste, unrecorded staff meals or loss. A surplus usually means a delivery was never keyed in.'))
+      more('What a difference means',
+        h('p', 'A shortfall means more left the store than was recorded as used: over-portioning, waste, unrecorded staff meals or loss. A surplus usually means a delivery was never keyed in.')))
     : null;
 }
 
@@ -286,10 +300,10 @@ function countApprovalCard(pending, reload) {
         ))
       : null,
 
-    h('p.muted', { style: { fontSize: '.82rem', marginTop: '.8rem', marginBottom: 0 } },
-      'Accepting sets the book to what was counted, from that date onwards. A delivery keyed in '
-      + 'late and dated before the count does not unsettle it — you counted what was actually '
-      + 'there, and that stands.'),
+    more('What accepting does',
+      h('p', 'Accepting sets the book to what was counted, from that date onwards. A delivery keyed in '
+        + 'late and dated before the count does not unsettle it: you counted what was actually '
+        + 'there, and that stands.')),
   );
 }
 

@@ -266,7 +266,7 @@ npm run db:seed             # optional: a starter breakfast catalogue
 
 The seed is a reasonable starting catalogue for a Ghanaian hotel breakfast.
 Delete what you don't buy and correct the units and par levels in **Setup →
-Ingredients** — it is meant as a head start, not a prescription.
+Items** — it is meant as a head start, not a prescription.
 
 **Applying a migration by hand.** If you are pasting into the Cloudflare D1
 console rather than running wrangler, use the copies in
@@ -301,7 +301,7 @@ themselves and the shared `COOK_PIN` stops working.
 key, not a daily login — and **make it long** (8–10 digits, not `1234`), since
 it reaches everything. Once you have an administrator account with an email
 address and password, you can switch the recovery PIN off entirely under
-**Setup → Emergency access**.
+**Setup → Settings → Emergency recovery PIN**.
 
 ### 4b. Turning on email (optional)
 
@@ -317,7 +317,7 @@ volume. Three steps:
    npx wrangler secret put RESEND_API_KEY
    ```
 
-3. In the app, go to **Users & data → Email alerts**, set the "from" address to
+3. In the app, go to **Users & data → Alerts → Email alerts**, set the "from" address to
    something at your verified domain, add the recipients, and press **Send a
    test now**. The result appears in the log underneath. The dorm bed check has
    its own recipient list on the same panel; leave it empty and its findings go
@@ -349,7 +349,7 @@ in Odoo.
 
    or, in the Cloudflare dashboard, **Workers & Pages → niceoperation-breakfast
    → Settings → Variables and Secrets → Add → Secret**, named `ODOO_API_KEY`.
-4. In the app, **Setup → Odoo purchase orders**: enter the Odoo address
+4. In the app, **Setup → Odoo**: enter the Odoo address
    (`https://yourcompany.odoo.com`) and, only if your Odoo serves several
    databases on one address, the database name.
 
@@ -363,7 +363,7 @@ How it behaves:
   price is divided by the same number so the total still matches the PO.
   Products that are not breakfast (dish soap on the grocery order) are marked
   as such once and skipped from then on. The remembered matches are listed,
-  and can be forgotten, under **Setup → Odoo purchase orders**.
+  and can be forgotten, under **Setup → Odoo**.
 - **The price is what was paid**: the line subtotal over the quantity, before
   tax, so a discount on the line is included.
 - **The date** defaults to the order date in Odoo and can be changed per order
@@ -374,8 +374,7 @@ How it behaves:
 - The supplier is the vendor's name as Odoo has it, and each line carries its
   PO number — shown in the Purchases list and in the CSV export.
 
-If Odoo refuses, press **Test connection** under **Setup → Odoo purchase
-orders**. It checks one thing at a time and stops at the first that fails:
+If Odoo refuses, press **Test connection** under **Setup → Odoo**. It checks one thing at a time and stops at the first that fails:
 
 - **"Odoo did not accept the API key"** — the key itself. Odoo asks how long a
   key should last when it is made, so check it has not expired. Check it was
@@ -398,7 +397,7 @@ storeroom issues to it.
    choose `0024_storeroom.sql`, type `breakfast`, Run. (It needs the
    repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`; or
    paste `migrations/console/0024_storeroom.sql` into the D1 console.)
-2. **Setup → Ingredients**: add the supplies (tissue, soap, serviettes) with
+2. **Setup → Items**: add the supplies (tissue, soap, serviettes) with
    *What it is* set to **Supply**: kept and issued by the storeroom, never on
    the breakfast sheet or in the cost per guest. For every item, enter what is
    on the storeroom's shelf today (*In the storeroom at the start*) and a
@@ -643,7 +642,7 @@ up to date by its Odoo id; one no longer sent is retired, its deliveries
 keeping the name. Suppliers added here by hand are left alone.
 
 On a delivery, the supplier is picked from that list or typed when it is not on
-it (Setup › Suppliers: *Choose from the supplier list, or type a new one*, now
+it (Setup › Settings › Supplier on a delivery: *Choose from the supplier list, or type a new one*, now
 the default; *Only suppliers on the list* is still there).
 
 ### The management report

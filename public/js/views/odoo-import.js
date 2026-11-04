@@ -32,9 +32,9 @@ export async function odooImportCard({ onImported }) {
 
   if (!status.ready) {
     return card('Import from Odoo', { wide: true, note: 'Pull purchase orders in by number' },
-      h('p.muted', { style: { fontSize: '.88rem' } }, status.problem),
+      h('p.muted', { style: { fontSize: '.88rem', margin: 0 } }, status.problem),
       can('setup') && !status.base
-        ? h('p.muted', { style: { fontSize: '.84rem' } }, 'Set the Odoo address under Setup → Odoo purchase orders.')
+        ? h('p', { style: { margin: '.8rem 0 0' } }, h('a.btn.btn-sm', { href: '#/setup' }, 'Open Setup → Odoo'))
         : null);
   }
 
@@ -284,8 +284,8 @@ export async function odooImportCard({ onImported }) {
         h('div', h('div.alert-title', 'Could not read from Odoo'), h('div.alert-detail', err.message),
           h('div.alert-detail', { style: { marginTop: '.3rem' } },
             can('setup')
-              ? 'Setup → Odoo purchase orders → Test connection checks the address, the key and the user’s rights one at a time.'
-              : 'An administrator can check the connection under Setup → Odoo purchase orders.'))));
+              ? 'Setup → Odoo → Test connection checks the address, the key and the user’s rights one at a time.'
+              : 'An administrator can check the connection under Setup → Odoo.'))));
     } finally {
       if (button) button.disabled = false;
     }

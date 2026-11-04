@@ -1,5 +1,5 @@
 import { api, dequeueDay, queueDay } from '../api.js';
-import { state, replaceParams } from '../app.js';
+import { navigate, replaceParams, state } from '../app.js';
 import { debounce, fmtNum, fmtQty, h, mount, todayISO, shiftDay, fmtDay, toast } from '../util.js';
 
 /**
@@ -14,6 +14,9 @@ import { debounce, fmtNum, fmtQty, h, mount, todayISO, shiftDay, fmtDay, toast }
  *    connection drops.
  */
 export async function renderEntry(params) {
+  // Today opens on a short summary; the sheet itself opens when asked for.
+  if (!params.sheet) return renderToday(params);
+
   const day = params.day || todayISO();
   const data = await api.getDay(day);
   const { categories, ingredients } = state.catalog;
@@ -221,7 +224,7 @@ export async function renderEntry(params) {
     const row = h(`div.item${usage.has(ing.id) ? '.filled' : ''}${needed ? '.needed' : ''}`,
       { dataset: { name: ing.name.toLowerCase() } },
       h('div',
-        h('div.item-name', ing.name),
+        h('div.item-name', ing.name, h('span.item-unit', ing.unit)),
         hintLine,
       ),
       h('div.item-input',
@@ -313,8 +316,8 @@ export async function renderEntry(params) {
 
   async function go(nextDay) {
     if (dirty) await save({ quiet: true });
-    replaceParams('entry', { day: nextDay });
-    const view = await renderEntry({ day: nextDay });
+    replaceParams('entry', { day: nextDay, sheet: 1 });
+    const view = await renderEntry({ day: nextDay, sheet: 1 });
     const host = document.querySelector('.main');
     if (host) mount(host, view);
   }
@@ -430,5 +433,66 @@ export async function renderEntry(params) {
     guestCard,
     listHost,
     footer,
+  );
+}
+
+/**
+ * Today, before the sheet: where the morning stands and one button to go on.
+ *
+ * Opening straight onto forty steppers meant a stray tap on the Today tab
+ * landed somebody in the middle of the form, and a glance at "is today done?"
+ * meant scrolling a form to find out. This answers the glance, and the sheet
+ * is one deliberate tap away.
+ */
+async function renderToday(params) {
+  const day = params.day || todayISO();
+  const isToday = day === todayISO();
+  const data = await api.getDay(day);
+  const { ingredients } = state.catalog;
+
+  const guests = (Number(data.service.inhouse_guests) || 0) + (Number(data.service.outside_guests) || 0);
+  const submitted = Boolean(data.service.submitted_at);
+  const entered = new Set(Object.keys(data.usage || {}).map(Number));
+  const required = (data.requiredIngredientIds || [])
+    .filter((id) => ingredients.some((i) => i.id === id && i.active && (i.kind ?? 'food') !== 'supply'));
+  const done = required.filter((id) => entered.has(id)).length;
+  const started = !submitted && (guests > 0 || entered.size > 0);
+
+  const status = data.pendingRevision ? ['warn', 'Correction waiting for approval']
+    : submitted ? ['good', 'Submitted']
+      : started ? ['warn', 'In progress']
+        : ['', 'Not started'];
+  const action = submitted ? 'View or correct the sheet' : started ? 'Continue the sheet' : 'Start the sheet';
+
+  const open = (d) => navigate('entry', { day: d, sheet: 1 });
+  const other = h('input', {
+    type: 'date', max: todayISO(), value: shiftDay(todayISO(), -1), 'aria-label': 'Another day',
+  });
+
+  return h('div.today-page',
+    h('div.page-head',
+      h('div',
+        h('h1', isToday ? 'Today' : fmtDay(day, { withYear: true })),
+        h('div.sub', fmtDay(day, { withYear: true })),
+      ),
+    ),
+    h('section.today-card',
+      h('span.today-status', h(`span.pill${status[0] ? `.${status[0]}` : ''}`, status[1])),
+      h('div.today-figure', submitted || started ? `${guests} ${guests === 1 ? 'guest' : 'guests'}` : 'Breakfast'),
+      h('div.today-line',
+        submitted
+          ? (data.clearedForEntry ? 'Recorded and safe.' : `${entered.size} items recorded.`)
+          : started
+            ? `${done} of ${required.length} everyday items entered`
+            : `${required.length} everyday items to fill in`),
+      data.locked ? h('div.today-line', '🔒 In a closed period: it can be read but not changed.') : null,
+      h('button.btn-primary.today-go', { onclick: () => open(day) }, action),
+    ),
+    h('section.card.today-other',
+      h('h2', 'Another day'),
+      h('div.btn-row',
+        other,
+        h('button', { onclick: () => other.value && open(other.value) }, 'Open')),
+    ),
   );
 }
