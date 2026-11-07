@@ -250,7 +250,11 @@ function requestCard(r, reload) {
     } else if (r.status === 'received' && r.receivedAuto) {
       parts.push(h('p.muted', { style: { fontSize: '.84rem' } }, 'Nobody confirmed this, so it was taken as received.'),
         h('div.btn-row', h('button', { onclick: differenceForm }, 'Something was wrong')));
-    } else if (r.status === 'waiting') {
+    } else if (r.status === 'waiting' || r.status === 'approved') {
+      if (r.status === 'approved') {
+        parts.push(h('p.muted', { style: { fontSize: '.84rem', margin: '.2rem 0' } },
+          `Approved by ${r.approvedBy}. The storeroom issues it next.`));
+      }
       const cancel = h('button.btn-danger', {
         onclick: () => {
           if (!window.confirm(`Cancel ${r.ref}?`)) return;

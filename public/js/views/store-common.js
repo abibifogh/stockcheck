@@ -4,6 +4,7 @@ import { fmtDay, h, todayISO } from '../util.js';
 export function statusPill(r) {
   const [text, tone] = (() => {
     if (r.status === 'waiting') return ['Waiting', 'info'];
+    if (r.status === 'approved') return ['Approved', 'info'];
     if (r.status === 'issued') return [r.short ? 'Partly issued — confirm' : 'Issued — confirm', 'warn'];
     if (r.status === 'received') {
       if (r.difference) return ['Difference reported', 'bad'];

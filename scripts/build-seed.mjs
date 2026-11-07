@@ -177,6 +177,10 @@ const OTHER_STORES = new Set([
   // The storeroom alters the kitchen's ingredients and purchases, and adds the
   // requests between them. None of that exists in a housekeeping database.
   '0024_storeroom.sql',
+  // Odoo lines on their way into the kitchen's purchases. The bed check buys nothing.
+  '0025_odoo_expected.sql',
+  // Alters the storeroom's requests, which 0024 builds and this seed does not.
+  '0026_store_approval.sql',
 ]);
 
 // The whole database a housekeeping-only site needs.

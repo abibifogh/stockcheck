@@ -97,12 +97,13 @@ const ROUTES = [
   // The storeroom. Asking and confirming is the departments'; issuing is the
   // storekeeper's; the report is for whoever reads the money.
   ['GET', '/api/store/catalog', ['store_request', 'store_issue'], store.catalog],
-  ['GET', '/api/store/requests', ['store_request', 'store_issue', 'reports'], store.listRequests],
+  ['GET', '/api/store/requests', ['store_request', 'store_issue', 'store_approve', 'reports'], store.listRequests],
   ['POST', '/api/store/requests', 'store_request', store.createRequest],
-  ['GET', '/api/store/requests/:id', ['store_request', 'store_issue', 'reports'], store.getRequest],
+  ['GET', '/api/store/requests/:id', ['store_request', 'store_issue', 'store_approve', 'reports'], store.getRequest],
   ['POST', '/api/store/requests/:id/cancel', ['store_request', 'store_issue'], store.cancelRequest],
   ['POST', '/api/store/requests/:id/issue', 'store_issue', store.issueRequest],
-  ['POST', '/api/store/requests/:id/decline', 'store_issue', store.declineRequest],
+  ['POST', '/api/store/requests/:id/decline', ['store_issue', 'store_approve'], store.declineRequest],
+  ['POST', '/api/store/requests/:id/approve', 'store_approve', store.approveRequest],
   ['POST', '/api/store/requests/:id/receive', 'store_request', store.receiveRequest],
   ['GET', '/api/store/stock', ['store_issue', 'reports', 'setup'], store.stock],
   ['GET', '/api/store/report', ['store_issue', 'reports'], store.report],

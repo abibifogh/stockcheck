@@ -101,6 +101,7 @@ export const api = {
   cancelStoreRequest: (id, body = {}) => request(`/api/store/requests/${id}/cancel`, { method: 'POST', body }),
   issueStoreRequest: (id, body) => request(`/api/store/requests/${id}/issue`, { method: 'POST', body }),
   declineStoreRequest: (id, body) => request(`/api/store/requests/${id}/decline`, { method: 'POST', body }),
+  approveStoreRequest: (id) => request(`/api/store/requests/${id}/approve`, { method: 'POST', body: {} }),
   receiveStoreRequest: (id, body = {}) => request(`/api/store/requests/${id}/receive`, { method: 'POST', body }),
   storeStock: () => request('/api/store/stock'),
   storeReport: (from, to) => request(`/api/store/report?${new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) })}`),

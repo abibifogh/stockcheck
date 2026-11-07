@@ -696,10 +696,30 @@ const SECTIONS = [
         h('span', 'When it arrives, open ', h('strong', 'My requests'), ' and tap ', h('strong', 'Got it all'),
           '. If anything is missing, tap ', h('strong', 'Something’s wrong'), ' and enter what actually came.'),
       ),
+      note('Approved first.', 'Where a manager approves requests, yours shows Waiting until they do, then Approved, '
+        + 'and the storeroom issues it. You hear on your phone at each step if alerts are on.'),
       note('Something short?', 'Whatever the storeroom could not give you stays on its list as a new request until it is '
         + 'in stock. Cancel it under My requests if you no longer need it.'),
       warn('Please confirm.', 'If nobody confirms within a day it is taken as received, and the manager sees that '
         + 'nobody checked.'),
+    ),
+  },
+
+  {
+    id: 'store-approve',
+    title: 'Approving storeroom requests',
+    permission: 'store_approve',
+    lead: 'A department asks; you say yes or no; the storeroom hands it over.',
+    render: () => h('div',
+      steps(
+        h('span', 'Open ', h('strong', 'Approvals'), ', then ', h('strong', 'Storeroom requests'),
+          '. Each request shows what was asked for beside what the storeroom holds.'),
+        h('span', 'Tap ', h('strong', 'Approve'), ', and the storeroom is alerted to issue it. Several waiting? ',
+          h('strong', 'Approve all'), '.'),
+        h('span', 'Or tap ', h('strong', 'Decline'), ' and say why. Whoever asked is told.'),
+      ),
+      note('Switching it off.', 'Setup → Storeroom → A request goes: Straight to the storeroom lets requests skip '
+        + 'approval, for a shift with no manager on.'),
     ),
   },
 

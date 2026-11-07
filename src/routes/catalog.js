@@ -669,6 +669,8 @@ const ALLOWED_SETTINGS = new Set([
   'odoo_base', 'odoo_db',
   // The storeroom: where deliveries land, and who may ask it for things.
   'deliveries_to', 'store_departments',
+  // Whether a manager approves a request before the storeroom may issue it.
+  'store_approval',
 ]);
 
 const SETTING_RULES = {
@@ -682,6 +684,7 @@ const SETTING_RULES = {
   require_resubmit_approval: (value) => (bool(value, true) ? '1' : '0'),
   allow_recovery_pin: (value) => (bool(value, true) ? '1' : '0'),
   restrict_cooks_to_everyday: (value) => (bool(value, false) ? '1' : '0'),
+  store_approval: (value) => (bool(value, true) ? '1' : '0'),
   supplier_mode: (value) => {
     const mode = String(value);
     if (!['suggest', 'select', 'free', 'off'].includes(mode)) throw badRequest('Unknown supplier setting');

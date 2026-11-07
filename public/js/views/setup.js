@@ -407,6 +407,9 @@ function storeroomTab(settings, reload) {
   const where = h('select',
     h('option', { value: 'store', selected: settings.deliveries_to !== 'kitchen' }, 'Into the storeroom'),
     h('option', { value: 'kitchen', selected: settings.deliveries_to === 'kitchen' }, 'Straight to the kitchen'));
+  const approval = h('select',
+    h('option', { value: '1', selected: settings.store_approval === '1' }, 'A manager approves first'),
+    h('option', { value: '0', selected: settings.store_approval !== '1' }, 'Straight to the storeroom'));
   const departments = h('textarea', {
     rows: 4,
     value: String(settings.store_departments || 'Kitchen'),
@@ -416,7 +419,12 @@ function storeroomTab(settings, reload) {
     onclick: async () => {
       save.disabled = true;
       try {
-        const result = await api.updateSettings({ deliveries_to: where.value, store_departments: departments.value });
+        const result = await api.updateSettings({
+          deliveries_to: where.value,
+          store_departments: departments.value,
+          // Only once the database can record an approval (update 0026).
+          ...('store_approval' in settings ? { store_approval: approval.value === '1' } : {}),
+        });
         state.settings = result.settings;
         toast('Storeroom saved', 'good');
         reload();
@@ -431,6 +439,10 @@ function storeroomTab(settings, reload) {
     h('div.field-row',
       h('label.field', h('span', 'Deliveries go'), where,
         hint('Purchases can still send one straight to the kitchen')),
+      'store_approval' in settings
+        ? h('label.field', h('span', 'A request goes'), approval,
+          hint('Managers approve under Approvals'))
+        : null,
       h('label.field', { style: { gridColumn: '1 / -1' } }, h('span', 'Departments that can ask, one per line'), departments,
         hint('The first one is the breakfast kitchen'))),
     more('What the first department means',

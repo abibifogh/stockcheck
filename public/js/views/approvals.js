@@ -1,26 +1,162 @@
 import { api } from '../api.js';
-import { navigate } from '../app.js';
+import { can, navigate } from '../app.js';
 import { fmtDay, fmtMoney, fmtNum, h, mount, toast } from '../util.js';
-import { card, table } from './components.js';
+import { card, emptyState, pageTabs, table } from './components.js';
+import { timeOf } from './store-common.js';
 
 /**
- * Changes waiting to be accepted.
+ * Things waiting for somebody to say yes or no.
  *
- * A cook who corrects a day already submitted does not overwrite it — the
- * proposal lands here, showing exactly what would change, and somebody decides.
+ * Two kinds, each in its own tab: what a department has asked the storeroom
+ * for (a manager approves it before it is issued), and corrections to days
+ * already submitted (a cook who corrects a day does not overwrite it — the
+ * proposal lands here, showing exactly what would change).
  */
 export async function renderApprovals(params) {
-  const status = params.status || 'pending';
-  const data = await api.revisions(status);
   const host = h('div');
-  const reload = async () => mount(host, await renderApprovals({ status }));
+  const reload = async () => mount(host, await renderApprovals(params));
+  const [store, revisions] = await Promise.all([
+    can('store_approve') ? api.storeRequests('approve').catch(() => null) : null,
+    can('approvals') ? api.revisions(params.status || 'pending') : null,
+  ]);
 
-  const tabs = h('div.seg.seg-fill',
+  // Choosing a status in the corrections tab reloads the page with ?status=,
+  // and should land back on that tab.
+  if (params.status) {
+    try { sessionStorage.setItem('bf.tab.approvals', 'days'); } catch { /* private mode */ }
+  }
+
+  const tabs = [
+    store ? {
+      id: 'store',
+      label: 'Storeroom requests',
+      count: store.waiting.length || null,
+      render: () => storeApprovals(store, reload),
+    } : null,
+    revisions ? {
+      id: 'days',
+      label: 'Day corrections',
+      count: (params.status || 'pending') === 'pending' ? (revisions.revisions.length || null) : null,
+      render: () => dayCorrections(revisions, params.status || 'pending', reload),
+    } : null,
+  ].filter(Boolean);
+
+  mount(host,
+    h('div.page-head',
+      h('div',
+        h('h1', 'Approvals'),
+        h('div.sub', 'What is waiting for a yes or a no'),
+      ),
+    ),
+    tabs.length > 1 ? pageTabs('approvals', tabs) : (tabs[0] ? await tabs[0].render() : null),
+  );
+  return host;
+}
+
+// ---------------------------------------------------- storeroom requests --
+
+/**
+ * What departments have asked the storeroom for, most urgent first. Each shows
+ * what is on the shelf beside what was asked, which is most of the decision.
+ */
+async function storeApprovals(store, reload) {
+  if (!store.approval) {
+    return card(null, {},
+      h('p.muted', { style: { margin: 0 } },
+        'Requests go straight to the storeroom here. To have a manager approve them first, switch '
+        + 'approvals on under Setup → Storeroom.'));
+  }
+  if (!store.waiting.length) {
+    return emptyState('Nothing waiting', 'New requests appear here, and on your phone if alerts are on.');
+  }
+
+  const stock = await api.storeStock().catch(() => null);
+  const onShelf = new Map((stock?.items ?? []).map((i) => [i.id, i]));
+
+  const act = async (event, work, done) => {
+    const buttons = event.target.closest('.btn-row')?.querySelectorAll('button') ?? [event.target];
+    buttons.forEach((b) => { b.disabled = true; });
+    try {
+      await work();
+      toast(done, 'good');
+      reload();
+    } catch (err) {
+      toast(err.message, 'bad');
+      buttons.forEach((b) => { b.disabled = false; });
+    }
+  };
+
+  const approveAll = store.waiting.length > 1
+    ? h('div.btn-row', { style: { justifyContent: 'flex-end', marginBottom: '.8rem' } },
+      h('button.btn-primary', {
+        onclick: (event) => {
+          if (!window.confirm(`Approve all ${store.waiting.length} requests?`)) return;
+          act(event, async () => {
+            for (const r of store.waiting) await api.approveStoreRequest(r.id); // eslint-disable-line no-await-in-loop
+          }, `${store.waiting.length} requests approved`);
+        },
+      }, `Approve all ${store.waiting.length}`))
+    : null;
+
+  return h('div',
+    approveAll,
+    h('div', { style: { display: 'grid', gap: '.8rem' } }, store.waiting.map((r) => {
+      const urgent = r.needed === 'now';
+      return card(`${r.department}`, {
+        note: [r.ref, r.requestedBy, timeOf(r.createdAt), r.follows ? `rest of ${r.follows}` : null].filter(Boolean).join(' · '),
+        actions: h(`span.pill${urgent ? '.bad' : ''}`, `Needed ${r.neededText.toLowerCase()}`),
+      },
+        table([
+          { key: 'name', label: 'Item' },
+          { key: 'asked', label: 'Asked for', align: 'right', format: (v, l) => h('b', `${fmtNum(v, 2)} ${l.unit}`) },
+          stock ? {
+            key: 'ingredientId',
+            label: 'In the storeroom',
+            align: 'right',
+            format: (id, l) => {
+              const item = onShelf.get(id);
+              if (!item) return h('span.muted', '—');
+              const short = item.stock < l.asked;
+              return h(short ? 'span.pill.warn' : 'span', `${fmtNum(item.stock, 2)} ${l.unit}`);
+            },
+          } : null,
+          stock ? {
+            key: 'id',
+            label: 'Worth',
+            align: 'right',
+            cls: 'phone-hide',
+            format: (_, l) => {
+              const cost = onShelf.get(l.ingredientId)?.unitCost;
+              return cost == null ? h('span.muted', '—') : fmtMoney(cost * l.asked, { withSymbol: false });
+            },
+          } : null,
+        ].filter(Boolean), r.lines),
+        r.note ? h('p.muted', { style: { fontStyle: 'italic', fontSize: '.88rem', margin: '.6rem 0 0' } }, `“${r.note}”`) : null,
+        h('div.btn-row', { style: { justifyContent: 'flex-end', marginTop: '.9rem' } },
+          h('button.btn-danger', {
+            onclick: (event) => {
+              const reason = window.prompt(`Decline ${r.ref}? Say why, for ${r.requestedBy}:`, '');
+              if (reason === null) return;
+              if (!reason.trim()) { toast('Give a reason, so they know what to do instead', 'bad'); return; }
+              act(event, () => api.declineStoreRequest(r.id, { note: reason.trim() }), `${r.ref} declined`);
+            },
+          }, 'Decline'),
+          h('button.btn-primary', {
+            onclick: (event) => act(event, () => api.approveStoreRequest(r.id), `${r.ref} approved: the storeroom has it`),
+          }, 'Approve')),
+      );
+    })),
+  );
+}
+
+// ------------------------------------------------------- day corrections --
+
+function dayCorrections(data, status, reload) {
+  const tabs = h('div.seg', { style: { marginBottom: '1rem' } },
     ...['pending', 'approved', 'rejected', 'all'].map((key) => h('button', {
       class: key === status ? 'active' : '',
       onclick: () => navigate('approvals', { status: key }),
-    }, key[0].toUpperCase() + key.slice(1))),
-  );
+    }, key === 'pending' ? 'Waiting' : key[0].toUpperCase() + key.slice(1))));
 
   const cards = data.revisions.length
     ? data.revisions.map((rev) => revisionCard(rev, reload))
@@ -30,17 +166,7 @@ export async function renderApprovals(params) {
         ? 'Every submitted day is as the kitchen recorded it.'
         : 'No change requests with that status.'))];
 
-  mount(host,
-    h('div.page-head',
-      h('div',
-        h('h1', 'Approvals'),
-        h('div.sub', 'Corrections to days that were already submitted'),
-      ),
-      tabs,
-    ),
-    ...cards,
-  );
-  return host;
+  return h('div', tabs, ...cards);
 }
 
 const STATUS_PILL = {

@@ -38,12 +38,12 @@ export async function renderStore(params = {}) {
         h('div',
           h('h1', 'Storeroom'),
           h('div.sub', queue.waiting.length
-            ? `${queue.waiting.length} waiting · the most urgent first`
-            : 'Nothing waiting')),
+            ? `${queue.waiting.length} to issue · the most urgent first`
+            : 'Nothing to issue')),
       ),
       h('div.seg.seg-fill.seg-row', { role: 'tablist', style: { marginBottom: '1rem' } },
         h('button', { class: tab === 'waiting' ? 'active' : '', onclick: () => { tab = 'waiting'; paint(); } },
-          'Waiting', h('span.seg-count', String(queue.waiting.length))),
+          'To issue', h('span.seg-count', String(queue.waiting.length))),
         h('button', { class: tab === 'done' ? 'active' : '', onclick: () => { tab = 'done'; paint(); } },
           'Issued', h('span.seg-count', String(queue.done.length))),
         h('button', { class: tab === 'stock' ? 'active' : '', onclick: () => { tab = 'stock'; paint(); } },
@@ -60,7 +60,20 @@ export async function renderStore(params = {}) {
     return h('div', { style: { display: 'grid', gap: '.8rem' } },
       queue.waiting.length
         ? queue.waiting.map((r) => requestButton(r))
-        : emptyState('Nothing waiting', 'New requests appear here, and on your phone if alerts are on.'),
+        : emptyState('Nothing to issue', queue.approval
+          ? 'Requests appear here once a manager approves them, and on your phone if alerts are on.'
+          : 'New requests appear here, and on your phone if alerts are on.'),
+      // Still with a manager: shown so nothing is a surprise, but not issuable.
+      queue.awaitingApproval?.length
+        ? h('section.card', { style: { margin: 0 } },
+          h('div.card-head', h('h2', 'Waiting for a manager'), h('span.card-note', `${queue.awaitingApproval.length}`)),
+          h('div', { style: { display: 'grid', gap: '.5rem' } }, queue.awaitingApproval.map((r) => h('div',
+            { style: { fontSize: '.9rem' } },
+            h('strong', `${r.department} · needed ${r.neededText.toLowerCase()}`),
+            h('div.muted', { style: { fontSize: '.84rem' } },
+              `${r.lines.map((l) => `${l.name} ${fmtNum(l.asked, 2)}`).join(' · ')}`),
+            h('div.muted', { style: { fontSize: '.78rem' } }, [r.ref, r.requestedBy, timeOf(r.createdAt)].join(' · '))))))
+        : null,
       low.length
         ? h('div.alert.warn',
           h('div.alert-icon', '⚠️'),
