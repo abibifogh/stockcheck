@@ -15,6 +15,9 @@ export const PERMISSIONS = [
   // cook who could issue to themselves would make the record meaningless.
   { key: 'store_request', label: 'Ask the storeroom', detail: 'Ask the storeroom for items and confirm what arrived' },
   { key: 'store_issue', label: 'Storeroom', detail: 'Issue what departments ask for, and see the storeroom’s stock and costs' },
+  // Approving sits between asking and issuing: a manager says yes before the
+  // storeroom hands anything over (when Setup has approvals switched on).
+  { key: 'store_approve', label: 'Approve storeroom requests', detail: 'Approve or decline what departments ask the storeroom for, before it is issued' },
   { key: 'setup', label: 'Setup', detail: 'Ingredients, categories and property settings' },
   { key: 'users', label: 'Users & data', detail: 'Manage people, notifications, locks and erase data' },
 
@@ -42,10 +45,10 @@ export const ROLES = [
   {
     key: 'manager',
     label: 'Manager',
-    detail: 'Records and reviews. Sees costs, stock and purchases, and approves changes.',
+    detail: 'Records and reviews. Sees costs, stock and purchases, and approves changes and storeroom requests.',
     // Including the bakery form: a manager covering for the baker on a quiet
     // Sunday should not need their own access changed to record a bake.
-    defaults: ['entry', 'reports', 'stock', 'purchases', 'approvals', 'bakery', 'store_request'],
+    defaults: ['entry', 'reports', 'stock', 'purchases', 'approvals', 'bakery', 'store_request', 'store_approve'],
   },
   {
     key: 'storekeeper',

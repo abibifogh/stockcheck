@@ -46,7 +46,7 @@ const ROUTES = [
   { path: 'weekly', label: 'Week', permission: 'reports', render: renderWeekly, group: 'Breakfast', site: 'full' },
   { path: 'monthly', label: 'Month', permission: 'reports', render: renderMonthly, group: 'Breakfast', site: 'full' },
   { path: 'compare', label: 'Compare', permission: 'reports', render: renderCompare, group: 'Breakfast', site: 'full' },
-  { path: 'approvals', label: 'Approvals', permission: 'approvals', render: renderApprovals, group: 'Breakfast', site: 'full' },
+  { path: 'approvals', label: 'Approvals', permission: ['approvals', 'store_approve'], render: renderApprovals, group: 'Breakfast', site: 'full' },
   { path: 'stock', label: 'Stock', permission: 'stock', render: renderStock, group: 'Breakfast', site: 'full' },
   { path: 'purchases', label: 'Purchases', permission: 'purchases', render: renderPurchases, group: 'Breakfast', site: 'full' },
   { path: 'setup', label: 'Setup', permission: 'setup', render: renderSetup, group: 'Breakfast', site: 'full' },

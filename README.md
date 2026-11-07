@@ -393,8 +393,9 @@ storekeeper issues it; the kitchen confirms what arrived. Deliveries now land
 in the storeroom, and what reaches the breakfast kitchen is what the
 storeroom issues to it.
 
-1. Run the storeroom update: **Actions → Breakfast database → Run workflow**,
-   choose `0024_storeroom.sql`, type `breakfast`, Run. (It needs the
+1. Run the storeroom updates: **Actions → Breakfast database → Run workflow**,
+   choose `0024_storeroom.sql`, type `breakfast`, Run; then the same with
+   `0026_store_approval.sql` for manager approval. (It needs the
    repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`; or
    paste `migrations/console/0024_storeroom.sql` into the D1 console.)
 2. **Setup → Items**: add the supplies (tissue, soap, serviettes) with
@@ -419,7 +420,16 @@ How it behaves:
   every line in with what was asked; change what you need, say why anything is
   short, and issue. Whatever was not issued becomes a new waiting request on
   its own, so nothing owed is forgotten. Issuing nothing is a decline, with a
-  reason. There is no approval step.
+  reason.
+- **Approving**: with *Setup → Storeroom → A request goes* set to *A manager
+  approves first* (the default once update `0026_store_approval.sql` has run),
+  a new request waits for a manager. Managers (*Approve storeroom requests*
+  permission, on the Manager role by default) see it under **Approvals →
+  Storeroom requests**, with what the storeroom holds beside each line, and
+  approve or decline it. The new request is emailed to them rather than to
+  the storeroom; once approved, the storeroom is alerted and it moves to its
+  *To issue* list. The rest of a short issue stays approved. Set it to
+  *Straight to the storeroom* to skip approval.
 - **Cost**: an issue is valued at the price last paid for the item, fixed on
   the day it is issued.
 - **Receiving**: the kitchen taps *Got it all*, or *Something's wrong* and

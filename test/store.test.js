@@ -7,7 +7,7 @@ import { loadDataset } from '../src/lib/analytics.js';
 import { departmentsOf, storeStock } from '../src/lib/store.js';
 import { createDelivery } from '../src/routes/catalog.js';
 import {
-  cancelRequest, catalog, createRequest, declineRequest, issueRequest, listRequests, receiveRequest, report,
+  approveRequest, cancelRequest, catalog, createRequest, declineRequest, issueRequest, listRequests, receiveRequest, report,
 } from '../src/routes/store.js';
 import { todayIn } from '../src/util/dates.js';
 
@@ -22,7 +22,13 @@ import { todayIn } from '../src/util/dates.js';
 
 const TODAY = todayIn('Africa/Accra');
 
-function database() {
+/**
+ * `approval` is the store_approval setting. Most of these tests are about the
+ * storeroom itself (asking, issuing, receiving), so they run with approvals
+ * off and a request goes straight to the storekeeper; the approval step has
+ * its own tests at the end, with it on, as a new database has it.
+ */
+function database({ approval = false } = {}) {
   const sqlite = new DatabaseSync(':memory:');
   sqlite.exec('PRAGMA foreign_keys = ON;');
   for (const f of readdirSync('migrations').filter((n) => n.endsWith('.sql')).sort()) {
@@ -30,6 +36,7 @@ function database() {
   }
   sqlite.exec(`
     UPDATE settings SET value = 'Africa/Accra' WHERE key = 'timezone';
+    UPDATE settings SET value = '${approval ? '1' : '0'}' WHERE key = 'store_approval';
     UPDATE settings SET value = 'Kitchen
 Restaurant bar' WHERE key = 'store_departments';
     INSERT INTO categories (id, name) VALUES (90, 'Larder'), (91, 'Cleaning & paper');
@@ -404,4 +411,165 @@ test('a new request is emailed to the storeroom; what follows is not', async () 
   } finally {
     globalThis.fetch = original;
   }
+});
+
+// ------------------------------------------------------------- approving --
+
+const BOSS = { id: 4, name: 'Efua', role: 'manager', permissions: ['reports', 'store_request', 'store_approve'] };
+
+const expectStatus = async (promise, status, pattern) => {
+  await assert.rejects(promise, (err) => {
+    assert.equal(err.status, status);
+    if (pattern) assert.match(err.message, pattern);
+    return true;
+  });
+};
+
+test('a new database asks a manager first', () => {
+  // The migrations alone, without the fixture's choice of setting.
+  const sqlite = new DatabaseSync(':memory:');
+  for (const f of readdirSync('migrations').filter((n) => n.endsWith('.sql')).sort()) {
+    sqlite.exec(readFileSync(`migrations/${f}`, 'utf8'));
+  }
+  const { value } = sqlite.prepare("SELECT value FROM settings WHERE key = 'store_approval'").get();
+  assert.equal(value, '1');
+});
+
+test('with approvals on, the storeroom cannot issue until a manager approves', async () => {
+  const { db } = database({ approval: true });
+  const r = await ask(db, [{ ingredient_id: 900, qty: 6 }]);
+  assert.equal(r.status, 'waiting');
+
+  const queue = await call(listRequests, db, KEEPER, { query: '?view=queue' });
+  assert.equal(queue.approval, true);
+  assert.deepEqual(queue.waiting, [], 'nothing the storeroom may issue yet');
+  assert.deepEqual(queue.awaitingApproval.map((x) => x.id), [r.id], 'but it can see what is coming');
+
+  await expectStatus(
+    issueRequest(ctx(db, KEEPER, { body: { lines: [{ id: r.lines[0].id, issued: 6 }] } }), r.id),
+    409, /waiting for a manager/,
+  );
+
+  const toApprove = await call(listRequests, db, BOSS, { query: '?view=approve' });
+  assert.deepEqual(toApprove.waiting.map((x) => x.id), [r.id]);
+
+  const { request: approved } = await call(approveRequest, db, BOSS, {}, r.id);
+  assert.equal(approved.status, 'approved');
+  assert.equal(approved.approvedBy, 'Efua');
+  assert.ok(approved.approvedAt);
+
+  const after = await call(listRequests, db, KEEPER, { query: '?view=queue' });
+  assert.deepEqual(after.waiting.map((x) => x.id), [r.id], 'now the storeroom has it');
+  assert.deepEqual(after.awaitingApproval, []);
+  assert.deepEqual((await call(listRequests, db, BOSS, { query: '?view=approve' })).waiting, []);
+
+  const { request: issued } = await call(issueRequest, db, KEEPER, { body: { lines: [{ id: r.lines[0].id, issued: 6 }] } }, r.id);
+  assert.equal(issued.status, 'issued');
+  assert.equal(issued.approvedBy, 'Efua', 'who approved it stays on the record');
+});
+
+test('a request is approved once, and only while it is waiting', async () => {
+  const { db } = database({ approval: true });
+  const r = await ask(db, [{ ingredient_id: 900, qty: 1 }]);
+  await call(approveRequest, db, BOSS, {}, r.id);
+  await expectStatus(approveRequest(ctx(db, BOSS), r.id), 409, /already been approved/);
+
+  const c = await ask(db, [{ ingredient_id: 900, qty: 1 }]);
+  await call(cancelRequest, db, COOK, { body: {} }, c.id);
+  await expectStatus(approveRequest(ctx(db, BOSS), c.id), 409, /cancelled/);
+});
+
+test('with approvals off there is nothing to approve', async () => {
+  const { db } = database({ approval: false });
+  const r = await ask(db, [{ ingredient_id: 900, qty: 1 }]);
+  await expectStatus(approveRequest(ctx(db, BOSS), r.id), 409, /do not need approving/);
+  assert.deepEqual((await call(listRequests, db, BOSS, { query: '?view=approve' })).waiting, []);
+});
+
+test('a manager can decline, before or after approving', async () => {
+  const { db } = database({ approval: true });
+  const a = await ask(db, [{ ingredient_id: 900, qty: 50 }]);
+  const { request: no } = await call(declineRequest, db, BOSS, { body: { note: 'Fifty litres is a typo' } }, a.id);
+  assert.equal(no.status, 'declined');
+  assert.equal(no.issueNote, 'Fifty litres is a typo');
+
+  const b = await ask(db, [{ ingredient_id: 900, qty: 2 }]);
+  await call(approveRequest, db, BOSS, {}, b.id);
+  const { request: second } = await call(declineRequest, db, KEEPER, { body: { note: 'None left' } }, b.id);
+  assert.equal(second.status, 'declined', 'the storeroom can still say it has none');
+});
+
+test('an approved request can still be cancelled by whoever asked', async () => {
+  const { db } = database({ approval: true });
+  const r = await ask(db, [{ ingredient_id: 901, qty: 1 }]);
+  await call(approveRequest, db, BOSS, {}, r.id);
+  const { request } = await call(cancelRequest, db, COOK, { body: {} }, r.id);
+  assert.equal(request.status, 'cancelled');
+});
+
+test('the rest of a short issue is already approved', async () => {
+  const { db } = database({ approval: true });
+  const r = await ask(db, [{ ingredient_id: 900, qty: 30 }]);
+  await call(approveRequest, db, BOSS, {}, r.id);
+  const { followUp } = await call(issueRequest, db, KEEPER, {
+    body: { lines: [{ id: r.lines[0].id, issued: 24, reason: 'Not enough in stock' }] },
+  }, r.id);
+  assert.ok(followUp);
+
+  const queue = await call(listRequests, db, KEEPER, { query: '?view=queue' });
+  const rest = queue.waiting.find((x) => x.ref === followUp);
+  assert.ok(rest, 'the rest goes straight back to the storeroom, not to a manager');
+  assert.equal(rest.status, 'approved');
+  assert.equal(rest.approvedBy, 'Efua');
+  assert.equal(rest.lines[0].asked, 6);
+});
+
+test('with approvals on, a new request goes to the managers, and approving tells the storeroom', async () => {
+  const { sqlite, db } = database({ approval: true });
+  sqlite.exec(`
+    UPDATE settings SET value = 'Breakfast <b@example.com>' WHERE key = 'email_from';
+    INSERT INTO users (id, name, email, role, permissions) VALUES
+      (2, 'Kwesi', 'kwesi@example.com', 'storekeeper', '["store_issue"]'),
+      (4, 'Efua', 'efua@example.com', 'manager', '["reports","store_request","store_approve"]');
+  `);
+  const mails = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    if (String(url).includes('resend')) mails.push(JSON.parse(init.body));
+    return new Response('{"id":"x"}', { status: 200 });
+  };
+  try {
+    const { request } = await (await createRequest({
+      ...ctx(db, COOK, { body: { needed: 'now', lines: [{ id: 0, ingredient_id: 900, qty: 3 }] } }),
+      env: { RESEND_API_KEY: 'test-key' },
+    })).json();
+    assert.equal(mails.length, 1);
+    assert.deepEqual(mails[0].to, ['efua@example.com'], 'the manager, who acts next');
+    assert.match(mails[0].subject, /^Approve storeroom request/);
+
+    await call(approveRequest, db, BOSS, {}, request.id);
+    assert.equal(mails.length, 1, 'approving is a nudge, not another email');
+
+    const notices = sqlite.prepare('SELECT kind, audience FROM app_notices ORDER BY id').all()
+      .map((n) => `${n.kind}:${n.audience}`);
+    assert.deepEqual(notices, ['store_request:store_approve', 'store_approved:store_issue']);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('switching approvals on lets through what was already waiting', () => {
+  const sqlite = new DatabaseSync(':memory:');
+  for (const f of readdirSync('migrations').filter((n) => n.endsWith('.sql') && n < '0026').sort()) {
+    sqlite.exec(readFileSync(`migrations/${f}`, 'utf8'));
+  }
+  sqlite.exec(`
+    INSERT INTO categories (id, name) VALUES (90, 'Larder');
+    INSERT INTO ingredients (id, category_id, name, unit) VALUES (900, 90, 'Fresh milk', 'L');
+    INSERT INTO store_requests (id, requested_by, status) VALUES (1, 'Ama', 'waiting'), (2, 'Ama', 'issued');
+  `);
+  sqlite.exec(readFileSync('migrations/0026_store_approval.sql', 'utf8'));
+  const rows = sqlite.prepare('SELECT id, status, approved_by FROM store_requests ORDER BY id').all()
+    .map((r) => [r.id, r.status, r.approved_by]);
+  assert.deepEqual(rows, [[1, 'approved', 'Before approvals began'], [2, 'issued', null]]);
 });

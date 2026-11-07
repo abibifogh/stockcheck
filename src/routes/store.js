@@ -30,6 +30,19 @@ async function guarded(work) {
   }
 }
 
+/**
+ * Whether a manager approves a request before the storeroom may issue it.
+ *
+ * Off when the setting is missing, which is a database that has not had
+ * 0026 yet: there is nowhere to record an approval, so requests go straight
+ * to the storeroom as they always did.
+ */
+const approvalOn = (settings) => settings.store_approval === '1';
+
+/** The states a request can be issued from. */
+const issuable = (settings) => (approvalOn(settings) ? ['approved'] : ['waiting', 'approved']);
+const inList = (list) => list.map((s) => `'${s}'`).join(', ');
+
 /** R-0143: short enough to say across a kitchen. */
 export const refOf = (id) => `R-${String(id).padStart(4, '0')}`;
 
@@ -118,6 +131,8 @@ async function loadRequests(db, where, binds, { costs }) {
       difference: Boolean(r.difference),
       receiptNote: r.receipt_note,
       closedBy: r.closed_by,
+      approvedBy: r.approved_by ?? null,
+      approvedAt: iso(r.approved_at),
       minutesToIssue: minutesBetween(r.created_at, r.issued_at),
       short: issuedLines.some((l) => Number(l.issued) < Number(l.asked)),
       value: costs && issuedLines.length ? money(value) : undefined,
@@ -235,33 +250,40 @@ export async function createRequest(ctx) {
       audit(ctx, 'store.request', refOf(row.id), { department, needed, lines: wanted.size }),
     ]);
 
-    // The storekeeper is told now, not when they next look.
+    // Whoever acts next is told now, not when they next look: a manager when
+    // requests need approving, otherwise the storekeeper.
     //
     // A new request is the one step that gets an email as well: it is the
     // start of something somebody has to act on, and the email is the record
-    // of it that sits in an inbox until it is done. Everything after — issued,
-    // declined, a difference, cancelled — is a quick nudge on the phone and the
-    // bell, never another email.
+    // of it that sits in an inbox until it is done. Everything after —
+    // approved, issued, declined, a difference, cancelled — is a quick nudge
+    // on the phone and the bell, never another email.
+    const approving = approvalOn(settings);
+    const audience = approving ? 'store_approve' : 'store_issue';
+    const link = approving ? '#/approvals' : '#/store';
     const summary = [...wanted].slice(0, 4).map(([id, amount]) => `${names.get(id)} ${qty(amount)}`).join(', ')
       + (wanted.size > 4 ? ` and ${wanted.size - 4} more` : '');
-    const title = `${refOf(row.id)}: ${department} needs ${NEEDED[needed].toLowerCase()}`;
+    const title = `${refOf(row.id)}: ${department} needs ${NEEDED[needed].toLowerCase()}`
+      + (approving ? ', waiting for your approval' : '');
     const everything = [...wanted].map(([id, amount]) => `• ${names.get(id)}: ${qty(amount)}`).join('\n');
     await later(ctx, Promise.all([
       notify(ctx.db, {
-        kind: 'store_request', audience: 'store_issue', level: needed === 'now' ? 'warn' : 'info',
-        title, body: `${ctx.session.user.name} asked for ${summary}.`, link: '#/store', actor: ctx.session.user.name,
+        kind: 'store_request', audience, level: needed === 'now' ? 'warn' : 'info',
+        title, body: `${ctx.session.user.name} asked for ${summary}.`, link, actor: ctx.session.user.name,
       }),
       pushToPeople(ctx.db, {
-        permission: 'store_issue', title, body: `${ctx.session.user.name}: ${summary}`, url: '#/store', tag: `store-${row.id}`,
+        permission: audience, title, body: `${ctx.session.user.name}: ${summary}`, url: link, tag: `store-${row.id}`,
       }),
       emailAudience(ctx.db, ctx.env, {
         kind: 'store_request',
-        audience: 'store_issue',
-        subject: `Storeroom request ${refOf(row.id)} from ${department}`,
+        audience,
+        subject: approving
+          ? `Approve storeroom request ${refOf(row.id)} from ${department}`
+          : `Storeroom request ${refOf(row.id)} from ${department}`,
         title,
         body: `${ctx.session.user.name} asked for:\n${everything}${note ? `\n\nNote: ${note}` : ''}`,
-        link: '#/store',
-        linkLabel: 'Open the storeroom',
+        link,
+        linkLabel: approving ? 'Approve or decline it' : 'Open the storeroom',
       }),
     ]));
 
@@ -282,14 +304,31 @@ export async function listRequests(ctx) {
     const costs = seesCosts(ctx);
     const view = ctx.url.searchParams.get('view') || 'mine';
 
+    const urgentFirst = "ORDER BY CASE needed WHEN 'now' THEN 0 WHEN 'today' THEN 1 ELSE 2 END, created_at, id";
+    const settings = await readSettings(ctx.db);
+    const approval = approvalOn(settings);
+
     if (view === 'queue') {
+      // `waiting` stays the storeroom's list of what it can issue now, so the
+      // screen reads the same with approvals on or off; what is still with a
+      // manager is listed apart, to be seen but not issued.
       const waiting = await loadRequests(ctx.db,
-        `WHERE status = 'waiting'
-         ORDER BY CASE needed WHEN 'now' THEN 0 WHEN 'today' THEN 1 ELSE 2 END, created_at, id`, [], { costs });
+        `WHERE status IN (${inList(issuable(settings))}) ${urgentFirst}`, [], { costs });
+      const awaitingApproval = approval
+        ? await loadRequests(ctx.db, `WHERE status = 'waiting' ${urgentFirst}`, [], { costs })
+        : [];
       const done = await loadRequests(ctx.db,
         `WHERE status IN ('issued', 'received', 'declined') AND issued_at >= datetime('now', '-1 day')
          ORDER BY issued_at DESC LIMIT 50`, [], { costs });
-      return json({ waiting, done });
+      return json({ waiting, awaitingApproval, done, approval });
+    }
+
+    // A manager's list: what is waiting for a yes or a no.
+    if (view === 'approve') {
+      const waiting = approval
+        ? await loadRequests(ctx.db, `WHERE status = 'waiting' ${urgentFirst}`, [], { costs })
+        : [];
+      return json({ waiting, approval });
     }
 
     const requests = await loadRequests(ctx.db,
@@ -313,7 +352,7 @@ export async function cancelRequest(ctx, id) {
     const result = await ctx.db.prepare(
       `UPDATE store_requests SET status = 'cancelled', closed_by = ?, closed_at = datetime('now'),
               issue_note = COALESCE(?, issue_note)
-        WHERE id = ? AND status = 'waiting'`,
+        WHERE id = ? AND status IN ('waiting', 'approved')`,
     ).bind(ctx.session.user.name, note, Number(id)).run();
     if (!result.meta?.changes) {
       const request = await oneRequest(ctx, id);
@@ -352,7 +391,12 @@ export async function issueRequest(ctx, id) {
   const body = await readJson(ctx.request);
   return guarded(async () => {
     const request = await oneRequest(ctx, id);
-    if (request.status !== 'waiting') {
+    const settings = await readSettings(ctx.db);
+    const from = issuable(settings);
+    if (request.status === 'waiting' && !from.includes('waiting')) {
+      throw new HttpError(409, `${request.ref} is waiting for a manager to approve it before it can be issued.`);
+    }
+    if (!from.includes(request.status)) {
       throw new HttpError(409, `${request.ref} has already been ${request.status}.`);
     }
 
@@ -369,15 +413,14 @@ export async function issueRequest(ctx, id) {
     const total = answers.reduce((n, a) => n + a.issued, 0);
     if (total <= 0) throw badRequest('Nothing is being issued. To turn the request down, decline it instead.');
 
-    const settings = await readSettings(ctx.db);
     const day = todayIn(settings.timezone || 'UTC');
     await assertDayWritable(ctx.db, day);
 
     const claimed = await ctx.db.prepare(
       `UPDATE store_requests
           SET status = 'issued', issued_by = ?, issued_at = datetime('now'), day = ?, issue_note = ?
-        WHERE id = ? AND status = 'waiting'`,
-    ).bind(ctx.session.user.name, day, note, request.id).run();
+        WHERE id = ? AND status = ?`,
+    ).bind(ctx.session.user.name, day, note, request.id, request.status).run();
     if (!claimed.meta?.changes) throw new HttpError(409, `${request.ref} was issued by somebody else a moment ago.`);
 
     const costs = await lastCosts(ctx.db);
@@ -402,8 +445,8 @@ export async function issueRequest(ctx, id) {
       // Put it back, so the storekeeper can try again rather than find it
       // marked issued with nothing on it.
       await ctx.db.prepare(
-        "UPDATE store_requests SET status = 'waiting', issued_by = NULL, issued_at = NULL, day = NULL WHERE id = ?",
-      ).bind(request.id).run().catch(() => {});
+        'UPDATE store_requests SET status = ?, issued_by = NULL, issued_at = NULL, day = NULL WHERE id = ?',
+      ).bind(request.status, request.id).run().catch(() => {});
       throw err;
     }
 
@@ -411,13 +454,24 @@ export async function issueRequest(ctx, id) {
     const owed = answers.filter((a) => a.issued < a.line.asked);
     let followUp = null;
     if (owed.length) {
-      const row = await ctx.db.prepare(
-        `INSERT INTO store_requests (department, needed, note, follows, requested_by, requested_by_id)
-         VALUES (?, ?, ?, ?, ?, ?) RETURNING id`,
-      ).bind(
-        request.department, request.needed, `The rest of ${request.ref}`, request.id,
-        request.requestedBy, request.requestedById,
-      ).first();
+      // The rest was approved along with the request, so it is not sent back
+      // to a manager: it waits for the storeroom, as approved.
+      const row = request.status === 'approved'
+        ? await ctx.db.prepare(
+          `INSERT INTO store_requests (department, needed, note, follows, requested_by, requested_by_id,
+                                       status, approved_by, approved_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'approved', ?, datetime('now')) RETURNING id`,
+        ).bind(
+          request.department, request.needed, `The rest of ${request.ref}`, request.id,
+          request.requestedBy, request.requestedById, request.approvedBy,
+        ).first()
+        : await ctx.db.prepare(
+          `INSERT INTO store_requests (department, needed, note, follows, requested_by, requested_by_id)
+           VALUES (?, ?, ?, ?, ?, ?) RETURNING id`,
+        ).bind(
+          request.department, request.needed, `The rest of ${request.ref}`, request.id,
+          request.requestedBy, request.requestedById,
+        ).first();
       await ctx.db.batch(owed.map((a) => ctx.db.prepare(
         'INSERT INTO store_request_lines (request_id, ingredient_id, asked) VALUES (?, ?, ?)',
       ).bind(row.id, a.line.ingredientId, qty(a.line.asked - a.issued))));
@@ -444,20 +498,26 @@ export async function issueRequest(ctx, id) {
   });
 }
 
-/** Turn a request down, with the reason. Nothing leaves the shelf. */
+/**
+ * Turn a request down, with the reason. Nothing leaves the shelf.
+ *
+ * The storeroom can decline what it cannot supply; a manager can decline
+ * what should not be supplied, before or after approving it.
+ */
 export async function declineRequest(ctx, id) {
   const body = await readJson(ctx.request);
   return guarded(async () => {
     const note = str(body.note, 'Reason', { max: 300, required: true });
     const result = await ctx.db.prepare(
       `UPDATE store_requests SET status = 'declined', issued_by = ?, issued_at = datetime('now'), issue_note = ?
-        WHERE id = ? AND status = 'waiting'`,
+        WHERE id = ? AND status IN ('waiting', 'approved')`,
     ).bind(ctx.session.user.name, note, Number(id)).run();
     const request = await oneRequest(ctx, id);
     if (!result.meta?.changes) throw new HttpError(409, `${request.ref} has already been ${request.status}.`);
     await audit(ctx, 'store.decline', request.ref, { note }).run().catch(() => {});
 
-    const title = `${request.ref} declined by the storeroom`;
+    const byStoreroom = ctx.session.permissions.includes('store_issue');
+    const title = `${request.ref} declined by ${byStoreroom ? 'the storeroom' : ctx.session.user.name}`;
     await later(ctx, Promise.all([
       notify(ctx.db, { kind: 'store_declined', audience: 'store_request', title, body: note, link: '#/ask' }),
       pushToPeople(ctx.db, {
@@ -602,10 +662,11 @@ export async function report(ctx) {
           + (r.receiptNote ? `. “${r.receiptNote}”` : ''),
         ref: r.ref,
       })),
-      ...requests.filter((r) => r.status === 'waiting' && now - Date.parse(r.createdAt) > 60 * 60000).map((r) => ({
+      ...requests.filter((r) => ['waiting', 'approved'].includes(r.status) && now - Date.parse(r.createdAt) > 60 * 60000).map((r) => ({
         level: 'warn',
         title: `${r.ref} waiting ${Math.round((now - Date.parse(r.createdAt)) / 60000)} minutes`,
-        detail: `${r.department} asked, needed ${r.neededText.toLowerCase()}.`,
+        detail: `${r.department} asked, needed ${r.neededText.toLowerCase()}. `
+          + (r.status === 'approved' ? `Approved by ${r.approvedBy}; not issued yet.` : 'Not approved yet.'),
         ref: r.ref,
       })),
       ...requests.filter((r) => r.receivedAuto).map((r) => ({
@@ -623,7 +684,7 @@ export async function report(ctx) {
 
     const counts = {
       requests: requests.filter((r) => r.status !== 'cancelled').length,
-      waiting: requests.filter((r) => r.status === 'waiting').length,
+      waiting: requests.filter((r) => ['waiting', 'approved'].includes(r.status)).length,
       full: handed.filter((r) => !r.short).length,
       partly: handed.filter((r) => r.short).length,
       declined: requests.filter((r) => r.status === 'declined').length,
@@ -646,5 +707,52 @@ export async function report(ctx) {
       low: stockRows.filter((i) => i.active && i.requestable && i.low),
       requests,
     });
+  });
+}
+
+// ------------------------------------------------------------ approving --
+
+/**
+ * A manager's yes. The request moves from waiting to approved, and only then
+ * can the storeroom issue it. Claimed with a conditional update, so two
+ * managers pressing Approve at once approve it once.
+ */
+export async function approveRequest(ctx, id) {
+  return guarded(async () => {
+    const settings = await readSettings(ctx.db);
+    if (!approvalOn(settings)) {
+      throw new HttpError(409, 'Requests do not need approving here: the storeroom issues them directly. '
+        + 'An administrator can switch approvals on under Setup → Storeroom.');
+    }
+    const result = await ctx.db.prepare(
+      `UPDATE store_requests SET status = 'approved', approved_by = ?, approved_at = datetime('now')
+        WHERE id = ? AND status = 'waiting'`,
+    ).bind(ctx.session.user.name, Number(id)).run();
+    const request = await oneRequest(ctx, id);
+    if (!result.meta?.changes) throw new HttpError(409, `${request.ref} has already been ${request.status}.`);
+    await audit(ctx, 'store.approve', request.ref, { department: request.department }).run().catch(() => {});
+
+    // The storeroom now has something to issue; the person who asked hears it
+    // is on its way to being handed over.
+    const summary = request.lines.slice(0, 4).map((l) => `${l.name} ${l.asked}`).join(', ')
+      + (request.lines.length > 4 ? ` and ${request.lines.length - 4} more` : '');
+    const title = `${request.ref}: ${request.department} needs ${request.neededText.toLowerCase()}, approved`;
+    await later(ctx, Promise.all([
+      notify(ctx.db, {
+        kind: 'store_approved', audience: 'store_issue', level: request.needed === 'now' ? 'warn' : 'info',
+        title, body: `Approved by ${ctx.session.user.name}: ${summary}.`, link: '#/store', actor: ctx.session.user.name,
+      }),
+      pushToPeople(ctx.db, {
+        permission: 'store_issue', title, body: `Approved by ${ctx.session.user.name}: ${summary}`, url: '#/store', tag: `store-${request.id}`,
+      }),
+      pushToPeople(ctx.db, {
+        userIds: request.requestedById ? [request.requestedById] : [],
+        title: `${request.ref} approved`,
+        body: `${ctx.session.user.name} approved it. The storeroom will issue it next.`,
+        url: '#/ask',
+        tag: `store-${request.id}`,
+      }),
+    ]));
+    return json({ request });
   });
 }
