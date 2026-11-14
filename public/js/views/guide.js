@@ -246,6 +246,11 @@ const SECTIONS = [
         h('span', h('strong', 'Tap Submit day.'), ' You will be asked to confirm anything recorded as zero. '
           + 'Read that list — it is the last chance to catch a box you meant to fill.'),
       ),
+      note('Once it is sent, the sheet closes.', 'Today shows “Breakfast is in” and what was sent. If something '
+        + 'was wrong, tap “Something wrong? Send a correction”: it goes to a manager to approve, and the day '
+        + 'shows “With a manager now” until they decide.'),
+      note('It always opens on today.', 'Opening the app or tapping Today never lands on an older day. To look '
+        + 'at one, choose it under Another day.'),
       note('The number under each item', 'is what that item usually takes for today’s headcount. '
         + 'Tap it to accept it. It is a faint, slanted number until you enter something real.'),
       note('You can save without submitting.', 'Tap Save to come back to it later. Nothing is counted '

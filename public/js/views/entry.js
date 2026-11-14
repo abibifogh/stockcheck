@@ -1,5 +1,5 @@
 import { api, dequeueDay, queueDay } from '../api.js';
-import { navigate, replaceParams, state } from '../app.js';
+import { can, navigate, replaceParams, state } from '../app.js';
 import { debounce, fmtNum, fmtQty, h, mount, todayISO, shiftDay, fmtDay, toast } from '../util.js';
 
 /**
@@ -21,6 +21,18 @@ export async function renderEntry(params) {
   const data = await api.getDay(day);
   const { categories, ingredients } = state.catalog;
 
+  // A day that is in, or has a correction waiting, has no form: it shows as
+  // closed. A correction is opened only on purpose, from the closed day's
+  // "Send a correction" link.
+  if (data.pendingRevision || (data.service.submitted_at && !params.correct)) {
+    return renderToday({ day });
+  }
+  const correcting = Boolean(data.service.submitted_at);
+  // The server's rule: a correction waits for a manager unless whoever sends
+  // it can approve corrections, or approval is switched off in Setup.
+  const viaManager = correcting && !can('approvals')
+    && (state.settings?.require_resubmit_approval ?? '1') !== '0';
+
   const usage = new Map(Object.entries(data.usage).map(([k, v]) => [Number(k), Number(v)]));
   const hints = data.hints || {};
   const service = {
@@ -33,7 +45,6 @@ export async function renderEntry(params) {
   const requiredIds = new Set(data.requiredIngredientIds || []);
   const locked = Boolean(data.locked);
   const restrictToEveryday = data.restrictToEveryday === true;
-  let submitted = Boolean(data.service.submitted_at);
   let showAll = false;
   let filter = '';
   let dirty = false;
@@ -65,7 +76,6 @@ export async function renderEntry(params) {
       const result = await api.saveDay(day, body);
       dequeueDay(day);
       dirty = false;
-      if (submit && !result.pendingApproval) submitted = true;
       const time = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
       setStatus(
         result.pendingApproval ? 'Sent for approval' : submit ? 'Submitted ✓' : `Saved ${time}`,
@@ -290,14 +300,17 @@ export async function renderEntry(params) {
   }
 
   // ------------------------------------------------------------- toolbar --
+  // Today's sheet has no Prev and Next: a stray tap should never move the
+  // morning to yesterday. Another day, opened on purpose, keeps them.
+  const isToday = day === todayISO();
   const toolbar = h('div.toolbar',
-    h('button.btn-sm', { onclick: () => go(shiftDay(day, -1)) }, '‹ Prev'),
-    h('input', {
+    isToday ? null : h('button.btn-sm', { onclick: () => go(shiftDay(day, -1)) }, '‹ Prev'),
+    isToday ? null : h('input', {
       type: 'date', value: day, max: todayISO(),
       onchange: (e) => e.target.value && go(e.target.value),
     }),
-    h('button.btn-sm', { onclick: () => go(shiftDay(day, 1)), disabled: day >= todayISO() }, 'Next ›'),
-    day !== todayISO() ? h('button.btn-sm', { onclick: () => go(todayISO()) }, 'Today') : null,
+    isToday ? null : h('button.btn-sm', { onclick: () => go(shiftDay(day, 1)), disabled: day >= todayISO() }, 'Next ›'),
+    isToday ? null : h('a.btn.btn-sm', { href: '#/entry' }, 'Back to today'),
     h('div', { style: { flex: '1' } }),
     h('input', {
       type: 'search', placeholder: 'Search ingredient…', style: { maxWidth: '200px' },
@@ -318,6 +331,8 @@ export async function renderEntry(params) {
     if (dirty) await save({ quiet: true });
     replaceParams('entry', { day: nextDay, sheet: 1 });
     const view = await renderEntry({ day: nextDay, sheet: 1 });
+    // A day already in opens closed, so the address should say so too.
+    if (view.classList.contains('today-page')) replaceParams('entry', { day: nextDay });
     const host = document.querySelector('.main');
     if (host) mount(host, view);
   }
@@ -325,10 +340,12 @@ export async function renderEntry(params) {
   const footer = h('div.entry-footer',
     h('div.entry-footer-inner',
       statusEl,
-      allowFillUsual ? h('button', { onclick: fillUsual }, '⚡ Fill usual') : null,
+      // A correction of figures already on screen has nothing to fill.
+      allowFillUsual && !(correcting && !data.clearedForEntry)
+        ? h('button', { onclick: fillUsual }, '⚡ Fill usual') : null,
       h('button', { onclick: () => save({ submit: false, quiet: false }) }, 'Save'),
       h('button.btn-primary', { onclick: attemptSubmit, disabled: locked },
-        submitted ? 'Submit correction' : 'Submit day'),
+        correcting ? 'Send correction' : 'Submit day'),
     ),
   );
 
@@ -368,21 +385,20 @@ export async function renderEntry(params) {
     }
 
     const result = await save({ submit: true, quiet: true });
-    if (result?.pendingApproval) {
-      window.alert(result.message);
-      setStatus('Sent for approval', 'warn');
-    } else if (result) {
-      toast('Day submitted', 'good');
-    }
+    if (!result) return;
+    if (result.pendingApproval) toast('Correction sent to a manager for approval', 'good');
+    else toast('Day submitted', 'good');
+    // Sent: the form closes, and the day shows as done (or as waiting).
+    navigate('entry', isToday ? {} : { day });
   }
 
   paintTotals();
   paintList();
   setStatus(
-    submitted ? 'Submitted ✓'
+    correcting ? (viaManager ? 'A correction: it goes to a manager' : 'A correction')
       : data.service.day && Object.keys(data.usage).length ? 'Draft saved'
         : 'Not started',
-    submitted ? 'good' : '',
+    correcting ? 'warn' : '',
   );
 
   // A page reload mid-service should not lose the morning.
@@ -393,10 +409,11 @@ export async function renderEntry(params) {
   return h('div.entry-page',
     h('div.page-head',
       h('div',
-        h('h1', fmtDay(day, { withYear: true })),
-        h('div.sub', day === todayISO() ? 'Today’s breakfast service' : 'Editing an earlier day'),
+        h('h1', isToday ? 'Today’s sheet' : fmtDay(day, { withYear: true })),
+        h('div.sub', correcting ? (viaManager ? 'A correction: a manager approves it' : 'A correction: it replaces what was sent')
+          : isToday ? fmtDay(day, { withYear: true }) : 'An earlier day'),
       ),
-      submitted ? h('span.pill.good', 'Submitted') : h('span.pill', 'In progress'),
+      correcting ? h('span.pill.warn', 'Correction') : h('span.pill', 'In progress'),
     ),
     toolbar,
     locked ? h('div.alert.warn',
@@ -409,26 +426,21 @@ export async function renderEntry(params) {
       )) : null,
     // A blank sheet on a day the cook knows they filled in is alarming unless
     // somebody says why, so this goes above everything else.
-    data.clearedForEntry ? h('div.alert.info',
+    // A correction only: the day is in, and this sheet is opened on purpose.
+    // (A day with a correction already waiting never opens a sheet at all.)
+    correcting ? h('div.alert.info',
       h('span.alert-icon', '✓'),
       h('div',
         h('div.alert-title', 'This day has already been sent'),
-        h('div.alert-detail',
-          'Your figures are recorded and safe — the form starts empty so a correction is counted '
-          + 'again rather than nudged. If something was wrong, fill the sheet in afresh and submit; '
-          + 'a manager compares it against what was sent first. If nothing is wrong, you are done '
-          + 'and can leave this page.'),
-      )) : null,
-    data.pendingRevision ? h('div.alert.info',
-      h('span.alert-icon', '⏳'),
-      h('div',
-        h('div.alert-title', 'A correction is waiting for approval'),
-        h('div.alert-detail',
-          `Sent by ${data.pendingRevision.submitted_by ?? 'someone'} on `
-          + `${String(data.pendingRevision.submitted_at).slice(0, 16).replace('T', ' ')}. `
-          + (data.clearedForEntry
-            ? 'The recorded figures stay as they are until a manager accepts it.'
-            : 'The recorded figures below stay as they are until a manager accepts it.')),
+        h('div.alert-detail', data.clearedForEntry
+          ? 'Your figures are recorded and safe. The form starts empty so a correction is counted again '
+            + 'rather than nudged. Fill it in afresh and send it; a manager compares it with what was sent first.'
+          : viaManager
+            ? 'Change what was wrong and send the correction. A manager compares it with what was sent first, '
+              + 'and the recorded figures stay until they accept it.'
+            : 'Change what was wrong and send the correction. It replaces what was sent.'),
+        h('a.btn.btn-sm', { href: isToday ? '#/entry' : `#/entry?day=${day}`, style: { marginTop: '.5rem' } },
+          'Nothing wrong? Close'),
       )) : null,
     guestCard,
     listHost,
@@ -439,10 +451,16 @@ export async function renderEntry(params) {
 /**
  * Today, before the sheet: where the morning stands and one button to go on.
  *
- * Opening straight onto forty steppers meant a stray tap on the Today tab
- * landed somebody in the middle of the form, and a glance at "is today done?"
- * meant scrolling a form to find out. This answers the glance, and the sheet
- * is one deliberate tap away.
+ * Three states, and only the first has a form behind it:
+ *
+ *  - not started or in progress: the button opens the sheet;
+ *  - submitted: closed. What was sent is shown read-only, and a correction is
+ *    a deliberate step behind a small link, still sent to a manager;
+ *  - a correction waiting: closed too. Nothing to fill in or resend until a
+ *    manager decides.
+ *
+ * It is always today unless somebody chose another day on purpose (see
+ * `openOnToday` in app.js, which forgets that choice on the next visit).
  */
 async function renderToday(params) {
   const day = params.day || todayISO();
@@ -458,41 +476,129 @@ async function renderToday(params) {
   const done = required.filter((id) => entered.has(id)).length;
   const started = !submitted && (guests > 0 || entered.size > 0);
 
-  const status = data.pendingRevision ? ['warn', 'Correction waiting for approval']
-    : submitted ? ['good', 'Submitted']
-      : started ? ['warn', 'In progress']
-        : ['', 'Not started'];
-  const action = submitted ? 'View or correct the sheet' : started ? 'Continue the sheet' : 'Start the sheet';
-
-  const open = (d) => navigate('entry', { day: d, sheet: 1 });
+  const openSheet = (d, extra = {}) => navigate('entry', { day: d, sheet: 1, ...extra });
   const other = h('input', {
     type: 'date', max: todayISO(), value: shiftDay(todayISO(), -1), 'aria-label': 'Another day',
   });
 
-  return h('div.today-page',
-    h('div.page-head',
-      h('div',
-        h('h1', isToday ? 'Today' : fmtDay(day, { withYear: true })),
-        h('div.sub', fmtDay(day, { withYear: true })),
-      ),
-    ),
-    h('section.today-card',
-      h('span.today-status', h(`span.pill${status[0] ? `.${status[0]}` : ''}`, status[1])),
-      h('div.today-figure', submitted || started ? `${guests} ${guests === 1 ? 'guest' : 'guests'}` : 'Breakfast'),
-      h('div.today-line',
-        submitted
-          ? (data.clearedForEntry ? 'Recorded and safe.' : `${entered.size} items recorded.`)
-          : started
-            ? `${done} of ${required.length} everyday items entered`
-            : `${required.length} everyday items to fill in`),
+  const head = isToday
+    ? h('div.page-head', h('div', h('h1', 'Today'), h('div.sub', fmtDay(day, { withYear: true }))))
+    : h('div.page-head.today-head',
+      h('a.today-back', { href: '#/entry', 'aria-label': 'Back to today', html: BACK }),
+      h('div', h('h1', fmtDay(day)), h('div.sub', 'An earlier day')));
+
+  let main;
+  if (data.pendingRevision) {
+    main = closedCard({
+      tone: 'waiting',
+      status: 'Correction waiting for approval',
+      title: 'With a manager now',
+      lines: [
+        `${data.pendingRevision.submitted_by ?? 'Somebody'} sent a correction ${when(data.pendingRevision.submitted_at)}. `
+        + 'The figures stay as first recorded until a manager accepts or rejects it.',
+      ],
+      strong: 'Nothing to fill in.',
+    });
+  } else if (submitted) {
+    main = closedCard({
+      tone: 'done',
+      title: 'Breakfast is in',
+      lines: [
+        data.clearedForEntry ? null : `${guests} ${guests === 1 ? 'guest' : 'guests'} · ${entered.size} ${entered.size === 1 ? 'item' : 'items'}`,
+        `Sent ${when(data.service.submitted_at)}${data.service.submitted_by ? ` by ${data.service.submitted_by}` : ''}`,
+      ].filter(Boolean),
+      chip: isToday ? 'Nothing more to do today' : 'Nothing more to do for this day',
+    });
+  } else {
+    main = h('section.today-card',
+      h('span.today-status', h(`span.pill${started ? '.warn' : ''}`, started ? 'In progress' : 'Not started')),
+      h('div.today-figure', started ? `${guests} ${guests === 1 ? 'guest' : 'guests'}` : 'Breakfast'),
+      h('div.today-line', started
+        ? `${done} of ${required.length} everyday items entered`
+        : `${required.length} everyday items to fill in`),
       data.locked ? h('div.today-line', '🔒 In a closed period: it can be read but not changed.') : null,
-      h('button.btn-primary.today-go', { onclick: () => open(day) }, action),
-    ),
-    h('section.card.today-other',
-      h('h2', 'Another day'),
-      h('div.btn-row',
-        other,
-        h('button', { onclick: () => other.value && open(other.value) }, 'Open')),
-    ),
+      h('button.btn-primary.today-go', { onclick: () => openSheet(day) },
+        started ? 'Continue the sheet' : isToday ? 'Start today’s sheet' : 'Start the sheet'),
+    );
+  }
+
+  // What is on record, read-only. Not sent to a browser whose only job is the
+  // entry screen once the day is in (the server withholds it), so then there is
+  // simply nothing to list.
+  const recorded = (submitted || data.pendingRevision) && entered.size
+    ? sentList(data, ingredients, data.pendingRevision ? 'Recorded now' : 'What was sent')
+    : null;
+
+  const correct = submitted && !data.pendingRevision && !data.locked
+    ? h('button.today-correct', { onclick: () => openSheet(day, { correct: 1 }) }, 'Something wrong? Send a correction')
+    : null;
+
+  return h('div.today-page',
+    head,
+    main,
+    recorded,
+    correct,
+    isToday
+      ? h('section.card.today-other',
+        h('h2', 'Another day'),
+        h('div.btn-row',
+          other,
+          h('button', { onclick: () => other.value && navigate('entry', { day: other.value }) }, 'Open')))
+      : h('div.btn-row', { style: { justifyContent: 'center', marginTop: '.5rem' } },
+        h('a.btn.today-home', { href: '#/entry' }, 'Back to today')),
   );
+}
+
+const BACK = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" '
+  + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>';
+const TICK = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" '
+  + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>';
+
+/** A day nobody needs to touch: submitted, or with a correction waiting. */
+function closedCard({ tone, status, title, lines, strong, chip }) {
+  return h(`section.today-card.today-closed.is-${tone}`,
+    tone === 'done'
+      ? h('span.today-tick', { html: TICK })
+      : h('span.today-status', h('span.pill.warn', status)),
+    h('div.today-figure', title),
+    ...lines.map((line) => h('div.today-line', line)),
+    strong ? h('div.today-line', h('b', strong)) : null,
+    chip ? h('span.today-chip', chip) : null,
+  );
+}
+
+/** The figures on record: the first three, and the rest a tap away. */
+function sentList(data, ingredients, title) {
+  const byId = new Map(ingredients.map((i) => [i.id, i]));
+  const rows = Object.entries(data.usage)
+    .map(([id, qty]) => ({ item: byId.get(Number(id)), qty: Number(qty) }))
+    .filter((r) => r.item)
+    .sort((a, b) => (a.item.sort_order ?? 0) - (b.item.sort_order ?? 0));
+  const guests = (Number(data.service.inhouse_guests) || 0) + (Number(data.service.outside_guests) || 0);
+  const line = (label, value) => h('div.sent-row', h('span', label), h('b', value));
+  const list = h('div.sent-list');
+  const paint = (all) => {
+    const shown = all ? rows : rows.slice(0, 3);
+    mount(list,
+      line('Guests', String(guests)),
+      shown.map((r) => line(r.item.name, fmtQty(r.qty, r.item.unit, 2))),
+      rows.length > 3
+        ? h('button.btn-sm', { onclick: () => paint(!all) }, all ? 'Show fewer' : `Show all ${rows.length}`)
+        : null);
+  };
+  paint(false);
+  return h('section.card.sent-card',
+    h('div.card-head', h('h2', title), h('span.card-note', 'READ ONLY')),
+    list);
+}
+
+/** "today at 07:42", "on Wed 11 Nov at 11:09". SQLite's datetime is UTC. */
+function when(at) {
+  if (!at) return '';
+  const d = new Date(`${String(at).replace(' ', 'T')}${/Z|[+-]\d\d:?\d\d$/.test(at) ? '' : 'Z'}`);
+  if (Number.isNaN(d.getTime())) return String(at);
+  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  const day = d.toISOString().slice(0, 10);
+  if (day === todayISO()) return `today at ${time}`;
+  return `on ${d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} at ${time}`;
 }
