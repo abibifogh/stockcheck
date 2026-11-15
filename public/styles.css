@@ -1809,3 +1809,26 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
 .today-go:hover { background: rgba(255, 255, 255, .9); }
 .today-other h2 { margin: 0 0 .7rem; font-size: 1.05rem; }
 .today-other input { flex: 1 1 160px; min-width: 0; }
+
+/* Today, once the morning is in: closed, with what was sent beneath. */
+.today-head { display: flex; align-items: center; gap: .7rem; justify-content: flex-start; }
+.today-back {
+  width: 40px; height: 40px; border-radius: 999px; flex: none; display: grid; place-items: center;
+  background: var(--surface); color: var(--text); box-shadow: var(--shadow);
+}
+.today-tick { width: 48px; height: 48px; border-radius: 999px; display: grid; place-items: center; background: #fff; color: #2b6e44; }
+.today-chip { margin-top: .7rem; padding: .3rem .8rem; border-radius: 999px; background: rgba(255, 255, 255, .2); font-weight: 800; font-size: .8rem; }
+.today-closed.is-waiting { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.today-closed.is-waiting .today-figure { font-size: 1.6rem; }
+.today-closed.is-waiting .today-line { color: var(--text-dim); font-weight: 500; line-height: 1.5; }
+.today-closed.is-waiting .today-line b { color: var(--text); }
+.today-closed.is-waiting .pill.warn { background: var(--warn-soft); color: var(--warn); }
+.sent-card { margin-top: 0; }
+.sent-list { display: grid; gap: .55rem; }
+.sent-row { display: flex; justify-content: space-between; gap: 1rem; font-size: .95rem; }
+.sent-list .btn-sm { justify-self: start; margin-top: .2rem; }
+.today-correct {
+  display: block; margin: .3rem auto 1rem; min-height: 44px; padding: 0 1rem;
+  background: transparent; box-shadow: none; color: var(--accent-ink); font-weight: 700;
+}
+.today-correct:hover { background: var(--accent-soft); }

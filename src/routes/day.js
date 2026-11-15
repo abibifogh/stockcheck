@@ -7,6 +7,19 @@ import { assertDayWritable, lockCovering, locksFor } from '../lib/locks.js';
 import { isDay, todayIn } from '../util/dates.js';
 
 /**
+ * Somebody who records the morning rather than reviews it: they fill in the
+ * sheet and cannot see the reports. Anyone who can see reports is reviewing,
+ * and needs the figures in front of them.
+ *
+ * Asked as "can see reports?" rather than "is the sheet their only
+ * permission?": a cook also asks the storeroom for things, and that must not
+ * turn them into a reviewer.
+ */
+export function recordsOnly(permissions = []) {
+  return permissions.includes('entry') && !permissions.includes('reports');
+}
+
+/**
  * The day sheet: guest counts plus one quantity per ingredient.
  * GET returns the saved sheet alongside the "usual" hints that let a cook fill
  * the whole form with a couple of taps.
@@ -30,11 +43,7 @@ export async function getDay(ctx, day) {
   const ds = await loadDataset(db);
   const guests = (Number(service?.inhouse_guests) || 0) + (Number(service?.outside_guests) || 0);
 
-  // Somebody whose whole job here is the entry screen. Anyone who can also see
-  // reports is reviewing rather than recording, and needs the figures in front
-  // of them.
-  const entryOnly = ctx.session.permissions.length === 1
-    && ctx.session.permissions[0] === 'entry';
+  const entryOnly = recordsOnly(ctx.session.permissions);
 
   // A submitted day opens as a blank sheet for the kitchen. Re-submitting is
   // still allowed and still goes for approval — but it is entered as a fresh

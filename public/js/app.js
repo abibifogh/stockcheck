@@ -1,5 +1,5 @@
 import { api, flushQueue, readQueue, setUnauthorizedHandler } from './api.js';
-import { h, mount, setCurrency, toast } from './util.js';
+import { h, mount, setCurrency, toast, todayISO } from './util.js';
 import { renderLogin } from './views/login.js';
 import { renderEntry } from './views/entry.js';
 import { renderOverview } from './views/overview.js';
@@ -453,6 +453,7 @@ export async function render() {
       state.permissions = permissions ?? [];
       state.catalog = null;
       if (!location.hash || !currentRoute()) navigate(defaultRoute());
+      openOnToday();
       await render();
       syncPending();
     }));
@@ -526,6 +527,35 @@ setUnauthorizedHandler(() => {
 });
 
 window.addEventListener('hashchange', render);
+
+/**
+ * The morning sheet always opens on today.
+ *
+ * An earlier day is something somebody chooses, there and then. The address
+ * remembers it, though, and a phone reopening the app (or a link kept from
+ * last week) would otherwise land a cook on Tuesday's sheet on Saturday. So on
+ * every load, and on coming back to the app after a while away, an address
+ * pointing at another day is put back to today's summary. Today's own sheet
+ * is left open: that is somebody part-way through this morning.
+ */
+function openOnToday() {
+  if (currentRoute()?.path !== 'entry') return false;
+  const { day } = routeParams();
+  if (!day || day === todayISO()) return false;
+  history.replaceState(null, '', '#/entry');
+  return true;
+}
+
+let hiddenAt = null;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { hiddenAt = Date.now(); return; }
+  const away = hiddenAt ? Date.now() - hiddenAt : 0;
+  hiddenAt = null;
+  if (!state.role || away < 20 * 60000 || currentRoute()?.path !== 'entry') return;
+  // Back after twenty minutes or more: another day goes back to today, and
+  // today's summary is redrawn, in case today has become tomorrow meanwhile.
+  if (openOnToday() || !routeParams().sheet) render();
+});
 window.addEventListener('online', syncPending);
 
 (async function boot() {
@@ -554,6 +584,7 @@ window.addEventListener('online', syncPending);
   } catch { /* fall through to the login screen */ }
 
   if (state.role && !currentRoute()) navigate(defaultRoute());
+  openOnToday();
   await render();
   syncPending();
 })();
